@@ -1,0 +1,208 @@
+▼ Modules~blank
+Vocab
+Sound
+Cache
+DataManager
+SceneManager
+BattleManager
+
+▼ Game Objects~blank
+Game_Temp
+Game_System
+Game_Timer
+Game_Message
+Game_Switches
+Game_Variables
+Game_SelfSwitches
+Game_Screen
+Game_Picture
+Game_Pictures
+Game_BaseItem
+Game_Action
+Game_ActionResult
+Game_BattlerBase
+Game_Battler
+Game_Actor
+Game_Enemy
+Game_Actors
+Game_Unit
+Game_Party
+Game_Troop
+Game_Map
+Game_CommonEvent
+Game_CharacterBase
+Game_Character
+Game_Player
+Game_Follower
+Game_Followers
+Game_Vehicle
+Game_Event
+Game_Interpreter
+
+▼ Sprites~blank
+Sprite_Base
+Sprite_Character
+Sprite_Battler
+Sprite_Picture
+Sprite_Timer
+Spriteset_Weather
+Spriteset_Map
+Spriteset_Battle
+
+▼ Windows~blank
+Window_Base
+Window_Selectable
+Window_Command
+Window_HorzCommand
+Window_Help
+Window_Gold
+Window_MenuCommand
+Window_MenuStatus
+Window_MenuActor
+Window_ItemCategory
+Window_ItemList
+Window_SkillCommand
+Window_SkillStatus
+Window_SkillList
+Window_EquipStatus
+Window_EquipCommand
+Window_EquipSlot
+Window_EquipItem
+Window_Status
+Window_SaveFile
+Window_ShopCommand
+Window_ShopBuy
+Window_ShopSell
+Window_ShopNumber
+Window_ShopStatus
+Window_NameEdit
+Window_NameInput
+Window_ChoiceList
+Window_NumberInput
+Window_KeyItem
+Window_Message
+Window_ScrollText
+Window_MapName
+Window_BattleLog
+Window_PartyCommand
+Window_ActorCommand
+Window_BattleStatus
+Window_BattleActor
+Window_BattleEnemy
+Window_BattleSkill
+Window_BattleItem
+Window_TitleCommand
+Window_GameEnd
+Window_DebugLeft
+Window_DebugRight
+
+▼ Scenes~blank
+Scene_Base
+Scene_Title
+Scene_Map
+Scene_MenuBase
+Scene_Menu
+Scene_ItemBase
+Scene_Item
+Scene_Skill
+Scene_Equip
+Scene_Status
+Scene_File
+Scene_Save
+Scene_Load
+Scene_End
+Scene_Shop
+Scene_Name
+Scene_Debug
+Scene_Battle
+Scene_Gameover
+
+▼ Materials~blank
+( Insert here )
+Theo Anti Lag
+MOG character effect
+Pictures under characters
+Followers
+===================================~blank
+Basic__Module
+victor module
+XS Core
+Yanfly Core Engine
+==================================~blank
+Stairs Movement
+MOG_Weather_EX
+Mog Event sensor range
+Lune Smooth Camera Sliding
+Victor Engine - Animations Settings
+====================~blank
+Galv's Layer Graphics
+parallax lock yanfly
+animated parallax
+anti-animation lag
+victor fog
+Galv Char effect
+============================~blank
+Pathfinder
+Dash Control
+Picture bug
+Fixed Pictures
+Map Effects User Guide
+Map effects
+Stop Movement
+==========================~blank
+Disable key
+Map Screenshot
+=======================~blank
+Yanfly Message System
+Yanfly Message System addon
+Yanfly Adjust Limits
+Galv's Double Message
+====================~blank
+Yanfly Event Chase Player
+Yanfly Event Popup
+Yanfly Force Move Titles
+Yanfly Slippery Titles
+Yanfly NPC Move Restrict
+Yanfly Gabwindow
+=====================~blank
+Yanfly Menu Engine
+Yanfly Save Engine
+Yanfly Window Icons
+Yanfly Menu Cursor
+Yanfly System Option
+====================~blank
+Yanfly Flip Pictures
+====================~blank
+=================================~blank
+KUL Core Library
+KUL Graphics Library
+KUL Graphics
+KUL Graphics Menu Add-on
+KUL Item Lantern Add-on
+KUL Fog Add-on
+=======================~blank
+Terrain and Region Effects
+Galv's Region Effects
+Text Over Event
+========================~blank
+HP Bar Over Player
+Particles
+Particles Weather
+========================~blank
+MOG_T_Logo
+MOG_T_Particles
+MOG_T_Name
+MOG_Picture_Gallery
+Move the Menu
+Custom Menu
+BulletHell
+Easy Script Importer-Exporter  
+Galv's Cam Slide Control
+Pop Message
+Enhanced Camera 
+The Art of Screenshake
+Transform Form Selection
+
+▼ Main Process~blank
+Main
+
