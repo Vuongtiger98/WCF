@@ -94,7 +94,7 @@ module YEA
     EMPTY_TEXT = "Chưa lưu dữ liệu nào"      # Text used when no save data is present.
     PLAYTIME   = "Thời gian chơi"          # Text used for total playtime.
     TOTAL_SAVE = "Tổng số lưu trữ: "     # Text used to indicate total saves.
-    #TOTAL_GOLD = "Tổng số tiền:  "      # Text used to indicate total gold.
+    TOTAL_GOLD = "XXX:  "      # Text used to indicate total gold.
     LOCATION   = "Vị trí: "        # Text used to indicate current location.
     
     # These variables will be shown in each of the two columns for those who

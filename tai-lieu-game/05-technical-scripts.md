@@ -1,0 +1,170 @@
+# Technical Script Bible — RPG Maker VX Ace
+
+Tài liệu này là bản tra cứu kỹ thuật cho các script đang có trong `Data/Scripts.rvdata2` và bản export tương ứng trong `Scripts/`. Runtime là nguồn quyết định; thư mục export chỉ dùng để đọc, review và chỉnh sửa có kiểm soát.
+
+## Quy ước quan trọng
+
+- Script được thực thi theo thứ tự slot trong `Data/Scripts.rvdata2`. Các script có `alias`/định nghĩa lại class phụ thuộc thứ tự này.
+- Switch và Variable là global của toàn game, không phải của từng map.
+- Self Switch là theo từng event/map, không nằm trong bảng conflict global dưới đây.
+- ID không được tự ý đổi khi chưa kiểm tra toàn bộ map/event/common event.
+- Các số region/terrain bên dưới là cấu hình đã đọc từ code; những ID chưa được dùng trong map hiện tại vẫn phải xem như đã bị chiếm.
+
+## Bảng ID cần giữ ổn định
+
+### Switch
+
+| ID | Chủ thể sử dụng | Ý nghĩa |
+|---:|---|---|
+| 1 | Galv Double Message | ON = khóa bỏ qua message |
+| 3 | Map015 Smart Toilet; điều kiện page Map013 | Trạng thái biến hình toilet; đang xung đột global |
+| 4 | KUL Fog Add-on; Map019 E33 | Bật/tắt fog |
+| 17 | KUL Graphics | Light system |
+| 18 | KUL Graphics | Ultra lighting system |
+| 19 | KUL Item Lantern Add-on; Map019 E43 | Lantern; đang dùng trùng với logic map |
+| 21 | Yanfly Flip Pictures | Cho phép/lệnh flip picture |
+| 25 | Yanfly Gabwindow | ON = ẩn gab window |
+| 94 | Galv Region Effects | ON = tắt region effects |
+| 98 | Fixed Pictures | Khóa picture cố định và tọa độ; hiện đang dùng đồng thời cho hai mục đích cấu hình |
+| 99 | Yanfly Event Popup | ON = ẩn popup event |
+| 238 | Stop Movement | Khóa chuyển động NPC |
+| 239 | Stop Movement | Khóa chuyển động player |
+
+Ngoài các ID trên, Map data hiện dùng trực tiếp Switch 2, 5, 6, 7, 8; chúng thuộc logic event/map, không được tái sử dụng cho script hệ thống nếu chưa rà map.
+
+### Variable
+
+| ID | Chủ thể sử dụng | Ý nghĩa |
+|---:|---|---|
+| 4 | Transform Form Selection; Map008/Map013 | Form biến hình; đang bị map dùng chung |
+| 6 | Fixed Pictures | Z-order của picture cố định |
+| 19 | BulletHell | Điểm hiện tại |
+| 20 | BulletHell; Map019 E4 | High score; đang xung đột với page condition map |
+| 0 | Catto Petting Minigame cấu hình mặc định | Không ghi kết quả vì ID 0 bị vô hiệu hóa |
+| 40 | Map001 E15 | Logic map hiện hữu |
+
+Map data còn dùng Variable 1, 2 và 3 cho các event tại Map003/Map013. Không dùng các variable này cho hệ thống mới nếu không có bảng mapping cập nhật.
+
+### Region, terrain tag và self switch
+
+| Loại | ID | Script | Cách dùng |
+|---|---:|---|---|
+| Region | 1 | Pathfinder | Ví dụ vùng safe zone trong cấu hình pathfinding |
+| Region | 1 | Galv Char Effect | Tường phản chiếu/mirror |
+| Region | 1 | Stairs Movement | Không; stairs dùng Region 63 |
+| Region | 63 | Stairs Movement | Ô cầu thang; `FORCE_REGION_PASSABLE = true` |
+| Region | 1–255 | Terrain and Region Effects | Đọc từ note tag `<region N se>`/`</region se>` |
+| Terrain | tileset-defined | Terrain and Region Effects | Đọc từ note tag `<terrain N se>`/`</terrain se>` |
+| Self Switch B | — | Mog Event Sensor Range | Sensor event dùng self switch B |
+
+KUL Graphics còn diễn giải region/height theo cấu hình riêng trong KUL Core Library. Cần kiểm tra trực tiếp các bảng region trên tileset trước khi tái sử dụng region 1 hoặc 63.
+
+## Danh mục script và cách ứng dụng
+
+### Hệ thống nền và dependency
+
+- `Yanfly Core Engine`, `XS Core`, `victor module`, `Basic__Module`, `KUL Core Library`: thư viện nền. Không xóa hoặc đổi thứ tự nếu script phụ thuộc còn dùng.
+- `Yanfly Message System`, `Yanfly Message System addon`, `Yanfly Adjust Limits`: message window, giới hạn dòng/kích thước.
+- `Yanfly Menu Engine`, `Yanfly Save Engine`, `Yanfly System Option`, `Yanfly Window Icons`, `Yanfly Menu Cursor`: menu/save/system.
+- `Victor Engine - Animations Settings`: cấu hình animation theo note/tag.
+- `Easy Script Importer-Exporter`: công cụ export/import. Mode 1 chỉ dùng lúc export; trước khi chạy game phải chuyển về mode runtime.
+
+### Map, camera và chuyển động
+
+- `Enhanced Camera`: camera focus/scroll; Map015 gọi `ms_pro_cam_focus_on(-1)`.
+- `Lune Smooth Camera Sliding`: camera trượt. `Galv's Cam Slide Control` hiện bị comment toàn bộ trong project nên không được tính là runtime conflict; chỉ xem xét lại nếu được bật.
+- `Galv's Layer Graphics`: layer map bằng script call `layer(...)`, `refresh_layers`.
+- `parallax lock yanfly`, `animated parallax`: khóa/chuyển động parallax.
+- `Stairs Movement`: Region 63 là cầu thang; có script call bật/tắt `RegionStairs`.
+- `Pathfinder`: pathfinding, có cấu hình safe region 1.
+- `Dash Control`: điều khiển dash.
+- `Stop Movement`: dùng Switch 238/239 để khóa NPC/player.
+- `Yanfly Event Chase Player`, `Yanfly NPC Move Restrict`, `Yanfly Force Move Titles`, `Yanfly Slippery Titles`, `Followers`: AI/chuyển động event, follower và địa hình đặc biệt.
+- `Mog Event sensor range`: sensor event, self switch B.
+
+### Hình ảnh, picture và hiệu ứng
+
+- `Fixed Pictures`: picture cố định; Switch 98, Variable 6.
+- `Picture bug`, `Pictures under characters`, `Yanfly Flip Pictures`: viewport/Z-order/flip picture.
+- `Galv Char effect`: phản chiếu theo Region 1.
+- `Galv's Region Effects`: hiệu ứng theo region; Switch 94 để tắt.
+- `Terrain and Region Effects`: âm thanh/hiệu ứng bước chân qua note tag terrain/region.
+- `KUL Graphics`, `KUL Graphics Menu Add-on`, `KUL Item Lantern Add-on`, `KUL Fog Add-on`: lighting/fog/lantern; dùng Switch 17, 18, 19, 4.
+- `victor fog`, `Map effects`, `Particles`, `Particles Weather`, `MOG_Weather_EX`, `anti-animation lag`: fog, weather, particle và tối ưu animation.
+- `The Art of Screenshake`: script call `shake_screen(duration, power)`.
+- `Map Screenshot`: công cụ chụp/debug map, có thể hiển thị region/passage.
+- `HP Bar Over Player`, `Text Over Event`: thông tin hiển thị trên map.
+
+### Menu điện thoại và minigame
+
+- `MOG_Picture_Gallery`: gallery nền tảng; script call `picture_gallery`, `enable_picture(id)`, `disable_picture(id)`.
+- `Cutscene Group Chat`: chat trong cutscene, choice và branch.
+- `Custom Menu`: menu điện thoại, Contacts, Gallery, item/save/load/system.
+- `Custom Menu` hiện đã tích hợp Gallery Upgrade và Saved Group Chat Patch. Không thêm lại hai patch cũ vào slot riêng.
+- Gallery unlock toàn cục lưu tại `Save/GlobalGallery.rvdata2`.
+- Group chat lưu trong `$game_config.phone_group_chats`; các API chính gồm `PhoneGroupChatSave.add_text`, `add_image`, `add_system`, `add_choice_result`, `save_current_cutscene`.
+- `BulletHell`: minigame danmaku; Variable 19 điểm hiện tại, Variable 20 high score.
+- `Catto Petting Minigame`: minigame petting; `RESULT_VARIABLE_ID = 0` nghĩa là hiện không ghi điểm ra Variable.
+- `Transform Form Selection`: ghi form vào Variable 4.
+
+## Nhóm script có khả năng conflict
+
+### Camera — cần quyết định một script làm chủ
+
+`Lune Smooth Camera Sliding`, `Galv Cam Slide Control` và `Enhanced Camera` đều chạm vào update/scroll camera. Map015 đang phụ thuộc Enhanced Camera. Không nên sửa tự động lúc này vì cần xác định camera nào được dùng ở từng route; khuyến nghị giữ Enhanced Camera làm camera chính và chỉ bật slide của Galv nếu đã kiểm tra alias chain.
+
+### Message/UI — cần test thứ tự load
+
+`Yanfly Message System`, addon, `Galv Double Message`, `Pop Message`, `Yanfly Gabwindow` và Group Chat đều sửa message/input/window. Không phát hiện lỗi cấu hình tĩnh mới sau lần hợp nhất menu điện thoại; cần test message thường, message skip, gab window và chat choice riêng.
+
+### Picture/layer/parallax — rủi ro Z-order
+
+`Fixed Pictures`, `Pictures under characters`, `Yanfly Flip Pictures`, `Galv Layer Graphics`, parallax scripts và weather scripts cùng tác động viewport/Sprite/Picture. Không nên gộp thêm code. Cần kiểm thử map có `Bathroom_top`, picture fixed và nhân vật đứng dưới picture cùng lúc.
+
+### Movement — rủi ro alias chain
+
+`Stairs Movement`, `Pathfinder`, `Dash Control`, `Stop Movement`, `Yanfly Chase/Restrict`, `Followers` cùng sửa `Game_Character`/`Game_Player`. Không phát hiện một constant bị trùng trực tiếp, nhưng thứ tự load là hành vi. Cần test stairs, dash, follower, chase và Switch 238/239.
+
+### Menu/save — đã có một điểm cần giữ nguyên
+
+Custom Menu, Yanfly Save Engine, Gallery và Group Chat đều chạm DataManager/save. Phiên bản hiện tại đã hợp nhất đúng thứ tự: Cutscene Group Chat trước, Custom Menu sau. Không thêm patch cũ vào runtime. Khi test cần tạo save mới, load save cũ và kiểm tra `GlobalGallery.rvdata2`.
+
+### Fog/weather/graphics — chưa sửa tự động
+
+KUL, Victor Fog, MOG Weather, Particles và Map Effects cùng tạo/dispose sprite trong Spriteset_Map. Chưa có bằng chứng đủ để chọn một implementation và xóa implementation khác; chỉ nên sửa sau khi có map cụ thể bị lỗi hoặc log FPS/dispose.
+
+## Lỗi cấu hình và khuyến nghị
+
+### Ưu tiên cao
+
+1. Đổi Smart Toilet khỏi Switch 3 hoặc đổi các page Map013 sang một switch riêng. Không dùng chung hai ý nghĩa global.
+2. Đổi Variable 4 cho Transform Form Selection sang variable chuyên dụng chưa dùng trong map; cập nhật event gọi form nếu có.
+3. Đổi `BulletHell::HIGH_SCORE_VAR` khỏi Variable 20 hoặc đổi điều kiện Map019 E4.
+4. Tách `Fixed Pictures::SWITCH_ID` và `COORDINATES_SWITCH_ID` nếu hai chức năng cần bật độc lập.
+
+### Ưu tiên trung bình
+
+5. Đổi `Catto Petting Minigame::RESULT_VARIABLE_ID` từ 0 sang variable chuyên dụng nếu game cần lưu điểm.
+6. Đặt tên trong Database cho các variable/switch hệ thống để tránh tái sử dụng nhầm.
+7. Ghi một bảng registry ID mới trước khi thêm script hoặc route mới.
+
+### Vận hành
+
+8. Sau mỗi lần export, kiểm tra mode của Easy Script Importer-Exporter trước khi chạy game.
+9. Không di chuyển script có alias nếu chưa kiểm tra script đứng trước/sau nó.
+10. Mỗi thay đổi menu/save phải test cả save mới và save cũ.
+
+## Kết quả kiểm tra hiện tại
+
+- Runtime và export khớp về nội dung với các khác biệt tab/khoảng trắng đã biết ở Fixed Pictures và Yanfly Event Chase Player; Easy Script Importer-Exporter khác mode có chủ ý (runtime 0, bản export 1).
+- Custom Menu đã được hợp nhất và sửa animation; không còn hai patch điện thoại riêng trong runtime.
+- Không thấy conflict mới đủ chắc chắn để tự động sửa ngoài các lỗi cấu hình ID đã liệt kê.
+- Các nhóm camera, message, picture, movement và graphics cần playtest theo map/route cụ thể trước khi thay đổi hành vi.
+
+## Quy trình thêm script mới
+
+1. Chọn slot sau dependency mà script cần.
+2. Đăng ký mọi switch, variable, region, terrain tag, self switch và script call vào bảng registry.
+3. Tìm class/method bị `alias` hoặc định nghĩa lại.
+4. Kiểm tra save compatibility nếu script thêm field vào Game_System/Game_Config/DataManager.
+5. Test map tối thiểu, test load save cũ, rồi mới export bản phát hành.

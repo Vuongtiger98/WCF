@@ -12,7 +12,9 @@ module TransformMagic
   #--------------------------------------------------------------------------
   TRIGGER_KEY = Input::Z
   CAST_ANIMATION_ID = 123
-  CAST_WAIT_FRAMES = 250
+  # The old 100-frame pause made the cast feel detached from the selector.
+  # Keep the animation readable, but hand control back sooner.
+  CAST_WAIT_FRAMES = 56
   APPLY_TO_LEADER = true
 
   #--------------------------------------------------------------------------
@@ -21,10 +23,8 @@ module TransformMagic
   FormData = Struct.new(:id, :name, :picture, :char_name, :char_idx, :value)
 
   FORMS = {
-    :nguyenthuy => FormData.new(:nguyenthuy, "Nguyên thuỷ", "QuyRiu", "Chimera01_cip", 1, 1),
-    :trunguy  => FormData.new(:trunguy,  "Trung Uý",   "QuyTrungUy", "$Erufu_Sprite", 0, 2),
-    :chienthan  => FormData.new(:chienthan,  "Chiến thần",   "QuyChienThan", "$a_gyoei", 0, 3),
-    :wtf  => FormData.new(:wtf,  "WTF",   "QuyWTF", "$a_gyoei", 0, 4)
+    :riu => FormData.new(:riu, "The Riu Hải Quỳ", "QuyRiu", "Chimera01_cip", 1, 1),
+    :gamemer  => FormData.new(:gamemer,  "GameMeRR",   "QuyGameMeRR", "!$GameMeRR", 0, 2),
     # Add more forms here like this:
     # :newform => FormData.new(:newform, "Form Name", "PictureName", "CharName", 0, 4),
   }
@@ -68,6 +68,13 @@ module TransformMagic
       return unless can_open?
       return if unlocked_forms.empty?
       $game_player.animation_id = CAST_ANIMATION_ID if CAST_ANIMATION_ID > 0
+      # Give the cast a small impact envelope.  The animation itself remains
+      # data-driven (ID 123), while these lightweight screen effects make the
+      # transition feel intentional on maps with very different palettes.
+      if $game_screen
+        $game_screen.start_flash(Color.new(180, 220, 255, 150), 12)
+        $game_screen.start_shake(3, 4, 12)
+      end
       $game_temp.tm_form_menu_wait = CAST_WAIT_FRAMES
       $game_temp.tm_form_menu_pending = true
     end

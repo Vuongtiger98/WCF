@@ -1,11 +1,11 @@
 ( Insert here ).rb
-animated parallax.rb
-anti-animation lag.rb
 Basic__Module.rb
 BattleManager.rb
 BulletHell.rb
 Cache.rb
+Catto Petting Minigame.rb
 Custom Menu.rb
+Cutscene Group Chat.rb
 Dash Control.rb
 DataManager.rb
 Disable key.rb
@@ -57,25 +57,26 @@ KUL Graphics Menu Add-on.rb
 KUL Graphics.rb
 KUL Item Lantern Add-on.rb
 Lune Smooth Camera Sliding.rb
-Main.rb
-Map Effects User Guide.rb
-Map effects.rb
-Map Screenshot.rb
 MOG character effect.rb
-Mog Event sensor range.rb
 MOG_Picture_Gallery.rb
 MOG_T_Logo.rb
 MOG_T_Name.rb
 MOG_T_Particles.rb
 MOG_Weather_EX.rb
+Main.rb
+Map Effects User Guide.rb
+Map Screenshot.rb
+Map effects.rb
+Mog Event sensor range.rb
 Move the Menu.rb
-parallax lock yanfly.rb
+Multi Switch Condition Helper.rb
 Particles Weather.rb
 Particles.rb
 Pathfinder.rb
 Picture bug.rb
 Pictures under characters.rb
 Pop Message.rb
+Random Event Patch.rb
 SceneManager.rb
 Scene_Base.rb
 Scene_Battle.rb
@@ -97,14 +98,14 @@ Scene_Skill.rb
 Scene_Status.rb
 Scene_Title.rb
 Sound.rb
-Spriteset_Battle.rb
-Spriteset_Map.rb
-Spriteset_Weather.rb
 Sprite_Base.rb
 Sprite_Battler.rb
 Sprite_Character.rb
 Sprite_Picture.rb
 Sprite_Timer.rb
+Spriteset_Battle.rb
+Spriteset_Map.rb
+Spriteset_Weather.rb
 Stairs Movement.rb
 Stop Movement.rb
 Terrain and Region Effects.rb
@@ -113,8 +114,6 @@ The Art of Screenshake.rb
 Theo Anti Lag.rb
 Transform Form Selection.rb
 Victor Engine - Animations Settings.rb
-victor fog.rb
-victor module.rb
 Vocab.rb
 Window_ActorCommand.rb
 Window_Base.rb
@@ -178,3 +177,8 @@ Yanfly Save Engine.rb
 Yanfly Slippery Titles.rb
 Yanfly System Option.rb
 Yanfly Window Icons.rb
+animated parallax.rb
+anti-animation lag.rb
+parallax lock yanfly.rb
+victor fog.rb
+victor module.rb

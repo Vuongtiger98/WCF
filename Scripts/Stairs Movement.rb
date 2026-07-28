@@ -1,156 +1,399 @@
-#-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
-# Stairs Movement v 1.1
-#-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
+#==============================================================================
+# Region Stair Movement - Toggle + Cutscene Compatible
+# RPG Maker VX Ace / RGSS3
+#------------------------------------------------------------------------------
+# Region 63 = stair path.
 #
-# FenixFyreX
+# Script Calls:
 #
-# Final Fantasy VI had stairs that the player actually walked up. Their direction
-# became two way on these stairs, left or right. This script replicates that
-# feature.
+#   RegionStairs.enable
+#   RegionStairs.disable
+#   RegionStairs.toggle
+#   RegionStairs.enabled?
 #
-#-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
+# In Set Move Route > Script, you can also use:
+#
+#   RegionStairs.enable
+#   RegionStairs.disable
+#
+# Example cutscene:
+#
+#   Script Call:
+#     RegionStairs.enable
+#
+#   Set Move Route: Player
+#     Move Left
+#     Move Left
+#     Move Left
+#
+#   Script Call:
+#     RegionStairs.disable
+#
+# Put below Materials and above Main.
+# Delete/disable all older stair scripts first.
+#==============================================================================
 
-StairsRegionID = 63   # The region ID to use for designating staircases
-StairsOffset   = 4    # The height of one tileset staircase plank (about 4px)
-CharAnimSpeed  = 2    # The speed at which a sprite cycles through frames
+module RegionStairs
+  REGION_ID = 63
 
-#-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
-# End of Config. Do not edit below.
-#-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
+  # If false, stair movement starts OFF when starting a new game.
+  START_ENABLED = false
 
-class Game_Map
-  def stairs?(x,y)
-    region_id(x,y) == StairsRegionID
+  # If true, Region 63 tiles can be walked on even if tileset passability is X.
+  FORCE_REGION_PASSABLE = true
+
+  # If true, diagonal Region 63 movement is preferred over straight Region 63.
+  PREFER_DIAGONAL = true
+
+  # Face left/right when moving diagonally on stairs.
+  FACE_HORIZONTAL_ON_DIAGONAL = true
+
+  # Sprite Y offset while standing on Region 63.
+  SPRITE_Y_OFFSET = 0
+
+  # Extra walking animation speed while standing on Region 63.
+  EXTRA_ANIM_SPEED = 2
+
+  #--------------------------------------------------------------------------
+  # Script calls
+  #--------------------------------------------------------------------------
+
+  def self.enable
+    $game_system.region_stairs_enabled = true if $game_system
+  end
+
+  def self.disable
+    $game_system.region_stairs_enabled = false if $game_system
+  end
+
+  def self.toggle
+    return unless $game_system
+    $game_system.region_stairs_enabled = !$game_system.region_stairs_enabled
+  end
+
+  def self.enabled?
+    return false unless $game_system
+    $game_system.region_stairs_enabled
   end
 end
 
-class Game_CharacterBase
-  
-  # give other coders access to checking stairs status
-  attr_reader :on_stairs, :stairs_d
-  alias on_stairs? on_stairs
-  
-  # check whether character is on stairs
-  def check_stairs
-    @on_stairs = stairs?(0)
+#==============================================================================
+# Game_System
+#==============================================================================
+
+class Game_System
+  attr_accessor :region_stairs_enabled
+
+  alias region_stairs_initialize initialize
+
+  def initialize
+    region_stairs_initialize
+    @region_stairs_enabled = RegionStairs::START_ENABLED
   end
-  
-  # Checks if there are any sets of stairs in the given direction
-  def stairs?(d)
-    return case d
-    when 0
-      $game_map.stairs?(@x,@y)
-    when 2
-      $game_map.stairs?(@x-1,@y+1) || $game_map.stairs?(@x+1,@y+1)
-    when 4
-      $game_map.stairs?(@x-1,@y-1) || $game_map.stairs?(@x-1,@y+1)
-    when 6
-      $game_map.stairs?(@x+1,@y-1) || $game_map.stairs?(@x+1,@y+1)
-    when 8
-      $game_map.stairs?(@x-1,@y-1) || $game_map.stairs?(@x+1,@y-1)
-    else
-      false
+
+  def region_stairs_enabled
+    @region_stairs_enabled = RegionStairs::START_ENABLED if @region_stairs_enabled.nil?
+    @region_stairs_enabled
+  end
+end
+
+#==============================================================================
+# Game_Map
+#==============================================================================
+
+class Game_Map
+  def region_stair?(x, y)
+    valid?(x, y) && region_id(x, y) == RegionStairs::REGION_ID
+  end
+end
+
+#==============================================================================
+# Game_CharacterBase
+#==============================================================================
+
+class Game_CharacterBase
+
+  alias region_stairs_char_initialize initialize
+
+  def initialize(*args)
+    region_stairs_char_initialize(*args)
+    @region_stairs_last_dx = 0
+    @region_stairs_last_dy = 0
+  end
+
+  #--------------------------------------------------------------------------
+  # Region check
+  #--------------------------------------------------------------------------
+
+  def region_stairs_on_stair?
+    $game_map.region_stair?(@x, @y)
+  end
+
+  def region_stairs_region_at_delta?(dx, dy)
+    x2 = $game_map.round_x(@x + dx)
+    y2 = $game_map.round_y(@y + dy)
+    $game_map.region_stair?(x2, y2)
+  end
+
+  #--------------------------------------------------------------------------
+  # Direction helpers
+  #--------------------------------------------------------------------------
+
+  def region_stairs_dir_delta(d)
+    case d
+    when 2 then [0, 1]
+    when 4 then [-1, 0]
+    when 6 then [1, 0]
+    when 8 then [0, -1]
+    else [0, 0]
     end
   end
-  
-  # Checks passability in the given direction for stairs
-  def stairs_passable?(x, y, d)
-    x2 = $game_map.round_x_with_direction(x, d)
-    y2 = $game_map.round_y_with_direction(y, d)
+
+  def region_stairs_delta_dir(dx, dy)
+    return 4 if dx < 0
+    return 6 if dx > 0
+    return 8 if dy < 0
+    return 2 if dy > 0
+    return @direction
+  end
+
+  def region_stairs_horz_dir(dx)
+    dx < 0 ? 4 : 6
+  end
+
+  def region_stairs_vert_dir(dy)
+    dy < 0 ? 8 : 2
+  end
+
+  #--------------------------------------------------------------------------
+  # Candidate tiles based on pressed direction
+  #--------------------------------------------------------------------------
+
+  def region_stairs_candidates_for_direction(d)
+    case d
+    when 2
+      [
+        [0, 1],
+        [-1, 1],
+        [1, 1]
+      ]
+    when 4
+      [
+        [-1, 0],
+        [-1, -1],
+        [-1, 1]
+      ]
+    when 6
+      [
+        [1, 0],
+        [1, -1],
+        [1, 1]
+      ]
+    when 8
+      [
+        [0, -1],
+        [-1, -1],
+        [1, -1]
+      ]
+    else
+      []
+    end
+  end
+
+  #--------------------------------------------------------------------------
+  # Choose stair tile
+  #--------------------------------------------------------------------------
+
+  def region_stairs_choose_delta(d)
+    return nil unless RegionStairs.enabled?
+
+    candidates = region_stairs_candidates_for_direction(d)
+    candidates = candidates.select do |dx, dy|
+      region_stairs_region_at_delta?(dx, dy)
+    end
+
+    return nil if candidates.empty?
+
+    candidates.sort_by! do |dx, dy|
+      diagonal = dx != 0 && dy != 0
+      same_as_last = dx == @region_stairs_last_dx &&
+                     dy == @region_stairs_last_dy
+
+      score = 0
+      score -= 100 if same_as_last
+      score -= 50 if RegionStairs::PREFER_DIAGONAL && diagonal
+      score
+    end
+
+    candidates[0]
+  end
+
+  #--------------------------------------------------------------------------
+  # Passability
+  #--------------------------------------------------------------------------
+
+  def region_stairs_can_move?(dx, dy)
+    x2 = $game_map.round_x(@x + dx)
+    y2 = $game_map.round_y(@y + dy)
+
     return false unless $game_map.valid?(x2, y2)
     return true if @through || debug_through?
-    return false unless map_passable?(x, y, d)
     return false if collide_with_characters?(x2, y2)
-    return true
+
+    if RegionStairs::FORCE_REGION_PASSABLE
+      return true if $game_map.region_stair?(x2, y2)
+    end
+
+    if dx != 0 && dy != 0
+      horz = region_stairs_horz_dir(dx)
+      vert = region_stairs_vert_dir(dy)
+      return diagonal_passable?(@x, @y, horz, vert)
+    else
+      d = region_stairs_delta_dir(dx, dy)
+      return map_passable?(@x, @y, d)
+    end
   end
-  
-  # Moves the character in the given direction diagonally up or down stairs
-  def move_diag_stairs(d, horz, vert, turn_ok)
-    x,y = @x+horz,@y+vert
-    horz = [4,6][[-1,1].index(horz)]
-    vert = [8,2][[-1,1].index(vert)]
-    @move_succeed = stairs_passable?(x,y,d)
-    d = [4,6][[[4,8],[6,8],[4,2],[6,2]].index([horz,vert])%2]
-    set_direction(d) if turn_ok
+
+  #--------------------------------------------------------------------------
+  # Move on stair
+  #--------------------------------------------------------------------------
+
+  def region_stairs_move(dx, dy, turn_ok = true)
+    @move_succeed = region_stairs_can_move?(dx, dy)
+
+    if dx != 0 && dy != 0
+      if RegionStairs::FACE_HORIZONTAL_ON_DIAGONAL
+        set_direction(region_stairs_horz_dir(dx)) if turn_ok
+      else
+        set_direction(region_stairs_delta_dir(dx, dy)) if turn_ok
+      end
+    else
+      set_direction(region_stairs_delta_dir(dx, dy)) if turn_ok
+    end
+
     if @move_succeed
-      @x = $game_map.round_x_with_direction(@x, horz)
-      @y = $game_map.round_y_with_direction(@y, vert)
-      @real_x = $game_map.x_with_direction(@x, reverse_dir(horz))
-      @real_y = $game_map.y_with_direction(@y, reverse_dir(vert))
+      old_x = @x
+      old_y = @y
+
+      @x = $game_map.round_x(@x + dx)
+      @y = $game_map.round_y(@y + dy)
+
+      @real_x = old_x
+      @real_y = old_y
+
+      @region_stairs_last_dx = dx
+      @region_stairs_last_dy = dy
+
       increase_steps
     end
   end
-  
-  # Returns the stair vector for the given direction
-  def stair_vector(d)
-    x,y = 0,0
-    case d
-    when 4,6
-      x = [-1,1][[4,6].index(d)]
-      y = $game_map.stairs?(@x+x,@y-1) ? -1 : 1
-    when 2,8
-      y = [-1,1][[8,2].index(d)]
-      x = $game_map.stairs?(@x-1,@y+y) ? -1 : 1
-    end
-    [x,y]
-  end
-  
-  # Checks whether or not the character is not getting on or off stairs
-  def midstairs?
-    @on_stairs && stairs?(reverse_dir(@direction))
-  end
-  
-  # Alters original move method to put stairs into effect
-  alias move_straight_no_stairs move_straight
+
+  #--------------------------------------------------------------------------
+  # Override move_straight
+  # This affects player, followers, and events.
+  # It also works with Set Move Route.
+  #--------------------------------------------------------------------------
+
+  alias region_stairs_original_move_straight move_straight
+
   def move_straight(d, turn_ok = true)
-    if on_stairs? && stairs?(d)
-      @stairs_d = d
-      move_diag_stairs(d, *stair_vector(d), turn_ok)
-    else
-      d = @direction if @on_stairs && [2,8].include?(d)
-      move_straight_no_stairs(d, turn_ok)
+    result = region_stairs_choose_delta(d)
+
+    if result
+      dx, dy = result
+      region_stairs_move(dx, dy, turn_ok)
+      return
     end
-    check_stairs
+
+    @region_stairs_last_dx = 0
+    @region_stairs_last_dy = 0
+
+    region_stairs_original_move_straight(d, turn_ok)
   end
-  
-  alias move_diagonal_for_stairs move_diagonal
+
+  #--------------------------------------------------------------------------
+  # Override move_diagonal
+  # This affects player, followers, and events.
+  # It also works with Set Move Route.
+  #--------------------------------------------------------------------------
+
+  alias region_stairs_original_move_diagonal move_diagonal
+
   def move_diagonal(horz, vert)
-    if self.is_a?(Game_Follower) && @preceding_character.on_stairs?
-      check_stairs
-      if on_stairs? && stairs?(@preceding_character.stairs_d)
-        d = @preceding_character.stairs_d
-        move_diag_stairs(d, *stair_vector(d), true)
-      else
-        move_diagonal_for_stairs(horz, vert)
-      end
-    else
-      move_diagonal_for_stairs(horz, vert)
+    dx = horz == 4 ? -1 : 1
+    dy = vert == 8 ? -1 : 1
+
+    if RegionStairs.enabled? && region_stairs_region_at_delta?(dx, dy)
+      region_stairs_move(dx, dy, true)
+      return
     end
+
+    @region_stairs_last_dx = 0
+    @region_stairs_last_dy = 0
+
+    region_stairs_original_move_diagonal(horz, vert)
   end
-  
-  # Shift the y coordinate of the character's sprite to compensate for stairs
-  alias shift_y_for_stairs shift_y
-  def shift_y(*a,&bl)
-    shift_y_for_stairs(*a,&bl) + (midstairs? ? StairsOffset : 0)
+
+  #--------------------------------------------------------------------------
+  # Sprite Y shift
+  #--------------------------------------------------------------------------
+
+  alias region_stairs_original_shift_y shift_y
+
+  def shift_y(*args, &block)
+    region_stairs_original_shift_y(*args, &block) +
+    (region_stairs_on_stair? ? RegionStairs::SPRITE_Y_OFFSET : 0)
   end
-  
-  # Update the sprite more to create pace-per-step effect on stairs
-  alias update_anime_count_for_stairs update_anime_count
-  def update_anime_count(*a,&bl)
-    ac = @anime_count
-    update_anime_count_for_stairs(*a,&bl)
-    @anime_count += CharAnimSpeed if midstairs?
+
+  #--------------------------------------------------------------------------
+  # Animation speed
+  #--------------------------------------------------------------------------
+
+  alias region_stairs_original_update_anime_count update_anime_count
+
+  def update_anime_count(*args, &block)
+    region_stairs_original_update_anime_count(*args, &block)
+    @anime_count += RegionStairs::EXTRA_ANIM_SPEED if region_stairs_on_stair?
   end
 end
+
+#==============================================================================
+# Game_Player
+#==============================================================================
 
 class Game_Player < Game_Character
-  alias move_straight_for_stairs move_straight
-  def move_straight(*a,&bl)
-    @followers.move if stairs_passable?(@x,@y,a[0]) if on_stairs?
-    move_straight_for_stairs(*a,&bl)
+
+  alias region_stairs_player_move_straight move_straight
+
+  def move_straight(d, turn_ok = true)
+    result = region_stairs_choose_delta(d)
+
+    if result
+      dx, dy = result
+      @followers.move if region_stairs_can_move?(dx, dy)
+      region_stairs_move(dx, dy, turn_ok)
+      return
+    end
+
+    region_stairs_player_move_straight(d, turn_ok)
+  end
+
+  alias region_stairs_player_move_diagonal move_diagonal
+
+  def move_diagonal(horz, vert)
+    dx = horz == 4 ? -1 : 1
+    dy = vert == 8 ? -1 : 1
+
+    if RegionStairs.enabled? && region_stairs_region_at_delta?(dx, dy)
+      @followers.move if region_stairs_can_move?(dx, dy)
+      region_stairs_move(dx, dy, true)
+      return
+    end
+
+    region_stairs_player_move_diagonal(horz, vert)
   end
 end
 
-#-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
+#==============================================================================
 # End of Script
-#-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
+#==============================================================================

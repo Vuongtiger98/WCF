@@ -63,7 +63,7 @@ module MOG_PICTURE_GALLERY
        # PAGE_CURSOR_POSITION = [X LEFT,Y LEFT ,X RIGHT,Y RIGHT]
        PAGE_CURSOR_POSITION = [0,0,0,0]
        #Ativar o Scene Picture Gallery no Menu
-       PICTURE_GALLERY_MENU_COMMAND = true
+       PICTURE_GALLERY_MENU_COMMAND = false
        #Nome do comando apresentado no menu.
        PICTURE_GALLERY_COMMAND_NAME = "Picture Gallery"
 end  

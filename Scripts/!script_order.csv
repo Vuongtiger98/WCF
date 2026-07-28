@@ -1,12 +1,12 @@
-▼ Modules~blank
+▼ Modules
 Vocab
 Sound
 Cache
 DataManager
 SceneManager
 BattleManager
-
-▼ Game Objects~blank
+~blank
+▼ Game Objects
 Game_Temp
 Game_System
 Game_Timer
@@ -38,8 +38,8 @@ Game_Followers
 Game_Vehicle
 Game_Event
 Game_Interpreter
-
-▼ Sprites~blank
+~blank
+▼ Sprites
 Sprite_Base
 Sprite_Character
 Sprite_Battler
@@ -48,8 +48,8 @@ Sprite_Timer
 Spriteset_Weather
 Spriteset_Map
 Spriteset_Battle
-
-▼ Windows~blank
+~blank
+▼ Windows
 Window_Base
 Window_Selectable
 Window_Command
@@ -95,8 +95,8 @@ Window_TitleCommand
 Window_GameEnd
 Window_DebugLeft
 Window_DebugRight
-
-▼ Scenes~blank
+~blank
+▼ Scenes
 Scene_Base
 Scene_Title
 Scene_Map
@@ -116,32 +116,32 @@ Scene_Name
 Scene_Debug
 Scene_Battle
 Scene_Gameover
-
-▼ Materials~blank
+~blank
+▼ Materials
 ( Insert here )
 Theo Anti Lag
 MOG character effect
 Pictures under characters
 Followers
-===================================~blank
+===================================
 Basic__Module
 victor module
 XS Core
 Yanfly Core Engine
-==================================~blank
+==================================
 Stairs Movement
 MOG_Weather_EX
 Mog Event sensor range
 Lune Smooth Camera Sliding
 Victor Engine - Animations Settings
-====================~blank
+====================
 Galv's Layer Graphics
 parallax lock yanfly
 animated parallax
 anti-animation lag
 victor fog
 Galv Char effect
-============================~blank
+============================
 Pathfinder
 Dash Control
 Picture bug
@@ -149,60 +149,68 @@ Fixed Pictures
 Map Effects User Guide
 Map effects
 Stop Movement
-==========================~blank
+==========================
 Disable key
 Map Screenshot
-=======================~blank
+=======================
 Yanfly Message System
 Yanfly Message System addon
 Yanfly Adjust Limits
 Galv's Double Message
-====================~blank
+====================
 Yanfly Event Chase Player
 Yanfly Event Popup
 Yanfly Force Move Titles
 Yanfly Slippery Titles
 Yanfly NPC Move Restrict
 Yanfly Gabwindow
-=====================~blank
+=====================
 Yanfly Menu Engine
 Yanfly Save Engine
 Yanfly Window Icons
 Yanfly Menu Cursor
 Yanfly System Option
-====================~blank
+====================
 Yanfly Flip Pictures
-====================~blank
-=================================~blank
+====================
+=================================
 KUL Core Library
 KUL Graphics Library
 KUL Graphics
 KUL Graphics Menu Add-on
 KUL Item Lantern Add-on
 KUL Fog Add-on
-=======================~blank
+=======================
 Terrain and Region Effects
 Galv's Region Effects
 Text Over Event
-========================~blank
+========================
 HP Bar Over Player
 Particles
 Particles Weather
-========================~blank
+========================
 MOG_T_Logo
 MOG_T_Particles
 MOG_T_Name
 MOG_Picture_Gallery
 Move the Menu
+Cutscene Group Chat
 Custom Menu
 BulletHell
+Random Event Patch
 Easy Script Importer-Exporter  
 Galv's Cam Slide Control
 Pop Message
 Enhanced Camera 
 The Art of Screenshake
 Transform Form Selection
-
-▼ Main Process~blank
+~blank
+~blank
+Catto Petting Minigame
+Multi Switch Condition Helper
+~blank
+~blank
+~blank
+▼ Main Process
 Main
-
+~blank
