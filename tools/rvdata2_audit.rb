@@ -8,6 +8,10 @@ require "zlib"
 module RPG
   class Map; end
   class MapInfo; end
+  class System; end
+  class System::Vehicle; end
+  class System::TestBattler; end
+  class System::Terms; end
   class EventCommand; end
   class MoveRoute; end
   class MoveCommand; end
@@ -289,6 +293,87 @@ module RVData2Audit
     puts "CREATED|#{map_path}|events=#{events.size}|bytes=#{File.size(map_path)}"
     puts "UPDATED|#{infos_path}|map021=#{verified_infos[21].instance_variable_get(:@name)}"
     puts "BACKUP|#{backup_dir}"
+  end
+
+  def create_atlantis_gate_map_021
+    map_path = "Data/Map021.rvdata2"
+    infos_path = "Data/MapInfos.rvdata2"
+    base_map = load_data("Data/Map004.rvdata2")
+    template_event = (base_map.instance_variable_get(:@events) || {}).values.first
+    raise "Map004 has no template event" unless template_event
+    base_map.instance_variable_set(:@display_name, "Điểm xuống Atlantis")
+    base_map.instance_variable_set(:@note, "Atlantis route gate — Switch 30-33, Variable 30")
+    commands = [
+      event_command(101, 0, ["", 0, 0, 2]),
+      event_command(401, 0, ["Hải Quỳ đứng trước lối xuống Atlantis."]),
+      event_command(101, 0, ["", 0, 0, 2]),
+      event_command(401, 0, ["Có lẽ mình nên xuống đó để tìm sách phép."]),
+      event_command(121, 0, [30, 30, 0]),
+      event_command(122, 0, [30, 30, 0, 0, 1]),
+      event_command(101, 0, ["", 0, 0, 2]),
+      event_command(401, 0, ["Route Atlantis đã được ghi nhận. Khu vực Atlantis sẽ được dựng tiếp."]),
+      event_command(123, 0, ["A", 0])
+    ]
+    base_map.instance_variable_set(:@events, {
+      1 => clone_event(template_event, 1, "SCN-ATLANTIS-001 ROUTE GATE [E001]", 4, 4, commands)
+    })
+    save_data(map_path, base_map)
+    infos = load_data(infos_path)
+    template_info = infos[4] || infos.values.first
+    map_info = Marshal.load(Marshal.dump(template_info))
+    map_info.instance_variable_set(:@name, "Điểm xuống Atlantis")
+    map_info.instance_variable_set(:@parent_id, 0)
+    map_info.instance_variable_set(:@order, infos.values.map { |i| i.instance_variable_get(:@order).to_i }.max + 1)
+    map_info.instance_variable_set(:@expanded, true)
+    map_info.instance_variable_set(:@scroll_x, 0)
+    map_info.instance_variable_set(:@scroll_y, 0)
+    infos[21] = map_info
+    save_data(infos_path, infos)
+    puts "ATLANTIS_GATE|map=21|switch=30|variable=30"
+  end
+
+  def add_atlantis_choice_map010
+    path = "Data/Map010.rvdata2"
+    map = load_data(path)
+    event = (map.instance_variable_get(:@events) || {})[2]
+    page = (event.instance_variable_get(:@pages) || []).first
+    list = page.instance_variable_get(:@list) || []
+    choice = list.find { |c| c.instance_variable_get(:@code) == 102 }
+    raise "Map010 choice not found" unless choice
+    params = choice.instance_variable_get(:@parameters)
+    options = params[0]
+    unless options.any? { |o| o.to_s == "Xuống Atlantis" }
+      options << "Xuống Atlantis"
+      choice.instance_variable_set(:@parameters, params)
+    end
+    unless list.any? { |c| (c.instance_variable_get(:@parameters) || [])[1].to_s == "Xuống Atlantis" }
+      end_index = list.index { |c| c.instance_variable_get(:@code) == 404 }
+      branch = [
+        event_command(402, 0, [2, "Xuống Atlantis"]),
+        event_command(101, 0, ["", 0, 0, 2]),
+        event_command(401, 0, ["Mình muốn xuống Atlantis tìm sách phép."]),
+        event_command(201, 0, [0, 21, 4, 4, 0, 0])
+      ]
+      list.insert(end_index, *branch)
+    end
+    page.instance_variable_set(:@list, list)
+    save_data(path, map)
+    puts "MAP010_ATLANTIS_CHOICE|added=true|destination=Map021(4,4)"
+  end
+
+  def name_atlantis_flags
+    system = load_data("Data/System.rvdata2")
+    switches = system.instance_variable_get(:@switches) || []
+    variables = system.instance_variable_get(:@variables) || []
+    switches[30] = "ATL Route Chosen"
+    switches[31] = "ATL Arrived"
+    switches[32] = "ATL Met Owner"
+    switches[33] = "ATL Ending Ready"
+    variables[30] = "ATL Progress"
+    system.instance_variable_set(:@switches, switches)
+    system.instance_variable_set(:@variables, variables)
+    save_data("Data/System.rvdata2", system)
+    puts "ATLANTIS_FLAGS|switches=30..33|variable=30"
   end
 
   def audit_map_state
@@ -640,6 +725,53 @@ module RVData2Audit
     save_data(path, map) if list.length != before
     puts "BUS_FADEOUT|removed=#{before - list.length}"
   end
+
+  def rename_and_camera_map013
+    path = "Data/Map013.rvdata2"
+    map = load_data(path)
+    events = map.instance_variable_get(:@events) || {}
+    names = {
+      1 => "SCN-WANDERER-001 ARRIVAL INIT [E001]",
+      2 => "TRANSFER-WANDERER-TO-KITCHEN-A [E002]",
+      3 => "TRANSFER-WANDERER-TO-KITCHEN-B [E003]",
+      10 => "TRANSFER-WANDERER-TO-KITCHEN-C [E010]",
+      37 => "PROP-WANDERER-SAFE CHOICE [E037]",
+      67 => "PUZZLE-LASER-AUTH-A [E067]", 68 => "PUZZLE-LASER-AUTH-B [E068]",
+      69 => "PUZZLE-LASER-AUTH-C [E069]", 70 => "PUZZLE-LASER-AUTH-D [E070]",
+      71 => "PUZZLE-LASER-AUTH-E [E071]", 80 => "PUZZLE-LASER-AUTH-F [E080]",
+      97 => "SCN-WANDERER-002 LEO [E097]",
+      98 => "SCN-WANDERER-003 SHYLVIE [E098]",
+      100 => "ROUTE-WANDERER-TO-SUPERMARKET [E100]",
+      101 => "ITEM-TRANSFORM-RIU [E101]"
+    }
+    names.each { |id, name| events[id].instance_variable_set(:@name, name) if events[id] }
+    # Route all scene camera focus through CE02/CE01, using reserved Variable 40.
+    [97, 98].each do |id|
+      event = events[id]
+      (event.instance_variable_get(:@pages) || []).each do |page|
+        list = page.instance_variable_get(:@list) || []
+        out = []
+        list.each do |command|
+          if command.instance_variable_get(:@code) == 355
+            script = (command.instance_variable_get(:@parameters) || [])[0].to_s
+            if script =~ /ms_pro_cam_focus_on\((\d+)\)/
+              out << event_command(122, 0, [40, 40, 0, 0, Regexp.last_match(1).to_i])
+              out << event_command(117, 0, [2])
+              next
+            elsif script == "ms_pro_cam_focus_on(-1)"
+              out << event_command(117, 0, [1])
+              next
+            end
+          end
+          out << command
+        end
+        page.instance_variable_set(:@list, out)
+      end
+    end
+    map.instance_variable_set(:@events, events)
+    save_data(path, map)
+    puts "MAP013_REVIEW|renamed=#{names.size}|camera_common_events=true|variable=40"
+  end
 end
 
 command = ARGV.shift
@@ -651,7 +783,11 @@ when "dump-map"
 when "diff-script"
   RVData2Audit.diff_script(Integer(ARGV.fetch(0)))
 when "create-map-021"
-  RVData2Audit.create_map_021
+  RVData2Audit.create_atlantis_gate_map_021
+when "add-atlantis-choice-map010"
+  RVData2Audit.add_atlantis_choice_map010
+when "name-atlantis-flags"
+  RVData2Audit.name_atlantis_flags
 when "audit-map-state"
   RVData2Audit.audit_map_state
 when "replace-script"
@@ -680,6 +816,8 @@ when "smooth-city-to-bus-transition"
   RVData2Audit.smooth_city_to_bus_transition
 when "remove-city-bus-fadeout"
   RVData2Audit.remove_city_bus_fadeout
+when "rename-camera-map013"
+  RVData2Audit.rename_and_camera_map013
 else
   warn "Usage: ruby tools/rvdata2_audit.rb compare-scripts|diff-script INDEX|dump-map MAP_ID|create-map-021|audit-map-state|replace-script NAME FILE|dump-common-events|create-camera-presets|rename-map003-events|fix-map017-transfer-wait|fix-map017-remove-final-player-route|fix-map017-add-three-step-exit|add-map017-camera-reset|rename-maps-006-007-017|rename-map010-events"
   exit 1

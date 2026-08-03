@@ -11,6 +11,7 @@
 | 17 | Hành lang Silverwing | 22×36 | 2 | Kết nối/lore |
 | 19 | Siêu thị | 50×50 | 43 | Route quà chính |
 | 20 | Map tạm | 35×30 | 1 | Bỏ qua, chưa dựng |
+| 21 | Điểm xuống Atlantis | 17×13 | 1 | Route gate Atlantis |
 
 Map001/002/004/005/007/008/009/011/012/016/018/020 có event generic hoặc đang là map phụ/tạm. Map013 và Map019 có nhiều event nhưng tên vẫn `EVxxx`, nên chưa thể so sánh chắc chắn với từng scene route.
 
@@ -43,6 +44,8 @@ Map003 đã có nội dung phù hợp với hub Silver Wing và POV Hải Quỳ,
 - Event khởi tạo tạo hai layer `Map_Wanderer_Office_top` và `Map_Wanderer_Office_Lazer_On`, sau đó bật camera tự do và dừng weather. Layer laser được tắt bởi các event xác thực danh tính; các event này dùng Switch 8 làm điều kiện trang sau.
 - Có hai cổng sang Map014 (bếp), tại `(24,10)`, `(23,10)` và một cổng khác tại `(28,8)`. Event ở `(4,3)` chuyển sang Map019 `(20,28)` khi điều kiện tương tác đã đạt.
 - Leo (E097) và Shylvie (E098) là hai scene hội thoại POV quan trọng. Lần đầu dùng Variable 2/3 làm bộ đếm, zoom 130→100 và movement route `find_path`; lần sau mở các trang hội thoại tiếp theo. Đây là state riêng của map, chưa nên đổi thành route flag toàn cục.
+- Đã chuẩn hóa tên các event chức năng theo cấu trúc `SCN/PUZZLE/TRANSFER/ITEM ... [E###]`. Các event trang trí chưa đổi tên vì không có logic route.
+- Camera của Leo/Shylvie đã chuyển sang Common Event 2 (Variable 40 làm event target) và Common Event 1 (trả focus về player), thay cho các lệnh `ms_pro_cam_focus_on` rải trực tiếp trong scene.
 - Event E101 tại `(21,16)` mở phép biến hình `TransformMagic.unlock(:riu)` và dùng Self Switch A để ẩn sau khi nhặt.
 - E037 là tương tác két sắt có choice “Phá/Thôi đừng”; nhánh “Phá” chỉ là gag thoại hiện tại, chưa có hậu quả hoặc flag.
 - Phần lớn event còn tên `EVxxx` (đồ trang trí, bàn làm việc, điểm tắt laser), nên traceability và đối chiếu route chưa hoàn tất.
@@ -82,7 +85,7 @@ Map003 đã có nội dung phù hợp với hub Silver Wing và POV Hải Quỳ,
 - Đây là Autorun scene tại `(96,12)`, không phải chỉ là điểm chuyển map.
 - Camera bỏ theo player, đợi scrolling, lần lượt focus `(73,2)` rồi `(94,13)`, zoom 130%, sau đó trả về 100%.
 - Hải Quỳ tự đi ra cửa bằng `find_path(94,14)`, rồi đi về khu vực `(88,18)` và `(89,23)`. Nội dung POV nói về kiệt sức sau ba ngày săn quái vật/xử lý hồ sơ và việc cần hỏi Shylvie về phép sấy quần áo.
-- Sau đó scene kích hoạt `GroupChatPreset.christmas_test` và lưu log bằng `PhoneGroupChatPatch.save_christmas_log`; đây là cầu nối nội dung từ văn phòng sang kế hoạch mua quà.
+- Sau đó scene kích hoạt `GroupChatPreset.christmas_test` và lưu log bằng `PhoneGroupChatSave.save_current_cutscene(:wanderer_group)`; đây là cầu nối nội dung từ văn phòng sang kế hoạch mua quà.
 - Các NPC/chim chạy route phụ, một số route có `wait=false` nhưng không tác động lên player. Cuối scene camera zoom 200%, chuyển Map010 `(12,9)`, rồi bật Self Switch A để Autorun không lặp lại.
 - Cần playtest trên map thành phố rộng: `find_path` có nhiều đích và scene dùng camera ignore/player focus liên tiếp. Nếu một đích bị chặn, Autorun có thể dừng trước transfer.
 
@@ -91,6 +94,14 @@ Map003 đã có nội dung phù hợp với hub Silver Wing và POV Hải Quỳ,
 Hai transfer cuối cùng đều ghi cùng đích Map006 `(94,11)`, nên destination data không phải nguyên nhân. Map017 E002 có một movement route cuối tác động lên player với `wait=false`, ngay trước lệnh transfer Map006. Transfer chạy khi route 16 bước lên chưa chắc đã kết thúc; route bất đồng bộ có thể tiếp tục tác động sau khi Map006 đã load, khiến player lệch khỏi `(94,11)`. Đây là khác biệt giữa đi thẳng và đi qua Map017.
 
 Đã sửa Map017 E002 bằng route 3 bước có `wait=true` ngay trước transfer; route 16 bước cũ vừa đi quá giới hạn hành lang vừa có thể làm transfer lệch nên đã bỏ. Common Event 3 (reset camera/effects) được gọi ngay trước transfer. Backup nằm trong `Data/codex_backup_map003_camera/`. Cần playtest hai nhánh để xác nhận vị trí cuối cùng giống nhau.
+
+## Map021 — Điểm xuống Atlantis
+
+- Map route gate mới, 17×13, một Autorun scene tại `(4,4)`.
+- Map010 có choice `Xuống Atlantis` chuyển tới Map021 `(4,4)`.
+- Scene ghi Switch 30 (`ATL Route Chosen`) và tăng Variable 30 (`ATL Progress`) lên 1.
+- Switch 31–33 đã đặt tên sẵn cho các bước tiếp theo: tới Atlantis, gặp chủ tiệm và đủ điều kiện ending.
+- Map021 chưa chuyển sang khu vực Atlantis vì map tiếp theo chưa dựng; đây là điểm kiểm tra route, flag và camera trước khi xây map lớn.
 
 ## Cần quyết định trước khi viết tiếp
 
