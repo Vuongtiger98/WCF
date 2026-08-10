@@ -188,6 +188,20 @@ Các trạng thái sau thay đổi hội thoại hoặc event nhỏ, không tín
 
 Tên flag chỉ là đề xuất tài liệu, chưa phải tên switch trong project.
 
+## 9A. Cấu trúc route Atlantis cập nhật
+
+```text
+Map010 xe bus
+→ cảnh nghỉ ngơi/nhà-kho Hải Quỳ
+→ tiệm sách phép Atlantis
+→ khám phá và chọn sách
+→ Quái Vật Vực Sâu ngụy trang xuất hiện
+→ chase/đuổi bắt
+→ ending Atlantis
+```
+
+Các trạng thái cần theo dõi: đã chọn Atlantis, đã đọc thư, đã vào tiệm sách, sách đã chọn, chase đã kích hoạt và ending đã đạt. Map021 hiện chỉ là route gate tạm; cần redesign thành scene nghỉ ngơi hoặc chuyển tiếp trước khi dựng các map sau.
+
 ## 10. Tổng số đường đi
 
 | Nhóm | Số đường đi |
@@ -229,4 +243,3 @@ Quy tắc xử lý:
 1. Sửa nhãn copy–paste cho khớp hành động, vật phẩm và epilogue.
 2. Không xóa dấu vết; ghi nguồn và thay đổi trong bảng này/source map.
 3. Nếu nội dung hành động cũng mâu thuẫn và không xác định được route, dừng và hỏi.
-

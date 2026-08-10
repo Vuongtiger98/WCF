@@ -12,6 +12,11 @@
 | 19 | Siêu thị | 50×50 | 43 | Route quà chính |
 | 20 | Map tạm | 35×30 | 1 | Bỏ qua, chưa dựng |
 | 21 | Điểm xuống Atlantis | 17×13 | 1 | Route gate Atlantis |
+| 22 | Nhà Hải Quỳ — bản thử | 22×43 | 48 | Nhà riêng; khám phá, chìa khóa, pha mì |
+| 23 | Tiệm sách phép Atlantis | 30×40 | 54 | `Old_Book_Shop_Base/Top`; cảnh đến tiệm và toàn bộ tương tác đã dựng |
+| 24 | Ký ức bãi rác | 20×14 | 1 | Mở đầu cảnh dí sau khi đọc thư |
+| 25 | Atlantis — Reveal | 22×20 | 1 | Prototype cũ, không nối vào flow hiện tại |
+| 26 | Phòng kho nhà Hải Quỳ | 17×13 | 13 | `Storage_Base/Top`; băng, nhật ký, lá thư |
 
 Map001/002/004/005/007/008/009/011/012/016/018/020 có event generic hoặc đang là map phụ/tạm. Map013 và Map019 có nhiều event nhưng tên vẫn `EVxxx`, nên chưa thể so sánh chắc chắn với từng scene route.
 
@@ -103,9 +108,30 @@ Hai transfer cuối cùng đều ghi cùng đích Map006 `(94,11)`, nên destina
 - Switch 31–33 đã đặt tên sẵn cho các bước tiếp theo: tới Atlantis, gặp chủ tiệm và đủ điều kiện ending.
 - Map021 chưa chuyển sang khu vực Atlantis vì map tiếp theo chưa dựng; đây là điểm kiểm tra route, flag và camera trước khi xây map lớn.
 
+## Map022 / Map026 — nhà và phòng kho Hải Quỳ
+
+- Map022 chỉ chứa nội dung từ `Tương tác nhà Hải Quỳ.docx`; mọi tọa độ tương tác áp dụng `y - 1`.
+- Cảnh E001 và cutscene pha mì E048 dùng nguyên văn `Xuống Atlantis Mua Sách Phép.docx`. Hải Quỳ/OniOnii dùng Pop Message `\bm[0]`/`\bm[7]`; lời kể dùng khung thường.
+- E016 đổi trực tiếp Actor 3 sang `$HaiQuyAtHome_Base`; khi vào nhà dùng `$HaiQuyGlitch_Base`, không gọi hệ thống hoán đổi.
+- E041 mở Map026 sau chuỗi tìm chìa khóa E041 → E021. Map026 dùng `Storage_Base` và `Storage_Top` 544×416, tương ứng 17×13 tile.
+- Collision Map026 dùng tile 250 làm vùng đi được và tile 251 làm vùng chặn của Tileset 7. Đây là bản collision suy từ ảnh, cần playtest sát mép đồ nội thất.
+- `Tương tác phòng kho.docx` ghi hai nội dung tại `(11,7)`. E011 giữ thùng băng tại `(11,6)`; thùng bài tập/lá thư E020 được dời sang `(12,6)` để không chồng event.
+- Đọc thư E020 page 3 chuyển ngay sang Map024. Nếu rời kho trước lần 3, E002 dùng Map Effects tạo blur/tua ngược và đẩy player trở lại.
+- Map024 hiện mới dựng phần ký ức bãi rác đúng kịch bản. Map gương, Clone truy đuổi và điều kiện quay đầu Game Over còn thiếu asset/bố cục.
+
+## Map023 — Tiệm Sách Thời Gian Lay Đọng
+
+- Map dùng `Old_Book_Shop_Base` và layer `Old_Book_Shop_Top`, kích thước 30×40; toàn bộ tọa độ từ `TƯƠNG TÁC TIỆM SÁCH CŨ.docx` được đặt với quy ước `y - 1`.
+- Có 54 event: E001 là cảnh vào tiệm; E002 là chủ tiệm và Pop Message/camera anchor; E003 là ô quầy thứ hai dùng chung tiến độ với E002; các event còn lại là sách, đồ vật, cửa và lore đúng tài liệu.
+- Ba lần tương tác chủ tiệm dùng Variable 34. Hải Quỳ dùng `\bm[0]`, chủ tiệm dùng `\bm[2]`; CE1/CE2/CE3 điều khiển camera theo hệ thống preset.
+- Hai lựa chọn sách ghi Variable 31: `1` là Ma Vương Cổ Đại cho Hakase, `2` là Phép Thuật Dịch Chuyển cho Shylvie. Chọn sách chưa tự bật `ATL_END_READY`.
+- Bốn ô quả địa cầu dùng chung Variable 35 để chạy chuỗi câu theo yêu cầu tài liệu, bất kể người chơi bắt đầu ở ô nào.
+- Các cửa phòng bà lão, nhà vệ sinh và thư viện hiện mới là tương tác mô tả; tài liệu chưa chỉ định map đích nên không tự tạo transfer.
+- Cảnh chủ tiệm lần ba đã dựng đến chỉ dẫn “chuyển đến cảnh 12”, nhưng chưa transfer sang Map024 vì Map024 hiện là cảnh ký ức/chase từ lá thư, không phải đích cảnh 12 của vụ nổ tiệm sách.
+
 ## Cần quyết định trước khi viết tiếp
 
-1. Route đầu tiên đã chốt là ending Atlantis; hiện chưa có map Atlantis dựng.
+1. Route đầu tiên đã chốt là ending Atlantis; Map023 đã có `Old_Book_Shop_Base/Top` và scene đến tiệm, nhưng chưa có event chủ tiệm/tìm sách.
 2. Map003, Map006, Map007 và Map017 đã được kiểm kê/đặt tên event; tiếp tục review map playable kế tiếp.
 3. Gắn scene ID cho event quan trọng ở Map013/Map019 sau khi map tuần tự được kiểm kê.
 4. Sau đó mới cấp flag/variable route chính thức.

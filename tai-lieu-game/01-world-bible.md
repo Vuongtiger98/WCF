@@ -219,3 +219,11 @@ Thứ bậc chi tiết của các anh và thời điểm Dahlia qua đời khôn
 - Toàn bộ cơ cấu quyền lực của Poseidon.
 - Chi tiết lịch sử hoàn chỉnh của Atlantis hoặc Luminous.
 
+## 15. Bổ sung từ kịch bản Atlantis và hồi ức gia đình
+
+- Atlantis là nơi Hải Quỳ từng đến đọc sách phép cùng Paulie/OniOnii khi còn nhỏ.
+- Tiệm sách phép Atlantis cho phép đọc sách tại chỗ; sách không bị niêm phong và là ký ức quan trọng của Hải Quỳ.
+- Kịch bản mới xác nhận có một truyền thuyết về Ma Vương Atlantis, tách biệt với tín ngưỡng Poseidon phổ biến.
+- Hải Quỳ không phải người Atlantis thuần chủng; đây là thông tin dùng cho reveal/ending, chưa giải thích toàn bộ nguồn gốc.
+- Quái Vật Vực Sâu có khả năng ngụy trang và đã được cảnh báo xuất hiện trong thành phố Atlantis.
+- Không tự kết luận Ma Vương Atlantis, Poseidon và dự án tạo Hải Quỳ là cùng một thực thể khi chưa có scene xác nhận.

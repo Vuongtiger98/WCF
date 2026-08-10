@@ -183,4 +183,7 @@ Route mì cay hiện kết thúc khi Hải Quỳ rời tiệc và chưa có epil
 | Chung | SW-ALERT | Cuộc gọi Silver Wing |
 | Route | RETURN-XX | Quà Hải Quỳ nhận và rời tiệc |
 | Route | EPI-XX | Epilogue |
+# Bổ sung timeline từ bản kịch bản mới
+
+Sau cảnh xe bus và trước ending Atlantis, Hải Quỳ về nhà/kho nghỉ ngơi, sửa Brilliant Anchor và đọc/nhận thông tin dẫn tới tiệm sách Atlantis. Tại tiệm sách, Hải Quỳ chọn sách cho Hakase hoặc Shylvie; sau đó Quái Vật Vực Sâu ngụy trang xuất hiện, mở chase và ending. Các chi tiết về Dahria/Aira/Poseidon được giữ ở tầng reveal, không giải thích sớm trong timeline chính.
 

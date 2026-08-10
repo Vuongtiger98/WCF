@@ -177,3 +177,6 @@ Nguồn chính hiện nằm trong thư mục `kich ban`, bao gồm:
 - Gói tài nguyên voice và hình ảnh Giáng sinh.
 
 Danh sách ánh xạ chi tiết giữa từng file nguồn và nội dung canon sẽ được lập trong `archive/source-map.md` ở giai đoạn sau.
+# Cập nhật thiết kế chờ duyệt
+
+Các DOCX ngày 27–30/07/2026 đã mở rộng route Atlantis và lore gia đình. Bản thiết kế hiện đã ghi nhận thay đổi, nhưng Map021 chưa redesign và chưa dựng các map Atlantis tiếp theo. Cần duyệt cấu trúc mới trước khi chỉnh binary map.

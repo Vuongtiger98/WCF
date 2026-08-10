@@ -211,3 +211,9 @@ flowchart TD
     HAKA --- LEO
 ```
 
+## 12. Bổ sung nhân vật và hồi ức
+
+- Paulie/OniOnii từng đưa Hải Quỳ/Dahria tới tiệm sách phép Atlantis khi còn nhỏ; đây là mối nối cảm xúc của route Atlantis.
+- Aira xuất hiện trong nhật ký và ký ức gia đình như một nhân cách/đối tượng được Dahria gọi tên; không xem Aira là nhân vật độc lập hoàn toàn.
+- Ánh Lam biết Hải Quỳ giả danh Omega D-13 và biết Hải Bình đã chết; thông tin này là foreshadowing, chưa phải cảnh đối chất hoàn chỉnh.
+- Hải Quỳ có thể tự gọi mình là Dahria trong ending, nhưng vẫn dùng PoV Hải Quỳ xuyên suốt gameplay.
