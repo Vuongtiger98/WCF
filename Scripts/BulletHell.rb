@@ -1906,7 +1906,9 @@ class Scene_Invaders < Scene_Base
   end
 
   def invader_time_seconds
-    Graphics.frame_count / 60
+    # Graphics.frame_count belongs to the whole game process and survives a
+    # retry. @game_time is reset by init_variables for each minigame run.
+    @game_time.to_i / 60
   end
 
   def active_enemy_count
@@ -2921,5 +2923,93 @@ class Scene_Invaders < Scene_Base
       @spawn_timer = [@spawn_timer, slower_spawn].max
       @enemy_wave += 1
     end
+  end
+end
+
+#==============================================================================
+# ** Bullet Hell lifecycle safety (keep this patch at the script's EOF)
+#==============================================================================
+class Scene_Invaders < Scene_Base
+  alias wcf_bullethell_destroy_player destroy_player
+  def destroy_player
+    return if @dead || @death_in_progress
+    @death_in_progress = true
+    @dead = true
+    wcf_bullethell_destroy_player
+    clear_hazards_after_player_death
+    @death_in_progress = false
+  end
+
+  alias wcf_bullethell_damage_player damage_player
+  def damage_player(amount)
+    return if @dead || @death_in_progress
+    wcf_bullethell_damage_player(amount)
+  end
+
+  alias wcf_bullethell_player_hit player_hit?
+  def player_hit?(x, y)
+    return false if @dead || @death_in_progress
+    return false unless @player
+    return false if @player.disposed? || @player.opacity <= 0
+    wcf_bullethell_player_hit(x, y)
+  end
+
+  alias wcf_bullethell_update_elazors update_elazors
+  def update_elazors
+    if @dead
+      dispose_sprite_array(@elazors)
+      return
+    end
+    wcf_bullethell_update_elazors
+  end
+
+  alias wcf_bullethell_update_orbit_bullets update_orbit_bullets
+  def update_orbit_bullets
+    if @dead
+      dispose_sprite_array(@orbit_bullets)
+      return
+    end
+    wcf_bullethell_update_orbit_bullets
+  end
+
+  alias wcf_bullethell_update_pups update_pups
+  def update_pups
+    return if @dead
+    wcf_bullethell_update_pups
+  end
+
+  alias wcf_bullethell_update_bad_pups update_bad_pups
+  def update_bad_pups
+    return if @dead
+    wcf_bullethell_update_bad_pups
+  end
+
+  alias wcf_bullethell_update_game_over update_game_over
+  def update_game_over
+    return unless @game_over
+    if Input.trigger?(:X)
+      SceneManager.goto(Scene_Map)
+      return
+    end
+    wcf_bullethell_update_game_over
+  end
+
+  def clear_hazards_after_player_death
+    remove_toggle_beam if respond_to?(:remove_toggle_beam)
+    # Do not clear @elazors inside its own each-loop. player_hit? is already
+    # disabled, and update_elazors clears the array safely on the next frame.
+    dispose_sprite_array(@orbit_bullets)
+    dispose_sprite_array(@bad_pups)
+    dispose_sprite_array(@pups)
+    @nukeall = false
+  end
+
+  def dispose_sprite_array(array)
+    return unless array
+    array.each do |sprite|
+      next unless sprite
+      sprite.dispose unless sprite.disposed?
+    end
+    array.clear
   end
 end

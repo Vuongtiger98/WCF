@@ -14,11 +14,12 @@
 #  3. Coffee Drop
 #  4. Tsunami
 #  5. Slash Trap
+#  6. Gravity Well
 #
 #  Notes
 #  -----
 #  - Set FORCE_EVENT_ID to 0 for weighted random events
-#  - Set FORCE_EVENT_ID to 1..5 to force a specific event for testing
+#  - Set FORCE_EVENT_ID to 1..6 to force a specific event for testing
 #==============================================================================#
 
 module Galv_SI
@@ -34,6 +35,23 @@ module Galv_SI
   EVENT3_WEIGHT         = 1
   EVENT4_WEIGHT         = 1
   EVENT5_WEIGHT         = 1
+  EVENT6_WEIGHT         = 1
+
+  GRAVITY_WELL_X            = 320
+  GRAVITY_WELL_Y            = 210
+  GRAVITY_WELL_WARN_TIME    = 90
+  GRAVITY_WELL_ACTIVE_TIME  = 12 * 60
+  GRAVITY_WELL_GATHER_TIME  = 150
+  GRAVITY_WELL_COLLAPSE_TIME = 90
+  GRAVITY_WELL_PULL_START   = 0.12
+  GRAVITY_WELL_PULL_MAX     = 1.80
+  GRAVITY_WELL_SPAWN_RATE   = 7
+  GRAVITY_WELL_ENEMY_EVERY  = 4
+  GRAVITY_WELL_MIN_RADIUS   = 72
+  GRAVITY_WELL_EDGE_MARGIN  = 18
+  GRAVITY_WELL_BULLET_ACCEL = 0.035
+  GRAVITY_WELL_RING_COUNT   = 24
+  GRAVITY_WELL_RING_SPEED   = 3.4
 
   EVENT1_LINE_Y              = 120
   EVENT1_BLOCKER_Y           = 190
@@ -236,6 +254,7 @@ class Scene_Invaders < Scene_Base
   def update
     galv_evt_update
     update_random_event_system
+    update_gravity_enemy_collisions
     update_coffee_trails
     update_slash_event_visuals
     clamp_player_inside_coffee_cup if @event_active && @event_type == :coffee_drop
@@ -248,6 +267,7 @@ class Scene_Invaders < Scene_Base
   def dispose_graphics
     dispose_coffee_trails
     cleanup_slash_event_objects
+    cleanup_gravity_well
     galv_evt_dispose_graphics
   end
 
@@ -256,6 +276,7 @@ class Scene_Invaders < Scene_Base
     def restart_invader_game
       dispose_coffee_trails
       cleanup_slash_event_objects
+      cleanup_gravity_well
       galv_evt_restart_invader_game
       reset_event_state
     end
@@ -287,6 +308,11 @@ class Scene_Invaders < Scene_Base
     @slash_timer = 0
     @slash_damage_lock = 0
     @slash_ring_damage_lock = 0
+    @gravity_well_sprite = nil
+    @gravity_well_timer = 0
+    @gravity_well_phase = :idle
+    @gravity_well_spawn_timer = 0
+    @gravity_well_spawn_count = 0
   end
 
   def clear_screen_for_event
@@ -312,6 +338,7 @@ class Scene_Invaders < Scene_Base
     end
     dispose_coffee_trails
     cleanup_slash_event_objects
+    cleanup_gravity_well
     @nukeall = false
   end
 
@@ -354,6 +381,7 @@ class Scene_Invaders < Scene_Base
     when 3 then :coffee_drop
     when 4 then :tsunami
     when 5 then :slash_trap
+    when 6 then :gravity_well
     else nil
     end
     return forced if forced
@@ -363,6 +391,7 @@ class Scene_Invaders < Scene_Base
     Galv_SI::EVENT3_WEIGHT.times { pool << :coffee_drop }
     Galv_SI::EVENT4_WEIGHT.times { pool << :tsunami }
     Galv_SI::EVENT5_WEIGHT.times { pool << :slash_trap }
+    Galv_SI::EVENT6_WEIGHT.times { pool << :gravity_well }
     pool[rand(pool.size)]
   end
 
@@ -410,6 +439,7 @@ class Scene_Invaders < Scene_Base
     when :coffee_drop then start_coffee_drop_event
     when :tsunami then start_tsunami_event
     when :slash_trap then start_slash_trap_event
+    when :gravity_well then start_gravity_well_event
     end
     @pending_event_type = nil
   end
@@ -421,12 +451,15 @@ class Scene_Invaders < Scene_Base
     when :coffee_drop then update_coffee_drop_event
     when :tsunami then update_tsunami_event
     when :slash_trap then update_slash_trap_event
+    when :gravity_well then update_gravity_well_event
     end
   end
 
   def finish_current_event
     clear_tsunami_pieces if @event_type == :tsunami
     cleanup_slash_event_objects if @event_type == :slash_trap
+    clear_enemy_projectiles if @event_type == :gravity_well && respond_to?(:clear_enemy_projectiles)
+    cleanup_gravity_well if @event_type == :gravity_well
     cleanup_event_enemies
     dispose_coffee_trails if @event_type == :coffee_drop
     return if @event_reward_given
@@ -436,6 +469,186 @@ class Scene_Invaders < Scene_Base
     destroy_enemy(Galv_SI::EVENT_CLEAR_BONUS)
   end
   def finish_firework_event; finish_current_event; end
+
+  def start_gravity_well_event
+    @event_active = true
+    @event_type = :gravity_well
+    @event_reward_given = false
+    @gravity_well_timer = 0
+    @gravity_well_spawn_timer = 0
+    @gravity_well_spawn_count = 0
+    @gravity_well_phase = :warning
+    @gravity_well_sprite = Sprite_GravityWell.new(
+      @viewport1, Galv_SI::GRAVITY_WELL_X, Galv_SI::GRAVITY_WELL_Y)
+  end
+
+  def update_gravity_well_event
+    return finish_current_event unless @gravity_well_sprite &&
+      !@gravity_well_sprite.disposed?
+    @gravity_well_timer += 1
+    @gravity_well_sprite.update
+
+    case @gravity_well_phase
+    when :warning
+      @gravity_well_sprite.opacity = [@gravity_well_sprite.opacity + 3, 220].min
+      if @gravity_well_timer >= Galv_SI::GRAVITY_WELL_WARN_TIME
+        @gravity_well_phase = :active
+        @gravity_well_timer = 0
+        @flash.opacity = 120 if @flash
+      end
+    when :active
+      progress = @gravity_well_timer.to_f / Galv_SI::GRAVITY_WELL_ACTIVE_TIME
+      # Ease-in makes the pull visibly escalate instead of feeling constant.
+      progress = progress * progress
+      pull = Galv_SI::GRAVITY_WELL_PULL_START +
+             (Galv_SI::GRAVITY_WELL_PULL_MAX - Galv_SI::GRAVITY_WELL_PULL_START) * progress
+      pull_player_toward_gravity_well(pull)
+      @gravity_well_spawn_timer += 1
+      if @gravity_well_spawn_timer >= Galv_SI::GRAVITY_WELL_SPAWN_RATE
+        @gravity_well_spawn_timer = 0
+        spawn_gravity_well_bullet
+      end
+      if @gravity_well_timer >= Galv_SI::GRAVITY_WELL_ACTIVE_TIME
+        @gravity_well_phase = :gather
+        @gravity_well_timer = 0
+        gather_gravity_well_objects
+      end
+    when :gather
+      warning_progress = @gravity_well_timer.to_f / Galv_SI::GRAVITY_WELL_GATHER_TIME
+      @gravity_well_sprite.color.set(255, 0, 0, (210 * warning_progress).to_i)
+      pull_player_toward_gravity_well(Galv_SI::GRAVITY_WELL_PULL_MAX * 1.25)
+      @gravity_well_sprite.opacity = 240
+      if @gravity_well_timer >= Galv_SI::GRAVITY_WELL_GATHER_TIME
+        @gravity_well_phase = :collapse
+        @gravity_well_timer = 0
+        release_gravity_well_bullets
+        fire_gravity_well_ring
+        @flash.opacity = 210 if @flash
+      end
+    when :collapse
+      pull_player_toward_gravity_well(Galv_SI::GRAVITY_WELL_PULL_MAX * 0.45)
+      @gravity_well_sprite.opacity = [@gravity_well_sprite.opacity - 4, 0].max
+      @gravity_well_sprite.zoom_x += 0.015
+      @gravity_well_sprite.zoom_y += 0.015
+      finish_current_event if @gravity_well_timer >= Galv_SI::GRAVITY_WELL_COLLAPSE_TIME
+    end
+  end
+
+  def pull_player_toward_gravity_well(force)
+    return unless @player
+    dx = Galv_SI::GRAVITY_WELL_X - @player.x
+    dy = Galv_SI::GRAVITY_WELL_Y - @player.y
+    dist = Math.sqrt(dx * dx + dy * dy)
+    return if dist < 1.0
+    # A radial pull toward the exact core point. The distance multiplier keeps
+    # it effective vertically as well as horizontally when the player is far.
+    distance_scale = [[0.65 + dist / 260.0, 0.65].max, 1.55].min
+    radial_force = force * distance_scale
+    @player.x += dx / dist * radial_force
+    @player.y += dy / dist * radial_force
+    half_w = @player.width / 2.0
+    half_h = @player.height / 2.0
+    @player.x = [[@player.x, half_w].max, Graphics.width - half_w].min
+    @player.y = [[@player.y, half_h].max, Graphics.height - half_h].min
+  end
+
+  def update_gravity_enemy_collisions
+    return unless @event_active && @event_type == :gravity_well
+    return unless @player && @elazors
+    px = @player.respond_to?(:hitbox_x) ? @player.hitbox_x : @player.x
+    py = @player.respond_to?(:hitbox_y) ? @player.hitbox_y : @player.y
+    player_radius = if @player.respond_to?(:focus_mode?) && @player.focus_mode?
+      Galv_SI::FOCUS_HITBOX_RADIUS
+    else
+      [player_width / 6.0, 4].max
+    end
+    @elazors.each_with_index do |object, i|
+      next unless object.is_a?(Sprite_GravityEnemy)
+      next if object.disposed?
+      half_w = object.bitmap.width * object.zoom_x / 2.0
+      half_h = object.bitmap.height * object.zoom_y / 2.0
+      next unless (px - object.x).abs <= half_w + player_radius
+      next unless (py - object.y).abs <= half_h + player_radius
+      damage_player(Galv_SI::LAZOR_DAMAGE)
+      object.dispose
+      @elazors[i] = nil
+      break
+    end
+    @elazors.compact!
+  end
+
+  def spawn_gravity_well_bullet
+    angle = rand * Math::PI * 2.0
+    # Fill the complete screen instead of concentrating every orbit in one
+    # 145..240 px ring. Find where this ray meets the visible playfield, then
+    # choose any band between the core and that edge.
+    cos_a = Math.cos(angle)
+    sin_a = Math.sin(angle)
+    margin = Galv_SI::GRAVITY_WELL_EDGE_MARGIN
+    limits = []
+    if cos_a > 0.001
+      limits << (Graphics.width - margin - Galv_SI::GRAVITY_WELL_X) / cos_a
+    elsif cos_a < -0.001
+      limits << (margin - Galv_SI::GRAVITY_WELL_X) / cos_a
+    end
+    if sin_a > 0.001
+      limits << (Graphics.height - margin - Galv_SI::GRAVITY_WELL_Y) / sin_a
+    elsif sin_a < -0.001
+      limits << (margin - Galv_SI::GRAVITY_WELL_Y) / sin_a
+    end
+    edge_radius = limits.select { |value| value > 0 }.min || 220.0
+    min_radius = [Galv_SI::GRAVITY_WELL_MIN_RADIUS, edge_radius * 0.35].min
+    radius = min_radius + rand * [edge_radius - min_radius, 1.0].max
+    x = Galv_SI::GRAVITY_WELL_X + Math.cos(angle) * radius
+    y = Galv_SI::GRAVITY_WELL_Y + Math.sin(angle) * radius
+    tangent_speed = 1.8 + rand * 1.4
+    orbit_direction = @gravity_well_spawn_count.even? ? -1.0 : 1.0
+    vx = -Math.sin(angle) * tangent_speed * orbit_direction
+    vy =  Math.cos(angle) * tangent_speed * orbit_direction
+    @gravity_well_spawn_count += 1
+    klass = if @gravity_well_spawn_count % Galv_SI::GRAVITY_WELL_ENEMY_EVERY == 0
+      Sprite_GravityEnemy
+    else
+      Sprite_GravityBullet
+    end
+    @elazors << klass.new(@viewport1, x, y, vx, vy,
+      Galv_SI::GRAVITY_WELL_X, Galv_SI::GRAVITY_WELL_Y)
+  end
+
+  def gather_gravity_well_objects
+    @elazors.each do |bullet|
+      bullet.gather! if bullet.is_a?(Sprite_GravityBullet)
+    end
+  end
+
+  def release_gravity_well_bullets
+    @elazors.each do |bullet|
+      bullet.release!(Galv_SI::GRAVITY_WELL_RING_SPEED) if bullet.is_a?(Sprite_GravityBullet)
+    end
+  end
+
+  def fire_gravity_well_ring
+    Galv_SI::GRAVITY_WELL_RING_COUNT.times do |i|
+      angle = i * Math::PI * 2.0 / Galv_SI::GRAVITY_WELL_RING_COUNT
+      fire_pattern_bullet(Galv_SI::GRAVITY_WELL_X, Galv_SI::GRAVITY_WELL_Y,
+        Math.cos(angle) * Galv_SI::GRAVITY_WELL_RING_SPEED,
+        Math.sin(angle) * Galv_SI::GRAVITY_WELL_RING_SPEED, "orbit_bullet")
+    end
+  end
+
+  def cleanup_gravity_well
+    if @gravity_well_sprite && !@gravity_well_sprite.disposed?
+      @gravity_well_sprite.dispose
+    end
+    @gravity_well_sprite = nil
+    return unless @elazors
+    @elazors.each_with_index do |bullet, i|
+      next unless bullet.is_a?(Sprite_GravityBullet)
+      bullet.dispose unless bullet.disposed?
+      @elazors[i] = nil
+    end
+    @elazors.compact!
+  end
 
   def start_firework_line_event
     @event_active = true
@@ -1000,8 +1213,16 @@ class Scene_Invaders < Scene_Base
   def damage_player_from_active_slashes
     return unless @player
     return if @slash_damage_lock.to_i > 0
+    px = @player.respond_to?(:hitbox_x) ? @player.hitbox_x : @player.x
+    py = @player.respond_to?(:hitbox_y) ? @player.hitbox_y : @player.y
+    radius = if @player.respond_to?(:focus_mode?) && @player.focus_mode?
+      Galv_SI::FOCUS_HITBOX_RADIUS
+    else
+      [player_width / 6.0, 4].max
+    end
     hit = @slash_lines.any? do |line|
-      point_hits_slash_line?(@player.x, @player.y, line[:cx], line[:cy], line[:angle], line[:half_len], line[:slash_thickness])
+      point_hits_slash_line?(px, py, line[:cx], line[:cy], line[:angle],
+                             line[:half_len], line[:slash_thickness], radius)
     end
     if hit
       damage_player(Galv_SI::SLASH_EVENT_SLASH_DAMAGE)
@@ -1009,14 +1230,14 @@ class Scene_Invaders < Scene_Base
     end
   end
 
-  def point_hits_slash_line?(px, py, cx, cy, angle, half_len, thickness)
+  def point_hits_slash_line?(px, py, cx, cy, angle, half_len, thickness, radius = 0)
     dx = px - cx
     dy = py - cy
     ux = Math.cos(angle); uy = Math.sin(angle)
     vx = -Math.sin(angle); vy = Math.cos(angle)
     along = dx * ux + dy * uy
     perp = dx * vx + dy * vy
-    along.abs <= half_len && perp.abs <= thickness / 2.0
+    along.abs <= half_len + radius && perp.abs <= thickness / 2.0 + radius
   end
 
   def cleanup_slash_visuals_only
@@ -1050,7 +1271,9 @@ class Scene_Invaders < Scene_Base
   def update_enemies
     if @event_preparing
       @sound_timer += 1
-      @enemies.each { |enemy| enemy.update if enemy && enemy.respond_to?(:update) }
+      # update_event_preparation owns movement during this phase. Calling the
+      # normal pattern update here lets anchor_hover/orbit_anchor overwrite the
+      # escape coordinates and traps those enemies on screen forever.
       return
     end
     if @event_active
@@ -1173,21 +1396,27 @@ class Scene_Invaders < Scene_Base
         target_x = enemy.event_center_x || 320
         if @player
           target_x = @player.x
-          target_x = [[target_x, Galv_SI::EVENT1_BLOCKER_MIN_X].max, Galv_SI::EVENT1_BLOCKER_MAX_X].min
+          # Keep the whole blocker visible, but allow it to cover the complete
+          # playable width. The old fixed 60..580 range left blind strips at
+          # both sides of a 640 px screen.
+          half_width = enemy.respond_to?(:width) ? enemy.width / 2.0 : 25.0
+          min_x = half_width
+          max_x = Graphics.width - half_width
+          target_x = [[target_x, min_x].max, max_x].min
         end
         enemy.event_target_x = target_x
         enemy.instance_variable_set(:@shield_mode, true) if line_alive
       end
     end
 
-    apply_firework_event_positions
+    apply_firework_event_positions(true)
   end
 
   #--------------------------------------------------------------------------
   # * Apply Event 1 display positions
   #   Called both before and after base update so hitbox and sprite stay matched.
   #--------------------------------------------------------------------------
-  def apply_firework_event_positions
+  def apply_firework_event_positions(advance_blocker = true)
     line_alive = false
 
     @enemies.each do |enemy|
@@ -1202,15 +1431,26 @@ class Scene_Invaders < Scene_Base
         enemy.y = by + Math.cos(ang * 1.3) * 6
 
       elsif enemy.event_blocker?
-        enemy.event_target_x ||= enemy.event_center_x || enemy.x
+        enemy.event_center_x ||= enemy.x
+        enemy.event_target_x ||= enemy.event_center_x
         enemy.event_base_y   ||= enemy.y
 
-        if enemy.x < enemy.event_target_x
-          enemy.x = [enemy.x + Galv_SI::EVENT1_BLOCKER_TRACK_SPEED, enemy.event_target_x].min
-        elsif enemy.x > enemy.event_target_x
-          enemy.x = [enemy.x - Galv_SI::EVENT1_BLOCKER_TRACK_SPEED, enemy.event_target_x].max
+        # Advance the logical position only once per frame. Sprite_Alien's
+        # normal movement runs between the two calls to this method, so using
+        # enemy.x here made its hover/random pattern fight the tracking logic.
+        if advance_blocker
+          current_x = enemy.event_center_x
+          if current_x < enemy.event_target_x
+            current_x = [current_x + Galv_SI::EVENT1_BLOCKER_TRACK_SPEED,
+                         enemy.event_target_x].min
+          elsif current_x > enemy.event_target_x
+            current_x = [current_x - Galv_SI::EVENT1_BLOCKER_TRACK_SPEED,
+                         enemy.event_target_x].max
+          end
+          enemy.event_center_x = current_x
         end
 
+        enemy.x = enemy.event_center_x
         enemy.y = enemy.event_base_y
 
         if line_alive
@@ -1277,7 +1517,7 @@ class Scene_Invaders < Scene_Base
         galv_evt_update_enemies
 
         # Force sprite back to same correct position after base update
-        apply_firework_event_positions
+        apply_firework_event_positions(false)
 
         @nukeall = false
         return
@@ -1297,4 +1537,110 @@ class Scene_Invaders < Scene_Base
     event_sync_fix_update_enemies
   end
 
+end
+
+class Sprite_GravityWell < Sprite
+  def initialize(viewport, x, y)
+    super(viewport)
+    self.bitmap = Bitmap.new(96, 96)
+    self.ox = 48
+    self.oy = 48
+    self.x = x
+    self.y = y
+    self.z = 115
+    self.opacity = 0
+    redraw
+  end
+
+  def redraw
+    bitmap.clear
+    bitmap.fill_rect(12, 12, 72, 72, Color.new(80, 35, 145, 55))
+    bitmap.fill_rect(22, 22, 52, 52, Color.new(115, 55, 210, 100))
+    bitmap.fill_rect(32, 32, 32, 32, Color.new(15, 5, 35, 230))
+    bitmap.fill_rect(42, 42, 12, 12, Color.new(230, 210, 255, 255))
+  end
+
+  def update
+    super
+    pulse = 0.92 + Math.sin(Graphics.frame_count * 0.12) * 0.08
+    self.zoom_x = pulse
+    self.zoom_y = pulse
+    self.angle += 2
+  end
+
+  def dispose
+    bitmap.dispose if bitmap && !bitmap.disposed?
+    super
+  end
+end
+
+class Sprite_GravityBullet < Sprite_PatternBullet
+  def initialize(viewport, x, y, vx, vy, center_x, center_y, graphic = "orbit_bullet")
+    super(viewport, x, y, vx, vy, graphic)
+    @center_x = center_x
+    @center_y = center_y
+    @gravity_active = true
+    @gathering = false
+    @release_angle = Math.atan2(y - center_y, x - center_x)
+  end
+
+  def gather!
+    @gathering = true
+    @gravity_active = true
+    @release_angle = Math.atan2(self.y - @center_y, self.x - @center_x)
+  end
+
+  def release!(speed)
+    dx = self.x - @center_x
+    dy = self.y - @center_y
+    dist = Math.sqrt(dx * dx + dy * dy)
+    if dist < 3.0
+      @vx = Math.cos(@release_angle) * speed
+      @vy = Math.sin(@release_angle) * speed
+    else
+      @vx = dx / dist * speed
+      @vy = dy / dist * speed
+    end
+    @gathering = false
+    @gravity_active = false
+  end
+
+  def update(player_x = nil, player_y = nil)
+    if @gravity_active
+      dx = @center_x - self.x
+      dy = @center_y - self.y
+      dist = Math.sqrt(dx * dx + dy * dy)
+      dist = 1.0 if dist < 1.0
+      accel = @gathering ? 0.18 : Galv_SI::GRAVITY_WELL_BULLET_ACCEL
+      @vx += dx / dist * accel
+      @vy += dy / dist * accel
+      if @gathering
+        @vx *= 0.94
+        @vy *= 0.94
+        if dist < 7.0
+          self.x = @center_x
+          self.y = @center_y
+          @vx = 0.0
+          @vy = 0.0
+        end
+      end
+    end
+    super(player_x, player_y)
+  end
+end
+
+class Sprite_GravityEnemy < Sprite_GravityBullet
+  def initialize(viewport, x, y, vx, vy, center_x, center_y)
+    graphic = "alien#{rand(4)}"
+    super(viewport, x, y, vx, vy, center_x, center_y, graphic)
+    self.zoom_x = 0.72
+    self.zoom_y = 0.72
+    self.z = 112
+    @spin_speed = rand(2) == 0 ? -4 : 4
+  end
+
+  def update(player_x = nil, player_y = nil)
+    super(player_x, player_y)
+    self.angle += @spin_speed
+  end
 end
