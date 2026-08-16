@@ -15,8 +15,13 @@
 | 22 | Nhà Hải Quỳ — bản thử | 22×43 | 48 | Nhà riêng; khám phá, chìa khóa, pha mì |
 | 23 | Tiệm sách phép Atlantis | 30×40 | 54 | `Old_Book_Shop_Base/Top`; cảnh đến tiệm và toàn bộ tương tác đã dựng |
 | 24 | Ký ức bãi rác | 20×14 | 1 | Mở đầu cảnh dí sau khi đọc thư |
-| 25 | Atlantis — Reveal | 22×20 | 1 | Prototype cũ, không nối vào flow hiện tại |
+| 25 | Atlantis — Đối đầu Vực Sâu | 17×13 | 3 | Cảnh số 5: Dahria, Oni Onii và đòn kết liễu; visual placeholder |
 | 26 | Phòng kho nhà Hải Quỳ | 17×13 | 13 | `Storage_Base/Top`; băng, nhật ký, lá thư |
+| 28 | Mê cung gương Atlantis | 31×25 | 11 | Dungeon RTP; Khas `player_small`, 5 gương, 4 scare |
+| 29 | Hành lang truy đuổi Atlantis | 40×15 | 7 | Map loop ngang; endless-runner QTE 30 giây |
+| 34 | Atlantis — Vòng vây bản thể | 40×15 | 14 | Cutscene 12 clone, nối Map28 → Map34 → Map29 |
+| 35 | Phòng Hải Quỳ — Đêm muộn | 21×17 | 3 | Epilogue route rượt đuổi; Group Chat và mở khóa ending CG |
+| 36 | After Ending Hint | 17×13 | 2 | Hub hint dùng chung; Variable 41 chọn nội dung route |
 
 Map001/002/004/005/007/008/009/011/012/016/018/020 có event generic hoặc đang là map phụ/tạm. Map013 và Map019 có nhiều event nhưng tên vẫn `EVxxx`, nên chưa thể so sánh chắc chắn với từng scene route.
 
@@ -115,9 +120,32 @@ Hai transfer cuối cùng đều ghi cùng đích Map006 `(94,11)`, nên destina
 - E016 đổi trực tiếp Actor 3 sang `$HaiQuyAtHome_Base`; khi vào nhà dùng `$HaiQuyGlitch_Base`, không gọi hệ thống hoán đổi.
 - E041 mở Map026 sau chuỗi tìm chìa khóa E041 → E021. Map026 dùng `Storage_Base` và `Storage_Top` 544×416, tương ứng 17×13 tile.
 - Collision Map026 dùng tile 250 làm vùng đi được và tile 251 làm vùng chặn của Tileset 7. Đây là bản collision suy từ ảnh, cần playtest sát mép đồ nội thất.
+- Ánh sáng Map026 dùng Khas Ultra Lighting: map bắt đầu với darkness opacity 235 và preset động `player_small` quanh Hải Quỳ. E014/E015 bật Switch 39, bỏ player light và fade phòng sáng trong 30 frame; E002/E020 dọn nguồn sáng trước khi transfer.
 - `Tương tác phòng kho.docx` ghi hai nội dung tại `(11,7)`. E011 giữ thùng băng tại `(11,6)`; thùng bài tập/lá thư E020 được dời sang `(12,6)` để không chồng event.
 - Đọc thư E020 page 3 chuyển ngay sang Map024. Nếu rời kho trước lần 3, E002 dùng Map Effects tạo blur/tua ngược và đẩy player trở lại.
-- Map024 hiện mới dựng phần ký ức bãi rác đúng kịch bản. Map gương, Clone truy đuổi và điều kiện quay đầu Game Over còn thiếu asset/bố cục.
+- Map024 hiện dựng phần ký ức bãi rác đúng kịch bản và chuyển sang bản playtest mê cung/chase ở Map028–029. Asset và bố cục production của hai map sau vẫn chưa chốt.
+
+## Map028 / Map029 — mê cung gương và truy đuổi
+
+- Map024 chuyển tới Map028 sau cảnh ký ức bãi rác.
+- Map028 do người dùng tiếp quản và tự dựng lại; không tiếp tục coi layout được Codex sinh tự động là thiết kế được duyệt.
+- Map028 dùng Tileset 4 `Dungeon`, layout cố định 52×40 gồm hành lang rộng hai ô, bảy phòng mốc và một số đường vòng. Cấu trúc hình học được tách thành ba mask như dungeon generator của VX Ace: autotile sàn, hai hàng mặt tường đứng, và autotile trần/đỉnh tường bao quanh. Quy tắc mép, góc trong và góc ngoài được suy ra từ Map032 thay vì lặp một biến thể tile cố định. KUL dùng Region 2 trên trần của tường cao hai ô để tự lan height xuống mặt tường; các cap cạnh/bên dưới dùng Region 1. Ánh sáng quanh người dùng preset tròn `player_small` trên nền tối opacity 245; sáu nguồn `broken` làm mốc trong mê cung. Tám gương nằm trên mặt tường ngay phía trên ô có thể đứng tương tác, không chiếm lối đi.
+- Năm event `MIRROR-ATL-RANDOM` dùng atlas `Graphics/Characters/guong.png`; script cắt mẫu gương mắt hồng và hiển thị ngẫu nhiên một charset Hải Quỳ phía sau khung. Tương tác gương đổi phản chiếu.
+- Bốn event `SCARE-ATL-GHOST` dùng `Monster1` RTP, MOG Character Effects và light preset `broken`; scare chỉ dùng một lần qua Self Switch A.
+- Lối ra Map028 chuyển sang Map029 và dọn ánh sáng trước transfer.
+- Map030–033 là map tham khảo nhập từ demo Khas Awesome Light Effects. Chúng dùng API cũ (`effect_surface`, `lantern`, `[light N]`) và Region/Terrain 5 theo mục đích riêng của demo, không phải quy ước height của KUL. Chỉ bố cục tile và cách phân bố nguồn sáng được dùng làm tham khảo; các map này không nằm trong route playable.
+- `Khas Awesome Light Effects` đã được gỡ khỏi runtime sau khi kiểm tra Map001–029 không gọi API của nó. Hệ thống playable chỉ dùng KUL; không đưa Map030–033 vào flow nếu chưa chuyển event sang KUL.
+- Map029 loop ngang, giữ Hải Quỳ ở khoảng một phần ba bên trái màn hình; quái vật bám sau 4 tile (giảm còn 2 khi danger tăng) và các phân thân cản đường xuất hiện trước mặt khoảng 10 tile. Hải Quỳ chỉ chạy thẳng trên Y=7; không còn nhảy, lộn hoặc đổi lane. Mỗi phân thân sinh chuỗi ba phím ngẫu nhiên từ `Z`, `X`, `Shift`, `↑`, `↓`. Trong thời gian nhập chuỗi, phân thân được giữ trước Player và tiến gần dần từ 10 xuống 3 tile, nên không thể trôi qua sau lưng khi Hải Quỳ vẫn chạy. Nhập đúng cả chuỗi đưa nó tới cự ly đánh 2 tile rồi hất văng ngẫu nhiên khỏi đường chạy; sai một phím hoặc hết giờ tăng danger. Player và quái vật dùng move speed 5, frequency 6 và step animation trong chase, sau đó phục hồi cấu hình cũ. Bốn lần thất bại dẫn tới Game Over; sống sót 30 giây bật Switch 36 `ATL_CHASE_CLEARED` và chuyển Map025.
+
+- Các cảnh tối Map034/Map029 không dựa vào ánh sáng kế thừa: Hải Quỳ dùng `player_small`, clone dùng nguồn động tím `atlantis_clone`, còn quái vật dùng nguồn đỏ ở cutscene và `broken` khi chase. Nguồn clone chỉ tồn tại lúc clone hiện hữu và luôn được dọn khi QTE kết thúc hoặc chuyển map.
+
+- Các cảnh chính của route Map022–Map026, scare Map028, vòng vây Map034 và chase Map029 dùng balloon để bổ trợ camera/character effect. Balloon không thay thoại: nó chỉ đánh dấu phản ứng đã có như nghi vấn, giật mình, ngượng, tức giận, im lặng và phát hiện manh mối. Chase phát balloon trực tiếp từ manager khi clone xuất hiện, Hải Quỳ đánh trúng hoặc nhập QTE sai.
+- Map025 phải giữ kích thước map `17×13` khớp bảng tile `17×13`. Khai báo cũ `22×20` khiến KUL Core đọc ngoài bảng dữ liệu và lỗi `nil >> 8` khi chase kết thúc.
+- Kế hoạch đã triển khai nằm tại [map025-post-chase-plan.md](map025-post-chase-plan.md). Đoạn clone mở đầu đã tách khỏi Map029 sang Map034; Map029 chỉ còn gameplay. Map025 đã bỏ câu Aira tự viết, dùng nguyên văn đoạn đối đầu Cảnh số 5 và chủ động dừng ở màn hình đen tại điểm nguồn chưa xác định rõ bước nối.
+- Điểm nối sau Map025 đã được xác nhận lại từ phần `Rượt đuổi` trong DOCX: Map025 chuyển sang Map035 dùng `HQ_Room_Midnight_Base`; Hải Quỳ nằm trên giường bằng charset `$HaiQuy_Sleep_Night`. Sau đối thoại Oni Onii, Group Chat phải chạy và đóng hoàn toàn rồi mới mở khóa/hiện Gallery ID 9 `EDRuotDuoi`, sau đó tới Map036. Map036 phát lời bình Bully Quỳ từ `AFTER ENDING HINT.docx` và trở về Title với `EDRuotDuoi` làm nền trong phiên hiện tại.
+- Paulie/OniOnii dùng charset `Graphics/Characters/$test.png`, index 0 tại Map025 và Map035.
+- Event thoát của Map028 chỉ được đổi destination từ Map029 sang Map034; tile, kích thước và các event khác của Map028 không bị chỉnh trong thay đổi này.
+- Đây là bản playtest dùng tile/monster RTP. Graphic và layout production sẽ thay sau khi duyệt cảm giác chơi.
 
 ## Map023 — Tiệm Sách Thời Gian Lay Đọng
 

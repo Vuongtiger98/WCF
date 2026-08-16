@@ -841,3 +841,36 @@ module GroupChatPreset
     GroupChat.start(chat)
   end
 end
+
+# Ending Atlantis — route rượt đuổi. Kept as a reusable preset so the map
+# event only starts the cutscene and then stores the exact conversation log.
+module GroupChatPreset
+  def self.atlantis_chase_ending
+    chat = Game_SimplePhoneChat.new
+    chat.title = "Wanderer Office"
+    chat.subtitle = "Không thể dự tiệc"
+    setup_wanderer_members(chat)
+
+    chat.add_text(:quy, "Mọi người ơi…", :right)
+    chat.add_text(:leo, "Sao vậy Quỳ? Có chuyện gì vậy?")
+    chat.add_text(:quy, "E là giáng sinh lần này…tui không tham gia được.", :right)
+    chat.add_text(:hakase, "Hả! Sao đột ngột vậy?")
+    chat.add_text(:kohi, "Sao lại không tham gia?")
+    chat.add_text(:quy, "Đại khái là tui bị úp sọt…!", :right)
+    chat.add_text(:quy, "Giờ đang phải dưỡng thương…!", :right)
+    chat.add_text(:shylvie, "Cái gì? Bà bị úp sọt? Khó tin thế?")
+    chat.add_text(:quy, "Úp sọt thật mà.", :right)
+    chat.add_text(:quy, "Tui bị úp sọt bởi quái vật vực sâu có khả năng cải trang.", :right)
+    chat.add_text(:quy, "Chuyện kể ra thì dài lắm!", :right)
+    chat.add_text(:quy, "Nhưng tóm cái quần lại là tui không tham gia chung với mọi người được!", :right)
+    chat.add_text(:leo, "Không sao!")
+    chat.add_text(:kohi, "Cứ nghỉ ngơi cho khỏe đã!")
+    chat.add_text(:hakase, "Aww, không lần này thì lần khác!!")
+    chat.add_text(:shylvie, "Quan trọng là sức khỏe.")
+    chat.add_text(:shylvie, "Không tham gia trực tiếp được thì tham gia gián tiếp được mà, đúng không?")
+    chat.add_text(:leo, "Ừ ha!")
+    chat.add_text(:leo, "Triển đi!!")
+    chat.add_text(:quy, "Mọi người…!!", :right)
+    GroupChat.start(chat)
+  end
+end

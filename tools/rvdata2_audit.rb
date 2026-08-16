@@ -186,10 +186,16 @@ module RVData2Audit
         puts "PAGE|#{page_index + 1}|trigger=#{page.instance_variable_get(:@trigger)}|" \
              "priority=#{page.instance_variable_get(:@priority_type)}|" \
              "condition=#{condition.inspect}"
+        graphic = page.instance_variable_get(:@graphic)
+        if graphic
+          puts "GRAPHIC|#{graphic.instance_variable_get(:@character_name)}|" \
+               "index=#{graphic.instance_variable_get(:@character_index)}|" \
+               "direction=#{graphic.instance_variable_get(:@direction)}"
+        end
         (page.instance_variable_get(:@list) || []).each do |command|
           code = command_code(command)
           parameters = command_parameters(command)
-          next unless [101, 102, 108, 121, 122, 123, 201, 205, 355, 401, 402, 403, 404, 408, 655].include?(code)
+          next unless [101, 102, 108, 117, 121, 122, 123, 201, 205, 212, 213, 214, 221, 222, 225, 230, 354, 355, 401, 402, 403, 404, 408, 655].include?(code)
 
           puts "CMD|#{code}|#{parameters.inspect}"
           if code == 205 && parameters[1]
@@ -2170,6 +2176,1135 @@ module RVData2Audit
     puts "REPLACED|#{index}|#{scripts[index][1]}|bytes=#{source.bytesize}"
   end
 
+  def insert_runtime_script(name, source_path, before_name = "Main")
+    scripts = load_data("Data/Scripts.rvdata2")
+    existing = scripts.index { |entry| entry[1].to_s.strip == name.strip }
+    source = File.binread(source_path)
+    if existing
+      scripts[existing][2] = Zlib::Deflate.deflate(source)
+      action = "UPDATED"
+    else
+      index = scripts.index { |entry| entry[1].to_s.strip == before_name.strip }
+      raise "Runtime insertion point not found: #{before_name}" unless index
+      script_id = scripts.map { |entry| entry[0].to_i }.max.to_i + 1
+      scripts.insert(index, [script_id, name, Zlib::Deflate.deflate(source)])
+      action = "INSERTED"
+    end
+    save_data("Data/Scripts.rvdata2", scripts)
+    verified = load_data("Data/Scripts.rvdata2")
+    actual_index = verified.index { |entry| entry[1].to_s.strip == name.strip }
+    actual = Zlib::Inflate.inflate(verified.fetch(actual_index)[2])
+    raise "Runtime script verification failed" unless actual == source
+    puts "#{action}|#{actual_index}|#{name}|bytes=#{source.bytesize}"
+  end
+
+  def prepare_map027_demo_events
+    path = "Data/Map027.rvdata2"
+    map = load_data(path)
+    events = map.instance_variable_get(:@events) || {}
+    event = events.fetch(4)
+    event.instance_variable_set(:@name, "DEMO-NOM-NOM-EXPLODE [E004]")
+    pages = event.instance_variable_get(:@pages)
+    first_page = pages.fetch(0)
+    first_page.instance_variable_set(:@list, [
+      event_command(101, 0, ["", 0, 0, 2]),
+      event_command(401, 0, ["Nòm nòm nòm. "]),
+      event_command(355, 0, ['char_effect(4, "Giant")']),
+      event_command(230, 0, [70]),
+      event_command(355, 0, ["shrimp_style_event_explosion(4)"]),
+      event_command(230, 0, [65]),
+      event_command(123, 0, ["A", 0]),
+      event_command(0, 0, [])
+    ])
+
+    gone_page = Marshal.load(Marshal.dump(first_page))
+    condition = gone_page.instance_variable_get(:@condition)
+    condition.instance_variables.each do |variable|
+      value = condition.instance_variable_get(variable)
+      condition.instance_variable_set(variable, false) if value == true || value == false
+    end
+    condition.instance_variable_set(:@self_switch_valid, true)
+    condition.instance_variable_set(:@self_switch_ch, "A")
+    graphic = gone_page.instance_variable_get(:@graphic)
+    graphic.instance_variable_set(:@tile_id, 0)
+    graphic.instance_variable_set(:@character_name, "")
+    graphic.instance_variable_set(:@character_index, 0)
+    gone_page.instance_variable_set(:@priority_type, 0)
+    gone_page.instance_variable_set(:@trigger, 0)
+    gone_page.instance_variable_set(:@list, [event_command(0, 0, [])])
+    event.instance_variable_set(:@pages, [first_page, gone_page])
+
+    save_data(path, map)
+    verify = load_data(path).instance_variable_get(:@events).fetch(4)
+    raise "Map027 demo event verification failed" unless
+      verify.instance_variable_get(:@pages).size == 2
+    puts "UPDATED|Map027|Event4|nom-nom-expand-explode"
+  end
+
+  def create_atlantis_mirror_and_chase_maps
+    template_map = load_data("Data/Map005.rvdata2")
+    template_event = (load_data("Data/Map024.rvdata2").instance_variable_get(:@events) || {}).values.first
+    raise "No event template for Atlantis mirror maps" unless template_event
+
+    set_graphic = lambda do |page, name, index = 0, direction = 2, pattern = 1|
+      graphic = page.instance_variable_get(:@graphic)
+      graphic.instance_variable_set(:@tile_id, 0)
+      graphic.instance_variable_set(:@character_name, name)
+      graphic.instance_variable_set(:@character_index, index)
+      graphic.instance_variable_set(:@direction, direction)
+      graphic.instance_variable_set(:@pattern, pattern)
+      page
+    end
+    blank_page = lambda do |switch = "A"|
+      page_from_template(template_event, [], trigger: 0, priority: 0, self_switch: switch)
+    end
+    make_event = lambda do |id, name, x, y, commands, trigger = 0, priority = 1|
+      page = page_from_template(template_event, commands, trigger: trigger, priority: priority)
+      event_from_pages(template_event, id, name, x, y, [page])
+    end
+
+    # A broad, readable maze: two-tile corridors connected to several chambers.
+    # This deliberately avoids the old one-tile DFS "tunnel" appearance.
+    logical_width = 25
+    logical_height = 19
+    logical = Array.new(logical_height) { Array.new(logical_width, 1) }
+    rng = Random.new(28029)
+    stack = [[1, 1]]
+    logical[1][1] = 0
+    until stack.empty?
+      x, y = stack[-1]
+      choices = [[2, 0], [-2, 0], [0, 2], [0, -2]].select do |dx, dy|
+        nx = x + dx
+        ny = y + dy
+        nx > 0 && nx < logical_width - 1 && ny > 0 && ny < logical_height - 1 && logical[ny][nx] == 1
+      end
+      if choices.empty?
+        stack.pop
+      else
+        dx, dy = choices[rng.rand(choices.size)]
+        logical[y + dy / 2][x + dx / 2] = 0
+        logical[y + dy][x + dx] = 0
+        stack << [x + dx, y + dy]
+      end
+    end
+
+    # Scale every navigable logical tile to 2x2. Walls stay two tiles thick,
+    # making navigation and mirror placement comfortable at 544x416.
+    scale = 2
+    width = logical_width * scale + 2
+    height = logical_height * scale + 2
+    maze = Array.new(height) { Array.new(width, 1) }
+    logical_height.times do |ly|
+      logical_width.times do |lx|
+        next unless logical[ly][lx] == 0
+        scale.times do |oy|
+          scale.times do |ox|
+            maze[1 + ly * scale + oy][1 + lx * scale + ox] = 0
+          end
+        end
+      end
+    end
+
+    # Carve landmark rooms and a few loops so the route is not just a tunnel.
+    rooms = [[2, 2, 9, 7], [21, 3, 9, 8], [39, 4, 9, 7],
+             [7, 17, 10, 8], [25, 16, 11, 9], [39, 25, 9, 8],
+             [4, 30, 10, 7]]
+    rooms.each do |rx, ry, rw, rh|
+      (ry...[ry + rh, height - 2].min).each do |y|
+        (rx...[rx + rw, width - 2].min).each { |x| maze[y][x] = 0 }
+      end
+    end
+    [[10, 10, 17, 10], [30, 12, 30, 18], [17, 28, 25, 28],
+     [35, 31, 42, 31]].each do |x1, y1, x2, y2|
+      if y1 == y2
+        ([x1, x2].min..[x1, x2].max).each { |x| maze[y1][x] = maze[y1 + 1][x] = 0 }
+      else
+        ([y1, y2].min..[y1, y2].max).each { |y| maze[y][x1] = maze[y][x1 + 1] = 0 }
+      end
+    end
+
+    dead_ends = []
+    (1...height - 1).each do |y|
+      (1...width - 1).each do |x|
+        next unless maze[y][x] == 0
+        exits = [[1,0],[-1,0],[0,1],[0,-1]].count { |dx,dy| maze[y+dy][x+dx] == 0 }
+        dead_ends << [x, y] if exits == 1 && [x, y] != [1, 1]
+      end
+    end
+    exit_cell = (1...height - 1).flat_map do |y|
+      (1...width - 1).filter_map { |x| [x, y] if maze[y][x] == 0 }
+    end.max_by { |x, y| x + y }
+    # Mirrors occupy wall cells directly above accessible floor cells.
+    mirror_candidates = []
+    (3...height - 2).each do |y|
+      (2...width - 2).each do |x|
+        next unless maze[y][x] == 1 && maze[y + 1][x] == 0
+        next unless maze[y][x - 1] == 1 && maze[y][x + 1] == 1
+        mirror_candidates << [[x, y + 1], [x, y]]
+      end
+    end
+    mirror_candidates = mirror_candidates.each_with_index.select { |_v, i| i % 9 == 0 }.map(&:first).first(8)
+    mirror_cells = mirror_candidates.map(&:first)
+    mirror_wall_cells = mirror_candidates.map(&:last)
+    scare_cells = [[13, 9], [29, 11], [43, 13], [11, 25], [31, 27], [43, 34]].select do |x, y|
+      maze[y] && maze[y][x] == 0
+    end
+
+    mirror_map = Marshal.load(Marshal.dump(template_map))
+    mirror_map.instance_variable_set(:@display_name, "Mê cung gương Atlantis")
+    mirror_map.instance_variable_set(:@width, width)
+    mirror_map.instance_variable_set(:@height, height)
+    mirror_map.instance_variable_set(:@tileset_id, 4)
+    mirror_map.instance_variable_set(:@scroll_type, 0)
+    mirror_map.instance_variable_set(:@parallax_name, "")
+    mirror_map.instance_variable_set(:@note, "[lighting on]\n[opacity 245]\n[color 000000000]\nAtlantis mirror maze; KUL height regions")
+    table = blank_table(width, height, 4)
+
+    # Learn the exact VX Ace autotile shapes from the generated Dungeon sample
+    # (Map032). This gives us the same corners/edges as the editor's Generate
+    # Dungeon command without hard-coding a single repeated shape.
+    reference = load_data("Data/Map032.rvdata2")
+    reference_table = reference.instance_variable_get(:@data)
+    reference_raw = reference_table.instance_variable_get(:@marshal_data)
+    _rdim, rw, rh, _rdepth, rsize = reference_raw.unpack("l<5")
+    reference_values = reference_raw.byteslice(20, rsize * 2).unpack("s<*")
+    ref_at = lambda { |x, y| reference_values[y * rw + x] }
+    neighbour_mask = lambda do |mask, x, y|
+      [[0,-1], [1,0], [0,1], [-1,0], [-1,-1], [1,-1], [1,1], [-1,1]].each_with_index.sum do |(dx, dy), bit|
+        nx = x + dx
+        ny = y + dy
+        nx.between?(0, mask[0].size - 1) && ny.between?(0, mask.size - 1) && mask[ny][nx] ? (1 << bit) : 0
+      end
+    end
+    learn_shapes = lambda do |base|
+      same = Array.new(rh) { Array.new(rw, false) }
+      rh.times do |y|
+        rw.times do |x|
+          tile_id = ref_at.call(x, y)
+          same[y][x] = tile_id.between?(base, base + 47)
+        end
+      end
+      result = {}
+      rh.times do |y|
+        rw.times do |x|
+          next unless same[y][x]
+          result[neighbour_mask.call(same, x, y)] ||= ref_at.call(x, y) - base
+        end
+      end
+      result
+    end
+    floor_shapes = learn_shapes.call(3200)
+    ceiling_shapes = learn_shapes.call(7520)
+    face_shapes = learn_shapes.call(7904)
+    choose_shape = lambda do |lookup, mask|
+      lookup[mask] || lookup.min_by { |known, _shape| (known ^ mask).digits(2).count(1) }[1]
+    end
+
+    floor_mask = Array.new(height) { Array.new(width, false) }
+    height.times { |y| width.times { |x| floor_mask[y][x] = maze[y][x] == 0 } }
+    face_mask = Array.new(height) { Array.new(width, false) }
+    floor_mask.each_with_index do |row, y|
+      row.each_with_index do |floor, x|
+        next unless floor
+        [1, 2].each { |distance| face_mask[y - distance][x] = true if y - distance >= 0 && maze[y - distance][x] == 1 }
+      end
+    end
+    ceiling_mask = Array.new(height) { Array.new(width, false) }
+    height.times do |y|
+      width.times do |x|
+        next if floor_mask[y][x] || face_mask[y][x]
+        neighbours = [[1,0],[-1,0],[0,1],[0,-1]]
+        ceiling_mask[y][x] = neighbours.any? do |dx, dy|
+          nx = x + dx
+          ny = y + dy
+          nx.between?(0, width - 1) && ny.between?(0, height - 1) &&
+            (floor_mask[ny][nx] || face_mask[ny][nx])
+        end
+      end
+    end
+
+    height.times do |y|
+      width.times do |x|
+        if floor_mask[y][x]
+          mask = neighbour_mask.call(floor_mask, x, y)
+          table_set(table, x, y, 0, 3200 + choose_shape.call(floor_shapes, mask))
+        elsif face_mask[y][x]
+          mask = neighbour_mask.call(face_mask, x, y)
+          table_set(table, x, y, 0, 7904 + choose_shape.call(face_shapes, mask))
+        elsif ceiling_mask[y][x]
+          mask = neighbour_mask.call(ceiling_mask, x, y)
+          table_set(table, x, y, 0, 7520 + choose_shape.call(ceiling_shapes, mask))
+          # A ceiling directly above a two-row face is height 2. KUL propagates
+          # that height down both face rows. Side/bottom caps are height 1.
+          two_row_face = y + 3 < height && face_mask[y + 1][x] &&
+            face_mask[y + 2][x] && floor_mask[y + 3][x]
+          table_set(table, x, y, 3, (two_row_face ? 2 : 1) << 8)
+        end
+      end
+    end
+    mirror_map.instance_variable_set(:@data, table)
+    bgm = mirror_map.instance_variable_get(:@bgm)
+    bgm.instance_variable_set(:@name, "Dungeon4") if bgm
+    mirror_map.instance_variable_set(:@autoplay_bgm, true)
+
+    mirror_events = {}
+    setup_commands = [
+      event_command(355, 0, ["$game_map.shadows.set_color(0,0,0)"]),
+      event_command(355, 0, ["$game_map.shadows.set_opacity(245,30)"]),
+      event_command(355, 0, ["$game_player.give_light(\"player_small\")"]),
+      event_command(355, 0, ["$game_map.events.each_value {|e| src=e.instance_variable_get(:@event); e.opacity=0 if src && src.name =~ /^SCARE-/ }"]),
+      event_command(121, 0, [35, 35, 0]),
+      event_command(123, 0, ["A", 0])
+    ]
+    setup_page = page_from_template(template_event, setup_commands, trigger: 3, priority: 0)
+    mirror_events[1] = event_from_pages(template_event, 1, "SYS-ATL-MIRROR-MAZE", 1, 1,
+      [setup_page, blank_page.call])
+
+    ex, ey = exit_cell
+    exit_commands = [
+      event_command(355, 0, ["$game_player.drop_light"]),
+      event_command(355, 0, ["$game_map.shadows.set_opacity(0,20)"]),
+      event_command(201, 0, [0, 29, 5, 7, 6, 0])
+    ]
+    exit_event = make_event.call(2, "EXIT-ATL-MIRROR-TO-CHASE", ex, ey, exit_commands, 1, 0)
+    exit_event.instance_variable_get(:@pages).first.instance_variable_set(:@through, true)
+    mirror_events[2] = exit_event
+
+    # Sparse stationary lights create landmarks without defeating the lantern.
+    [[8, 7], [27, 7], [43, 8], [12, 21], [30, 20], [43, 29]].each_with_index do |(x, y), index|
+      next unless maze[y][x] == 0
+      id = 30 + index
+      page = page_from_template(template_event,
+        [event_command(108, 0, ["[light broken]"])], trigger: 0, priority: 0)
+      page.instance_variable_set(:@through, true)
+      mirror_events[id] = event_from_pages(template_event, id, "LIGHT-ATL-FLICKER", x, y, [page])
+    end
+
+    mirror_wall_cells.each_with_index do |(x, y), index|
+      id = 10 + index
+      commands = [event_command(355, 0, ["mirror_maze_randomize(#{id})"])]
+      event = make_event.call(id, "MIRROR-ATL-RANDOM", x, y, commands, 0, 1)
+      event.instance_variable_get(:@pages).first.instance_variable_set(:@direction_fix, true)
+      mirror_events[id] = event
+    end
+
+    scare_cells.each_with_index do |(x, y), index|
+      id = 20 + index
+      commands = [
+        event_command(355, 0, ["$game_map.events[#{id}].opacity=255"]),
+        event_command(355, 0, ["$game_map.events[#{id}].give_light(\"broken\")"]),
+        event_command(355, 0, ["char_effect(#{id}, \"Appear\")"]),
+        event_command(355, 0, ["RPG::SE.new(\"Monster2\",75,90).play"]),
+        event_command(230, 0, [32]),
+        event_command(225, 0, [5, 7, 18, false]),
+        event_command(355, 0, ["char_effect(#{id}, \"Crazy\")"]),
+        event_command(230, 0, [28]),
+        event_command(355, 0, ["$game_map.events[#{id}].drop_light"]),
+        event_command(355, 0, ["$game_map.events[#{id}].opacity=0"]),
+        event_command(123, 0, ["A", 0])
+      ]
+      page = page_from_template(template_event, commands, trigger: 1, priority: 0)
+      set_graphic.call(page, "Monster1", index % 8, 2, 1)
+      page.instance_variable_set(:@through, true)
+      mirror_events[id] = event_from_pages(template_event, id, "SCARE-ATL-GHOST", x, y,
+        [page, blank_page.call])
+    end
+    mirror_map.instance_variable_set(:@events, mirror_events)
+    save_data("Data/Map028.rvdata2", mirror_map)
+
+    # Horizontal loop chase map.
+    chase_width = 40
+    chase_height = 15
+    chase_map = Marshal.load(Marshal.dump(template_map))
+    chase_map.instance_variable_set(:@display_name, "Atlantis — Hành lang truy đuổi")
+    chase_map.instance_variable_set(:@width, chase_width)
+    chase_map.instance_variable_set(:@height, chase_height)
+    chase_map.instance_variable_set(:@tileset_id, 4)
+    chase_map.instance_variable_set(:@scroll_type, 2)
+    chase_map.instance_variable_set(:@parallax_name, "")
+    chase_map.instance_variable_set(:@note, "Atlantis loop chase playtest with QTE")
+    chase_table = blank_table(chase_width, chase_height, 4)
+    chase_height.times do |y|
+      chase_width.times do |x|
+        floor = y.between?(6, 8)
+        table_set(chase_table, x, y, 0, 2816)
+        unless floor
+          table_set(chase_table, x, y, 1, 6272)
+          table_set(chase_table, x, y, 3, 1 << 8)
+        end
+      end
+    end
+    chase_map.instance_variable_set(:@data, chase_table)
+    chase_bgm = chase_map.instance_variable_get(:@bgm)
+    chase_bgm.instance_variable_set(:@name, "Battle3") if chase_bgm
+    chase_map.instance_variable_set(:@autoplay_bgm, true)
+
+    chase_events = {}
+    chase_setup = [
+      event_command(355, 0, ["$game_map.shadows.set_color(0,0,0)"]),
+      event_command(355, 0, ["$game_map.shadows.set_opacity(185,20)"]),
+      event_command(355, 0, ["$game_player.give_light(\"player_small\")"]),
+      event_command(355, 0, ["char_effect(2, \"Giant\")"]),
+      event_command(355, 0, ["$game_map.events[2].give_light(\"broken\")"]),
+      event_command(355, 0, ["start_atlantis_chase(2,[3,4,5,6,7])"]),
+      event_command(123, 0, ["A", 0])
+    ]
+    chase_setup_page = page_from_template(template_event, chase_setup, trigger: 3, priority: 0)
+    chase_events[1] = event_from_pages(template_event, 1, "SYS-ATL-CHASE", 5, 7,
+      [chase_setup_page, blank_page.call])
+
+    monster_page = page_from_template(template_event, [], trigger: 0, priority: 1)
+    set_graphic.call(monster_page, "Monster1", 0, 6, 1)
+    monster_page.instance_variable_set(:@through, true)
+    monster_page.instance_variable_set(:@direction_fix, true)
+    chase_events[2] = event_from_pages(template_event, 2, "CHASE-ATL-ABYSS-MONSTER", 1, 7,
+      [monster_page])
+
+    (3..7).each do |id|
+      obstacle_page = page_from_template(template_event, [], trigger: 0, priority: 0)
+      set_graphic.call(obstacle_page, "Monster1", id - 2, 4, 1)
+      obstacle_page.instance_variable_set(:@through, true)
+      obstacle_page.instance_variable_set(:@direction_fix, true)
+      chase_events[id] = event_from_pages(template_event, id, "QTE-ATL-OBSTACLE", 12 + id, 7,
+        [obstacle_page])
+    end
+    chase_map.instance_variable_set(:@events, chase_events)
+    save_data("Data/Map029.rvdata2", chase_map)
+
+    # Route Map024 into the mirror maze after the existing memory intro.
+    map24 = load_data("Data/Map024.rvdata2")
+    intro = map24.instance_variable_get(:@events).fetch(1)
+    page = intro.instance_variable_get(:@pages).first
+    list = page.instance_variable_get(:@list)
+    list.reject! do |command|
+      command.instance_variable_get(:@code) == 201 &&
+        (command.instance_variable_get(:@parameters) || [])[1] == 28
+    end
+    insert_at = list.index { |command| command.instance_variable_get(:@code) == 123 } || list.size - 1
+    list.insert(insert_at, event_command(201, 0, [0, 28, 3, 3, 2, 0]))
+    save_data("Data/Map024.rvdata2", map24)
+
+    infos = load_data("Data/MapInfos.rvdata2")
+    template_info = infos[25] || infos.values.compact.first
+    max_order = infos.values.compact.map { |info| info.instance_variable_get(:@order).to_i }.max
+    [[28, "Mê cung gương Atlantis"], [29, "Atlantis — Hành lang truy đuổi"]].each_with_index do |(id, name), offset|
+      info = infos[id] || Marshal.load(Marshal.dump(template_info))
+      info.instance_variable_set(:@name, name)
+      info.instance_variable_set(:@parent_id, 0)
+      info.instance_variable_set(:@order, max_order + offset + 1)
+      info.instance_variable_set(:@expanded, true)
+      info.instance_variable_set(:@scroll_x, 0)
+      info.instance_variable_set(:@scroll_y, 0)
+      infos[id] = info
+    end
+    save_data("Data/MapInfos.rvdata2", infos)
+
+    verify28 = load_data("Data/Map028.rvdata2")
+    verify29 = load_data("Data/Map029.rvdata2")
+    raise "Map028 verification failed" unless verify28.instance_variable_get(:@events).size >= 7
+    raise "Map029 verification failed" unless verify29.instance_variable_get(:@events).size == 7
+    puts "CREATED|Map028|#{width}x#{height}|mirrors=#{mirror_cells.size}|scares=#{scare_cells.size}|exit=#{exit_cell.join(',')}"
+    puts "CREATED|Map029|#{chase_width}x#{chase_height}|loop_horizontal=true|qte_obstacles=5"
+    puts "CONNECTED|Map024->Map028->Map029->Map025"
+  end
+
+  def remove_khas_awesome_light_effects
+    path = "Data/Scripts.rvdata2"
+    scripts = load_data(path)
+    matches = scripts.each_index.select do |index|
+      scripts[index] && scripts[index][1].to_s == "Khas Awesome Light Effects"
+    end
+    raise "Expected exactly one Khas Awesome Light Effects slot, found #{matches.size}" unless matches.size == 1
+    removed_index = matches.first
+    scripts.delete_at(removed_index)
+    save_data(path, scripts)
+    raise "Khas Awesome Light Effects still present" if
+      load_data(path).any? { |entry| entry && entry[1].to_s == "Khas Awesome Light Effects" }
+    puts "REMOVED_SCRIPT|Khas Awesome Light Effects|former_slot=#{removed_index}"
+  end
+
+  def fix_atlantis_chase_exit_map
+    path = "Data/Map025.rvdata2"
+    map = load_data(path)
+    raw = map.instance_variable_get(:@data).instance_variable_get(:@marshal_data)
+    _dim, width, height, _depth, _size = raw.unpack("l<5")
+    map.instance_variable_set(:@width, width)
+    map.instance_variable_set(:@height, height)
+    save_data(path, map)
+    puts "FIXED|Map025|dimensions=#{width}x#{height}|matches_table=true"
+  end
+
+  def implement_atlantis_post_chase_scene
+    map29_path = "Data/Map029.rvdata2"
+    map25_path = "Data/Map025.rvdata2"
+    map29 = load_data(map29_path)
+    map25 = load_data(map25_path)
+    map22 = load_data("Data/Map022.rvdata2")
+    actors = load_data("Data/Actors.rvdata2")
+    events29 = map29.instance_variable_get(:@events) || {}
+    template_event = events29.values.first
+    raise "Map029 event template missing" unless template_event
+
+    actor = actors[3]
+    raise "Hải Quỳ actor 3 missing" unless actor
+    actor_name = actor.instance_variable_get(:@character_name).to_s
+    actor_index = actor.instance_variable_get(:@character_index).to_i
+    set_graphic = lambda do |page, name, index = 0, direction = 2, pattern = 1|
+      graphic = page.instance_variable_get(:@graphic)
+      graphic.instance_variable_set(:@tile_id, 0)
+      graphic.instance_variable_set(:@character_name, name)
+      graphic.instance_variable_set(:@character_index, index)
+      graphic.instance_variable_set(:@direction, direction)
+      graphic.instance_variable_set(:@pattern, pattern)
+    end
+    pop = lambda do |anchor, text|
+      wrapped_message_commands([text], tag: "\\bm[#{anchor}] ", width: 24)
+    end
+
+    # Map029: insert the exact pre-chase exchange before the existing setup.
+    setup_event = events29.fetch(1)
+    setup_page = setup_event.instance_variable_get(:@pages).first
+    existing_setup = setup_page.instance_variable_get(:@list) || []
+    lighting_index = existing_setup.index do |command|
+      command_code(command) == 355 && command_parameters(command)[0].to_s.include?("$game_map.shadows.set_color")
+    end
+    existing_setup = existing_setup[(lighting_index || 0)..-1].to_a
+      .reject { |command| command_code(command) == 0 }
+    prelude = [
+      event_command(117, 0, [7]),
+      event_command(355, 0, ["char_effect(0, \"Breath\")"]),
+      event_command(355, 0, ["$game_map.events[2].opacity=0"]),
+      event_command(355, 0, ["$game_map.events.values.each {|e| src=e.instance_variable_get(:@event); e.opacity=0 if src && src.name =~ /^FX-ATL-CLONE/ }"]),
+      event_command(352, 0, [])
+    ]
+    [
+      "Nghĩa vụ của ngươi…", "Nghĩa vụ của chúng ta…",
+      "Tại sao chỉ có ngươi là còn sống?", "Niềm hi vọng…",
+      "Còn sống nhưng thất bại…", "Tại sao không chết đi?",
+      "Mì…thịt…kho…", "Không thể chết.", "Thà chết còn hơn.",
+      "Thất bại.", "Thành công.", "Thảm hại."
+    ].each_with_index do |line, index|
+      prelude.concat(pop.call(2, line))
+      if index == 0
+        prelude.concat(pop.call(0, "Im đi! Im đi! Im đi!"))
+        prelude << event_command(355, 0, ["$game_map.events.values.each {|e| src=e.instance_variable_get(:@event); e.opacity=255 if src && src.name =~ /^FX-ATL-CLONE/ }"])
+        prelude << event_command(355, 0, ["(8..12).each {|id| char_effect(id, \"Appear\") }"])
+      end
+      if [2, 5, 8].include?(index)
+        prelude << event_command(355, 0, ["(8..12).each {|id| e=$game_map.events[id]; e.move_toward_player if e }"])
+      end
+      prelude << event_command(230, 0, [10])
+    end
+    prelude.concat([
+      event_command(117, 0, [6]),
+      event_command(355, 0, ["$game_map.events.values.each {|e| src=e.instance_variable_get(:@event); e.opacity=0 if src && src.name =~ /^FX-ATL-CLONE/ }"]),
+      event_command(355, 0, ["char_effect(0, \"Clear\")"]),
+      event_command(355, 0, ["$game_map.events[2].opacity=255"]),
+      event_command(355, 0, ["char_effect(2, \"Appear\")"]),
+      event_command(355, 0, ["RPG::SE.new(\"Monster3\",85,80).play"]),
+      event_command(225, 0, [7, 7, 28, false]),
+      event_command(230, 0, [30]),
+      # CE7 darkens/tints the prelude. Reset Map Effects before the playable
+      # chase so only Map029's intended KUL shadow opacity remains.
+      event_command(117, 0, [3])
+    ])
+    setup_page.instance_variable_set(:@list, prelude + existing_setup + [event_command(0, 0, [])])
+
+    clone_positions = [[2, 6], [8, 6], [12, 7], [17, 8], [22, 6]]
+    clone_positions.each_with_index do |(x, y), offset|
+      id = 8 + offset
+      page = page_from_template(template_event, [], trigger: 0, priority: 1)
+      set_graphic.call(page, actor_name, actor_index, 2, 1)
+      page.instance_variable_set(:@through, true)
+      events29[id] = event_from_pages(template_event, id, "FX-ATL-CLONE", x, y, [page])
+    end
+    map29.instance_variable_set(:@events, events29)
+    save_data(map29_path, map29)
+
+    # Map025: replace the fabricated three-line prototype with the exact
+    # confrontation from Scene 5.
+    old_events25 = map25.instance_variable_get(:@events) || {}
+    template25 = old_events25.values.first || template_event
+    events25 = {}
+    monster_page = page_from_template(template25, [], trigger: 0, priority: 1)
+    set_graphic.call(monster_page, "Monster1", 0, 4, 1)
+    monster_page.instance_variable_set(:@through, true)
+    events25[2] = event_from_pages(template25, 2, "NPC-ATL-ABYSS-MONSTER", 12, 7, [monster_page])
+
+    oni_source = (map22.instance_variable_get(:@events) || {})[7]
+    oni_page = if oni_source
+      Marshal.load(Marshal.dump(oni_source.instance_variable_get(:@pages).first))
+    else
+      page_from_template(template25, [], trigger: 0, priority: 1)
+    end
+    oni_page.instance_variable_set(:@list, [event_command(0, 0, [])])
+    oni_page.instance_variable_set(:@through, true)
+    events25[3] = event_from_pages(template25, 3, "NPC-ATL-ONI-ONII", 8, 2, [oni_page])
+
+    commands = [
+      event_command(355, 0, ["$game_player.moveto(4,7)"]),
+      event_command(355, 0, ["$game_player.set_direction(6)"]),
+      event_command(355, 0, ["$game_map.events[3].opacity=0"]),
+      event_command(355, 0, ["char_effect(2, \"Giant\")"]),
+      event_command(122, 0, [40, 40, 0, 0, 2]),
+      event_command(117, 0, [5])
+    ]
+    ["Ngươi…", "Chấp nhận…", "Nghĩa vụ…", "Bản năng…", "Nấu mì…", "Vứt bỏ…"].each { |line| commands.concat(pop.call(2, line)) }
+    commands.concat(pop.call(0, "K-Không có nghĩa vụ nào hết! Bản năng gì chứ? Im đi!"))
+    ["Đã là phế phẩm…", "Còn dám lên tiếng sao…?", "Được ban ân huệ…", "Lãng phí…"].each { |line| commands.concat(pop.call(2, line)) }
+    commands.concat(pop.call(0, "Phế phẩm? Ta…Không phải phế phẩm!"))
+    commands.concat(pop.call(0, "Ta là…Dahria…!"))
+    ["Không phải tên ngươi…", "Ngươi chẳng là gì…", "Ngươi chẳng có tên…", "Dahria…", "Cũng là phế thải…"].each { |line| commands.concat(pop.call(2, line)) }
+    commands.concat(pop.call(0, "…!!"))
+    commands.concat([
+      event_command(355, 0, ["$game_map.events[2].moveto(10,7)"]),
+      event_command(225, 0, [4, 5, 18, false])
+    ])
+    ["Mau nhớ lại đi…", "Ngươi là…ai…?", "Ai…là ngươi…?"].each { |line| commands.concat(pop.call(2, line)) }
+    commands.concat(pop.call(0, "...Ta…Ta là…"))
+    commands.concat(pop.call(0, "...."))
+    commands << event_command(117, 0, [4])
+    [
+      "Dahria…có thể không phải tên của ta.",
+      "Nên…", "Ta sẽ khẳng định…Dahria…chính là ta!"
+    ].each { |line| commands.concat(pop.call(0, line)) }
+    commands.concat(pop.call(2, "Ngươi…"))
+    [
+      "Tính chơi đòn tâm lý với ta à?", "Ngươi cũng to gan đấy…!",
+      "Lại còn dám cả gan đột nhập vào nhà ta nữa!"
+    ].each { |line| commands.concat(pop.call(0, line)) }
+    commands.concat(pop.call(2, "???"))
+    [
+      "Để ta nói cho thấu nhé!", "TA!",
+      "Không phải thí nghiệm, tạo vật hay phế phẩm thất bại mà ngươi nói!",
+      "Ta cũng muốn cù nhây với ngươi thêm chút nữa đó.",
+      "Cơ mà anh ta không cho phép đâu."
+    ].each { |line| commands.concat(pop.call(0, line)) }
+    commands.concat(pop.call(2, "DAHRIAAAAAAAAAAAAAAAAAAAAAA"))
+    [
+      "Đấy, thấy chưa?", "À, để ta nói cho ngươi nghe cái này.",
+      "Anh trai ta…cực ghét quái vật vực sâu luôn.", "Nên là…!!!"
+    ].each { |line| commands.concat(pop.call(0, line)) }
+
+    commands.concat([
+      event_command(355, 0, ["$game_map.events[3].opacity=255"]),
+      event_command(355, 0, ["char_effect(3, \"Appear\")"]),
+      event_command(122, 0, [40, 40, 0, 0, 3]),
+      event_command(117, 0, [2])
+    ])
+    commands.concat(pop.call(3, "ECLIPSE BLOCKCHAIN!!!"))
+    commands.concat([
+      event_command(355, 0, ["a=$data_animations.compact.find {|x| x.name =~ /(Bind|Chain|Dark|Thunder)/i}; $game_map.events[2].animation_id=(a ? a.id : 1)"]),
+      event_command(225, 0, [6, 7, 24, false]),
+      event_command(230, 0, [30])
+    ])
+    commands.concat(pop.call(3, "Tao đợi mày úp mì chắc tới tết công gô mất!"))
+    commands.concat(pop.call(3, "Nhanh giải quyết nó đi!"))
+    commands.concat(pop.call(0, "Biết rồi!!!"))
+    commands.concat(pop.call(0, "ANEMONE DIAMOND SHOWERRRRRRR"))
+    commands.concat([
+      event_command(117, 0, [6]),
+      event_command(355, 0, ["a=$data_animations.compact.find {|x| x.name =~ /(Light|Laser|Thunder|Holy)/i}; $game_map.events[2].animation_id=(a ? a.id : 1)"]),
+      event_command(225, 0, [10, 8, 60, false]),
+      event_command(230, 0, [45]),
+      event_command(221, 0, []),
+      event_command(121, 0, [33, 33, 0]),
+      event_command(122, 0, [30, 30, 0, 0, 5]),
+      event_command(355, 0, ["$game_player.drop_light"]),
+      event_command(355, 0, ["$game_map.events[2].drop_light if $game_map.events[2]"]),
+      event_command(117, 0, [3]),
+      event_command(123, 0, ["A", 0])
+    ])
+    main_page = page_from_template(template25, commands, trigger: 3, priority: 0, switch_id: 36)
+    blank_page = page_from_template(template25, [], trigger: 0, priority: 0, self_switch: "A")
+    events25[1] = event_from_pages(template25, 1, "SCN-ATL-POST-CHASE", 1, 1, [main_page, blank_page])
+    map25.instance_variable_set(:@events, events25)
+    map25.instance_variable_set(:@display_name, "Atlantis — Đối đầu Vực Sâu")
+    save_data(map25_path, map25)
+
+    puts "IMPLEMENTED|Map029|prelude=true|clones=5|exact_source=Scene5"
+    puts "IMPLEMENTED|Map025|post_chase=true|events=3|fabricated_Aira_line_removed=true"
+  end
+
+  def create_atlantis_clone_encirclement_map
+    map28_path = "Data/Map028.rvdata2"
+    map29_path = "Data/Map029.rvdata2"
+    map34_path = "Data/Map034.rvdata2"
+    map28 = load_data(map28_path)
+    map29 = load_data(map29_path)
+    actors = load_data("Data/Actors.rvdata2")
+    events29 = map29.instance_variable_get(:@events) || {}
+    template_event = events29.values.first
+    raise "Map029 event template missing" unless template_event
+
+    actor = actors[3]
+    raise "Hải Quỳ actor 3 missing" unless actor
+    actor_name = actor.instance_variable_get(:@character_name).to_s
+    actor_index = actor.instance_variable_get(:@character_index).to_i
+    set_graphic = lambda do |page, name, index = 0, direction = 2, pattern = 1|
+      graphic = page.instance_variable_get(:@graphic)
+      graphic.instance_variable_set(:@tile_id, 0)
+      graphic.instance_variable_set(:@character_name, name)
+      graphic.instance_variable_set(:@character_index, index)
+      graphic.instance_variable_set(:@direction, direction)
+      graphic.instance_variable_set(:@pattern, pattern)
+    end
+    pop = lambda do |anchor, text|
+      wrapped_message_commands([text], tag: "\\bm[#{anchor}] ", width: 24)
+    end
+
+    # Map034 inherits only the proven chase corridor tiles; all event content
+    # is rebuilt as a dedicated cutscene.
+    map34 = Marshal.load(Marshal.dump(map29))
+    map34.instance_variable_set(:@display_name, "Atlantis — Vòng vây bản thể")
+    map34.instance_variable_set(:@scroll_type, 0)
+    map34.instance_variable_set(:@note,
+      "[lighting on]\n[opacity 185]\n[color 000000000]\n" \
+      "Atlantis clone encirclement cutscene; leads to Map029")
+    events34 = {}
+
+    monster_page = page_from_template(template_event, [], trigger: 0, priority: 1)
+    set_graphic.call(monster_page, "Monster1", 0, 6, 1)
+    monster_page.instance_variable_set(:@through, true)
+    events34[2] = event_from_pages(template_event, 2, "NPC-ATL-ABYSS-SHADOW", 10, 7, [monster_page])
+
+    clone_lines = [
+      "Nghĩa vụ của ngươi…", "Nghĩa vụ của chúng ta…",
+      "Tại sao chỉ có ngươi là còn sống?", "Niềm hi vọng…",
+      "Còn sống nhưng thất bại…", "Tại sao không chết đi?",
+      "Mì…thịt…kho…", "Không thể chết.", "Thà chết còn hơn.",
+      "Thất bại.", "Thành công.", "Thảm hại."
+    ]
+    clone_positions = [[9,6], [10,7], [9,8], [12,6], [12,8], [16,6],
+      [16,8], [18,6], [18,8], [20,6], [20,7], [20,8]]
+    clone_lines.each_with_index do |_line, offset|
+      id = 3 + offset
+      x, y = clone_positions[offset]
+      page = page_from_template(template_event, [], trigger: 0, priority: 1)
+      set_graphic.call(page, actor_name, actor_index, x < 15 ? 6 : 4, 1)
+      page.instance_variable_set(:@through, true)
+      events34[id] = event_from_pages(template_event, id, "FX-ATL-CLONE-VOICE", x, y, [page])
+    end
+
+    scene = [
+      event_command(355, 0, ["$game_player.moveto(15,7)"]),
+      event_command(355, 0, ["$game_player.set_direction(2)"]),
+      event_command(355, 0, ["$game_map.shadows.set_color(0,0,0)"]),
+      event_command(355, 0, ["$game_map.shadows.set_opacity(185,20)"]),
+      event_command(355, 0, ["$game_player.give_light(\"player_small\")"]),
+      event_command(355, 0, ["$game_map.events[2].opacity=0"]),
+      event_command(355, 0, ["char_effect(0, \"Breath\")"]),
+      event_command(213, 0, [-1, 6, false]),
+      event_command(352, 0, []),
+      event_command(117, 0, [7])
+    ]
+    (3..14).each do |id|
+      scene << event_command(355, 0, ["char_effect(#{id}, \"Appear\")"])
+      scene << event_command(355, 0, ["$game_map.events[#{id}].give_light(\"atlantis_clone\")"])
+    end
+    clone_lines.each_with_index do |line, offset|
+      id = 3 + offset
+      scene.concat(pop.call(id, line))
+      scene << event_command(355, 0, ["$game_map.events[#{id}].move_toward_player"])
+      scene << event_command(230, 0, [10])
+      if offset == 0
+        scene << event_command(213, 0, [-1, 5, false])
+        scene.concat(pop.call(0, "Im đi! Im đi! Im đi!"))
+      end
+    end
+    scene.concat([
+      event_command(355, 0, ["(3..14).each {|id| e=$game_map.events[id]; e.drop_light; e.opacity=0 }"]),
+      event_command(355, 0, ["char_effect(0, \"Clear\")"]),
+      event_command(213, 0, [-1, 11, false]),
+      event_command(355, 0, ["$game_map.events[2].opacity=255"]),
+      event_command(355, 0, ["char_effect(2, \"Giant\")"]),
+      event_command(355, 0, ["char_effect(2, \"Appear\")"]),
+      event_command(355, 0, ["$game_map.events[2].give_light(\"red\")"]),
+      event_command(355, 0, ["RPG::SE.new(\"Monster3\",85,80).play"]),
+      event_command(117, 0, [6]),
+      event_command(225, 0, [7, 7, 28, false]),
+      event_command(230, 0, [30]),
+      event_command(117, 0, [3]),
+      event_command(355, 0, ["$game_player.drop_light"]),
+      event_command(355, 0, ["$game_map.events[2].drop_light if $game_map.events[2]"]),
+      event_command(355, 0, ["$game_map.shadows.set_opacity(0,10)"]),
+      event_command(201, 0, [0, 29, 5, 7, 6, 0]),
+      event_command(123, 0, ["A", 0])
+    ])
+    main_page = page_from_template(template_event, scene, trigger: 3, priority: 0)
+    blank_page = page_from_template(template_event, [], trigger: 0, priority: 0, self_switch: "A")
+    events34[1] = event_from_pages(template_event, 1, "SCN-ATL-CLONE-ENCIRCLEMENT", 1, 1,
+      [main_page, blank_page])
+    map34.instance_variable_set(:@events, events34)
+    save_data(map34_path, map34)
+
+    # Map029 becomes gameplay-only again.
+    setup29 = events29.fetch(1).instance_variable_get(:@pages).first
+    list29 = setup29.instance_variable_get(:@list) || []
+    lighting_index = list29.index do |command|
+      command_code(command) == 355 && command_parameters(command)[0].to_s.include?("$game_map.shadows.set_color")
+    end
+    raise "Map029 chase setup marker missing" unless lighting_index
+    setup29.instance_variable_set(:@list, list29[lighting_index..-1])
+    events29.delete_if do |_id, event|
+      event.instance_variable_get(:@name).to_s.start_with?("FX-ATL-CLONE")
+    end
+    map29.instance_variable_set(:@note,
+      "[lighting on]\n[opacity 185]\n[color 000000000]\n" \
+      "Atlantis clone chase gameplay")
+    (3..7).each do |id|
+      event = events29[id]
+      next unless event
+      event.instance_variable_set(:@name, "QTE-ATL-OBSTRUCTING-CLONE [E%03d]" % id)
+      page = event.instance_variable_get(:@pages).first
+      set_graphic.call(page, actor_name, actor_index, 4, 1)
+      page.instance_variable_set(:@priority_type, 1)
+      page.instance_variable_set(:@through, true)
+    end
+    map29.instance_variable_set(:@events, events29)
+    save_data(map29_path, map29)
+
+    # Per user instruction, change only Map028's transfer destination.
+    changed = 0
+    (map28.instance_variable_get(:@events) || {}).each_value do |event|
+      (event.instance_variable_get(:@pages) || []).each do |page|
+        (page.instance_variable_get(:@list) || []).each do |command|
+          next unless command_code(command) == 201
+          params = command_parameters(command)
+          next unless params[1] == 29
+          params[1] = 34
+          changed += 1
+        end
+      end
+    end
+    existing_to_34 = 0
+    (map28.instance_variable_get(:@events) || {}).each_value do |event|
+      (event.instance_variable_get(:@pages) || []).each do |page|
+        existing_to_34 += (page.instance_variable_get(:@list) || []).count do |command|
+          command_code(command) == 201 && command_parameters(command)[1] == 34
+        end
+      end
+    end
+    raise "Map028 chase transfer missing or duplicated" unless changed == 1 || (changed == 0 && existing_to_34 == 1)
+    save_data(map28_path, map28)
+
+    infos = load_data("Data/MapInfos.rvdata2")
+    template_info = infos[29] || infos.values.compact.first
+    info = infos[34] || Marshal.load(Marshal.dump(template_info))
+    info.instance_variable_set(:@name, "Atlantis — Vòng vây bản thể")
+    info.instance_variable_set(:@parent_id, 0)
+    info.instance_variable_set(:@order,
+      infos.values.compact.map { |entry| entry.instance_variable_get(:@order).to_i }.max + 1)
+    info.instance_variable_set(:@expanded, true)
+    infos[34] = info
+    save_data("Data/MapInfos.rvdata2", infos)
+
+    puts "CREATED|Map034|clone_cutscene=true|clones=12|transfer=Map029"
+    puts "UPDATED|Map029|gameplay_only=true|events=#{events29.size}"
+    puts "UPDATED|Map028|transfer_only=Map029->Map034|count=#{changed}"
+  end
+
+  # Adds expressive balloon beats to the implemented Atlantis book route.
+  # Balloon targets follow VX Ace's convention: -1 is Player, 0 is the event
+  # currently running, and a positive value is that map event ID.
+  def apply_atlantis_route_balloons
+    specs = {
+      22 => [
+        [1, "HAI ƠI, EM VỀ RỒI", -1, 1],
+        [1, "Ỏ dị hả", -1, 2],
+        [1, "Chắc chắn ổng đang nằm", -1, 9],
+        [21, "Ồ, chìa khóa", -1, 9],
+        [31, "Ảnh chụp về", -1, 11],
+        [31, "Đã bảo không muốn nhớ", -1, 5],
+        [48, "Đ-Đâu có", -1, 6],
+        [48, "\\bm[7] Gì?", 7, 1],
+        [48, "\\bm[0] Ui da", -1, 12],
+        [48, "Hả gì! Chị Tư", -1, 2],
+        [48, "Bầu không khí đột ngột", -1, 8]
+      ],
+      23 => [
+        [2, "Bả ngủ luôn rồi", -1, 2],
+        [2, "Ồ, xin chào quý", 2, 10],
+        [2, "Ủa…giấy niêm phong", 2, 1],
+        [2, "luồng điện giật mạnh", -1, 11],
+        [3, "Bả ngủ luôn rồi", -1, 2],
+        [3, "Ồ, xin chào quý", 3, 10],
+        [3, "Ủa…giấy niêm phong", 3, 1],
+        [3, "luồng điện giật mạnh", -1, 11]
+      ],
+      24 => [
+        [1, "Dahria…", -1, 2],
+        [1, "Không phải…Urg", -1, 11],
+        [1, "Không…phải…cỗ máy", -1, 7]
+      ],
+      25 => [
+        [1, "Phế phẩm?", -1, 5],
+        [1, "Ngươi là…ai", 2, 2],
+        [1, "ECLIPSE BLOCKCHAIN", 3, 1],
+        [1, "ANEMONE DIAMOND", -1, 1]
+      ],
+      26 => [
+        [20, "phao “ nữa này", -1, 1],
+        [20, "lá thư bị vò", -1, 9],
+        [20, "thực chất là bản sao", -1, 11]
+      ],
+      28 => [
+        [20, "char_effect(20, \"Appear\")", -1, 11],
+        [21, "char_effect(21, \"Appear\")", -1, 11],
+        [22, "char_effect(22, \"Appear\")", -1, 11]
+      ],
+      34 => [
+        [1, "char_effect(0, \"Breath\")", -1, 6],
+        [1, "Im đi! Im đi! Im đi!", -1, 5],
+        [1, "$game_map.events[2].opacity=255", -1, 11]
+      ]
+    }
+
+    inserted = 0
+    specs.each do |map_id, entries|
+      path = format("Data/Map%03d.rvdata2", map_id)
+      map = load_data(path)
+      events = map.instance_variable_get(:@events) || {}
+      entries.each do |event_id, needle, target, balloon_id|
+        event = events[event_id]
+        raise "Map#{map_id} event #{event_id} missing" unless event
+        matched = false
+        (event.instance_variable_get(:@pages) || []).each do |page|
+          list = page.instance_variable_get(:@list) || []
+          hit = list.index do |command|
+            [355, 401].include?(command_code(command)) &&
+              command_parameters(command)[0].to_s.include?(needle)
+          end
+          next unless hit
+          matched = true
+          # Put dialogue balloons before Show Text so they animate while the
+          # matching line is visible. Script-call beats use their exact index.
+          insert_at = hit
+          if command_code(list[hit]) == 401
+            cursor = hit - 1
+            cursor -= 1 while cursor >= 0 && command_code(list[cursor]) == 401
+            insert_at = cursor if cursor >= 0 && command_code(list[cursor]) == 101
+          end
+          duplicate = insert_at > 0 && command_code(list[insert_at - 1]) == 213 &&
+            command_parameters(list[insert_at - 1])[0, 2] == [target, balloon_id]
+          unless duplicate
+            indent = list[insert_at].instance_variable_get(:@indent).to_i
+            list.insert(insert_at, event_command(213, indent, [target, balloon_id, false]))
+            inserted += 1
+          end
+          break
+        end
+        raise "Balloon anchor missing Map#{map_id} E#{event_id}: #{needle}" unless matched
+      end
+      save_data(path, map)
+    end
+    puts "ATLANTIS_BALLOONS|inserted=#{inserted}|maps=#{specs.keys.join(',')}"
+  end
+
+  def create_atlantis_chase_epilogue
+    map25_path = "Data/Map025.rvdata2"
+    map35_path = "Data/Map035.rvdata2"
+    map36_path = "Data/Map036.rvdata2"
+    map25 = load_data(map25_path)
+    source_events = map25.instance_variable_get(:@events) || {}
+    template = source_events[1]
+    oni_template = source_events[3]
+    raise "Map025 templates missing" unless template && oni_template
+
+    # Paulie/OniOnii uses the project charset $test.png.
+    oni_source_page = oni_template.instance_variable_get(:@pages).first
+    oni_source_graphic = oni_source_page.instance_variable_get(:@graphic)
+    oni_source_graphic.instance_variable_set(:@tile_id, 0)
+    oni_source_graphic.instance_variable_set(:@character_name, "$test")
+    oni_source_graphic.instance_variable_set(:@character_index, 0)
+    oni_source_graphic.instance_variable_set(:@direction, 2)
+    oni_source_graphic.instance_variable_set(:@pattern, 1)
+
+    pop = lambda do |anchor, text|
+      wrapped_message_commands([text], tag: "\\bm[#{anchor}] ", width: 24)
+    end
+
+    # Continue Map025's existing fade-out directly into the route epilogue.
+    page25 = template.instance_variable_get(:@pages).first
+    list25 = page25.instance_variable_get(:@list) || []
+    unless list25.any? { |c| command_code(c) == 201 && command_parameters(c)[1] == 35 }
+      at = list25.index { |c| command_code(c) == 123 } || list25.length - 1
+      list25.insert(at, event_command(201, 0, [0, 35, 10, 9, 2, 0]))
+      page25.instance_variable_set(:@list, list25)
+    end
+    save_data(map25_path, map25)
+
+    # Map035: fixed 21x17 parallax cutscene. Hải Quỳ is shown with the dedicated
+    # sleeping-at-night charset; E002 is also her Pop Message/camera anchor.
+    map35 = Marshal.load(Marshal.dump(map25))
+    map35.instance_variable_set(:@display_name, "Phòng Hải Quỳ — Đêm muộn")
+    map35.instance_variable_set(:@width, 21)
+    map35.instance_variable_set(:@height, 17)
+    map35.instance_variable_set(:@data, blank_table(21, 17, 4))
+    map35.instance_variable_set(:@parallax_name, "HQ_Room_Midnight_Base")
+    map35.instance_variable_set(:@parallax_loop_x, false)
+    map35.instance_variable_set(:@parallax_loop_y, false)
+    map35.instance_variable_set(:@parallax_sx, 0)
+    map35.instance_variable_set(:@parallax_sy, 0)
+    map35.instance_variable_set(:@scroll_type, 0)
+    map35.instance_variable_set(:@note, "Atlantis chase ending bedroom epilogue")
+
+    events35 = {}
+    anchor_page = page_from_template(template, [], trigger: 0, priority: 0)
+    anchor_graphic = anchor_page.instance_variable_get(:@graphic)
+    anchor_graphic.instance_variable_set(:@tile_id, 0)
+    anchor_graphic.instance_variable_set(:@character_name, "$HaiQuy_Sleep_Night")
+    anchor_graphic.instance_variable_set(:@character_index, 0)
+    anchor_graphic.instance_variable_set(:@direction, 2)
+    anchor_graphic.instance_variable_set(:@pattern, 1)
+    anchor_page.instance_variable_set(:@priority_type, 1)
+    events35[2] = event_from_pages(template, 2, "ANCHOR-HQ-BED", 7, 5, [anchor_page])
+    oni_page = Marshal.load(Marshal.dump(oni_template.instance_variable_get(:@pages).first))
+    oni_page.instance_variable_set(:@list, [event_command(0, 0, [])])
+    oni_page.instance_variable_set(:@trigger, 0)
+    oni_page.instance_variable_set(:@priority_type, 1)
+    events35[3] = event_from_pages(oni_template, 3, "NPC-ONI-ONII-BEDSIDE", 10, 6, [oni_page])
+
+    scene35 = [
+      event_command(355, 0, ["$game_player.transparent=true"]),
+      event_command(222, 0, []),
+      event_command(122, 0, [40, 40, 0, 0, 2]),
+      event_command(117, 0, [2]),
+      event_command(213, 0, [2, 6, false])
+    ]
+    scene35.concat(pop.call(3, "Mày thấy sao rồi?"))
+    scene35.concat(pop.call(2, "Cũng đỡ đỡ…"))
+    [
+      "Ai mà ngờ được cái con quái vật vực sâu có khả năng ngụy trang mà mọi người ráo riết truy đuổi",
+      "Lại ở nhà mình cơ chứ?"
+    ].each { |line| scene35.concat(pop.call(3, line)) }
+    scene35 << event_command(213, 0, [2, 2, false])
+    scene35.concat(pop.call(2, "Hả…?"))
+    [
+      "Ban nãy tao nhận được tin báo là có một con quái vật vực sâu lọt vào thành phố.",
+      "Cấp trên điều động tao đi tìm nó nên tao tính xuống ăn mì cho lại sức rồi đi.",
+      "Dè đâu mì chẳng thấy mà lại thấy nó.", "Thế mà lại hay.",
+      "Phen này tao có huân chương là cái chắc."
+    ].each { |line| scene35.concat(pop.call(3, line)) }
+    scene35.concat(pop.call(2, "Thế hai không tính khao em à?"))
+    scene35.concat(pop.call(2, "Tính ra em là đứa giúp hai có huy chương luôn á."))
+    [
+      "Rồi rồi! Tao sẽ suy nghĩ.",
+      "Giờ mày nghỉ ngơi đi, tao đi xuống báo cáo với anh em."
+    ].each { |line| scene35.concat(pop.call(3, line)) }
+    scene35.concat(pop.call(2, "Dạ…!"))
+    scene35.concat([
+      event_command(355, 0, ["$game_map.events[3].set_direction(2)"]),
+      event_command(230, 0, [20])
+    ])
+    [
+      "Cái chiêu “ Anemone Diamond Shower “ gi gì đó của mày…",
+      "Sao nó gần giống “ Aero Blast “ vậy?"
+    ].each { |line| scene35.concat(pop.call(3, line)) }
+    scene35.concat(pop.call(2, "Thì em nâng cấp từ chiêu đó mà…!"))
+    ["Ồ, vậy hả?", "Sao không đặt là “ Aero Twinkle Blast “?", "Tên mày đặt nghe thối tai quá."].each do |line|
+      scene35.concat(pop.call(3, line))
+    end
+    scene35.concat([
+      event_command(355, 0, ["char_effect(3, \"Disappear\")"]),
+      event_command(230, 0, [35]),
+      event_command(355, 0, ["$game_map.events[3].opacity=0"]),
+      event_command(213, 0, [2, 5, false])
+    ])
+    scene35.concat(pop.call(2, "ÔNG ANH HAI ĐÁNG GHÉT!!!!!"))
+    scene35 << event_command(213, 0, [2, 6, false])
+    scene35.concat(pop.call(2, "Cơ mà…người ngợm thế này chắc không tham gia tiệc giáng sinh được rồi…"))
+    scene35.concat(pop.call(2, "Phải nhắn cho mọi người biết…"))
+    scene35.concat([
+      event_command(355, 0, ["GroupChatPreset.atlantis_chase_ending"]),
+      # SceneManager.call only queues the phone scene. This one-frame wait
+      # yields the interpreter so the chat opens before unlock/CG commands.
+      event_command(230, 0, [1]),
+      event_command(355, 0, ["PhoneGroupChatSave.save_current_cutscene(:wanderer_group)"]),
+      event_command(355, 0, ["GlobalGallery.unlock(9)"]),
+      event_command(355, 0, ["EndingPresentation.show_gallery(\"EDRuotDuoi\",240)"]),
+      event_command(122, 0, [41, 41, 0, 0, 1]),
+      event_command(201, 0, [0, 36, 8, 6, 2, 2])
+    ])
+    main35 = page_from_template(template, scene35, trigger: 3, priority: 0)
+    events35[1] = event_from_pages(template, 1, "SCN-ATL-CHASE-EPILOGUE", 0, 0, [main35])
+    map35.instance_variable_set(:@events, events35)
+    save_data(map35_path, map35)
+
+    # Map036: shared after-ending hub. Variable 41 selects the route page;
+    # future endings add higher-value pages to this same controller.
+    map36 = Marshal.load(Marshal.dump(map25))
+    map36.instance_variable_set(:@display_name, "After Ending Hint")
+    map36.instance_variable_set(:@width, 17)
+    map36.instance_variable_set(:@height, 13)
+    map36.instance_variable_set(:@data, blank_table(17, 13, 4))
+    map36.instance_variable_set(:@parallax_name, "")
+    map36.instance_variable_set(:@scroll_type, 0)
+    map36.instance_variable_set(:@note, "Shared after-ending hint hub; Variable 41 = route hint ID")
+    events36 = {}
+    bully_page = page_from_template(template, [], trigger: 0, priority: 1)
+    graphic = bully_page.instance_variable_get(:@graphic)
+    graphic.instance_variable_set(:@tile_id, 0)
+    graphic.instance_variable_set(:@character_name, "$BullyQuy_Sleep_Night")
+    graphic.instance_variable_set(:@character_index, 0)
+    graphic.instance_variable_set(:@direction, 2)
+    graphic.instance_variable_set(:@pattern, 1)
+    events36[2] = event_from_pages(template, 2, "NPC-AFTER-END-BULLY-QUY", 8, 6, [bully_page])
+    hint_lines = [
+      "Ôi, chán thế?", "Ngươi cũng thấy buồn mà đúng không?", "Không sao!",
+      "Ta có thể giúp ngươi đó!", "Với “ Wonder Chrismast Fiesta “ này",
+      "Ta sẽ giúp ngươi tận hưởng kỳ nghỉ đáng mơ ước nhất mà ngươi có thể mơ.",
+      "Hmmm?", "Chuyện của Hải Quỳ á?", "Ồ, tự thân ngươi hiểu đi chứ.",
+      "Ta lười giải thích quá.", "Lỡ bung bét hết rồi.",
+      "Giờ ta chỉ muốn tận hưởng giáng sinh thôi.", "Nên là…!",
+      "WONDER CHRISMAST FIESTA!!"
+    ]
+    scene36 = [
+      event_command(355, 0, ["$game_player.transparent=true"]),
+      event_command(122, 0, [40, 40, 0, 0, 2]),
+      event_command(117, 0, [5]),
+      event_command(355, 0, ["char_effect(2, \"Breath\")"])
+    ]
+    hint_lines.each_with_index do |line, index|
+      scene36 << event_command(213, 0, [2, 9, false]) if index == 3
+      scene36 << event_command(213, 0, [2, 2, false]) if index == 6
+      scene36 << event_command(213, 0, [2, 1, false]) if index == hint_lines.length - 1
+      scene36.concat(pop.call(2, line))
+    end
+    scene36.concat([
+      event_command(117, 0, [3]),
+      # Let the final balloon animation finish before the map spriteset is
+      # disposed by Return to Title.
+      event_command(230, 0, [60]),
+      event_command(355, 0, ["HAIQUY_TITLE.set_ending_background(\"EDRuotDuoi\")"]),
+      event_command(354, 0, [])
+    ])
+    page36 = page_from_template(template, scene36, trigger: 3, priority: 0,
+      variable_id: 41, variable_value: 1)
+    events36[1] = event_from_pages(template, 1, "SYS-AFTER-ENDING-HINT-ROUTER", 0, 0, [page36])
+    map36.instance_variable_set(:@events, events36)
+    save_data(map36_path, map36)
+
+    infos = load_data("Data/MapInfos.rvdata2")
+    [[35, "Phòng Hải Quỳ — Đêm muộn"], [36, "After Ending Hint"]].each do |id, name|
+      info = infos[id] || Marshal.load(Marshal.dump(infos[25]))
+      info.instance_variable_set(:@name, name)
+      info.instance_variable_set(:@parent_id, 0)
+      info.instance_variable_set(:@order,
+        infos.values.compact.map { |i| i.instance_variable_get(:@order).to_i }.max + 1)
+      info.instance_variable_set(:@expanded, true)
+      infos[id] = info
+    end
+    save_data("Data/MapInfos.rvdata2", infos)
+
+    system = load_data("Data/System.rvdata2")
+    variables = system.instance_variable_get(:@variables) || []
+    variables[41] = "ENDING_HINT_ID"
+    system.instance_variable_set(:@variables, variables)
+    save_data("Data/System.rvdata2", system)
+    puts "ATLANTIS_EPILOGUE|Map025->Map035->Map036->Title|gallery=9|hint_var=41"
+  end
+
   def dump_common_events
     events = load_data("Data/CommonEvents.rvdata2")
     events.each do |event|
@@ -2186,6 +3321,125 @@ module RVData2Audit
         puts "CMD|#{code}|#{params.inspect}" if [355, 655, 102, 111, 121, 122, 123, 201, 205].include?(code)
       end
     end
+  end
+
+  def apply_map026_khas_lighting
+    path = "Data/Map026.rvdata2"
+    map = load_data(path)
+    events = map.instance_variable_get(:@events) || {}
+    required = [1, 2, 14, 15, 20]
+    missing = required.reject { |id| events[id] }
+    raise "Map026 missing events: #{missing.join(', ')}" unless missing.empty?
+
+    note = map.instance_variable_get(:@note).to_s
+    note = note.lines.reject { |line| line =~ /^\[(?:lighting|opacity|color)\b/i }.join
+    note = "[lighting on]\n[opacity 235]\n[color 000000000]\n#{note}"
+    map.instance_variable_set(:@note, note)
+
+    setup_page = events[1].instance_variable_get(:@pages).first
+    setup_page.instance_variable_set(:@list, [
+      event_command(355, 0, ['layer(26,0,["Storage_Top",0,0,255,200,0,0,0])']),
+      event_command(655, 0, ["refresh_layers"]),
+      event_command(355, 0, ["if $game_switches[39]"]),
+      event_command(655, 0, ["  $game_player.drop_light"]),
+      event_command(655, 0, ["  $game_map.shadows.set_opacity(0)"]),
+      event_command(655, 0, ["else"]),
+      event_command(655, 0, ["  $game_map.shadows.set_color(0, 0, 0)"]),
+      event_command(655, 0, ["  $game_map.shadows.set_opacity(235)"]),
+      event_command(655, 0, ['  $game_player.give_light("player_small")']),
+      event_command(655, 0, ["end"]),
+      event_command(355, 0, ["map_effects.set_tone(0,0,0,0,0)"]),
+      event_command(123, 0, ["A", 0]),
+      event_command(0, 0, [])
+    ])
+
+    [14, 15].each do |event_id|
+      page = events[event_id].instance_variable_get(:@pages).first
+      page.instance_variable_set(:@list, [
+        event_command(101, 0, ["", 0, 0, 2]),
+        event_command(401, 0, ["Bật đèn?"]),
+        event_command(121, 0, [39, 39, 0]),
+        event_command(355, 0, ["$game_player.drop_light"]),
+        event_command(355, 0, ["$game_map.shadows.set_opacity(0, 30)"]),
+        event_command(0, 0, [])
+      ])
+    end
+
+    cleanup = [
+      event_command(355, 0, ["$game_player.drop_light"]),
+      event_command(355, 0, ["$game_map.shadows.set_opacity(0)"])
+    ]
+    exit_page = events[2].instance_variable_get(:@pages).first
+    exit_list = exit_page.instance_variable_get(:@list) || []
+    exit_list.reject! do |command|
+      command_code(command) == 355 && ["$game_player.drop_light", "$game_map.shadows.set_opacity(0)"].include?(command_parameters(command)[0])
+    end
+    transfer_index = exit_list.index { |command| command_code(command) == 201 } || exit_list.length - 1
+    exit_list.insert(transfer_index, *Marshal.load(Marshal.dump(cleanup)))
+
+    letter_page = events[20].instance_variable_get(:@pages)[2]
+    letter_list = letter_page.instance_variable_get(:@list) || []
+    letter_list.reject! do |command|
+      command_code(command) == 355 && ["$game_player.drop_light", "$game_map.shadows.set_opacity(0)"].include?(command_parameters(command)[0])
+    end
+    transfer_index = letter_list.index { |command| command_code(command) == 201 } || letter_list.length - 1
+    letter_list.insert(transfer_index, *Marshal.load(Marshal.dump(cleanup)))
+
+    save_data(path, map)
+    puts "MAP026_KHAS_LIGHTING|dark=235|player_light=player_small|switch=39|events=1,2,14,15,20"
+  end
+
+  def create_phone_timeline_presets
+    common_path = "Data/CommonEvents.rvdata2"
+    common_events = load_data(common_path)
+    template = common_events.compact.first
+    raise "No Common Event template" unless template
+    presets = {
+      12 => ["PHONE — Prologue 21 Dec 08:45 [CE12]", :prologue],
+      13 => ["PHONE — City 21 Dec 17:35 [CE13]", :city],
+      14 => ["PHONE — Bus 21 Dec 18:05 [CE14]", :bus],
+      15 => ["PHONE — Atlantis Gate 21 Dec 19:00 [CE15]", :atlantis_gate],
+      16 => ["PHONE — Home 21 Dec 19:20 [CE16]", :home],
+      17 => ["PHONE — Book Shop 21 Dec 20:10 [CE17]", :book_shop],
+      18 => ["PHONE — Christmas Gift 25 Dec 19:00 [CE18]", :christmas_gift]
+    }
+    presets.each do |id, (name, stage)|
+      event = common_events[id] || Marshal.load(Marshal.dump(template))
+      event.instance_variable_set(:@id, id)
+      event.instance_variable_set(:@name, name)
+      event.instance_variable_set(:@trigger, 0)
+      event.instance_variable_set(:@switch_id, 1)
+      event.instance_variable_set(:@list, [
+        event_command(355, 0, ["PhoneTimeline.advance(:#{stage})"]),
+        event_command(0, 0, [])
+      ])
+      common_events[id] = event
+    end
+    save_data(common_path, common_events)
+
+    attachments = {
+      3 => [1, 12],
+      6 => [2, 13],
+      10 => [2, 14],
+      21 => [1, 15],
+      22 => [1, 16],
+      23 => [1, 17]
+    }
+    attachments.each do |map_id, (event_id, common_id)|
+      path = format("Data/Map%03d.rvdata2", map_id)
+      map = load_data(path)
+      event = (map.instance_variable_get(:@events) || {})[event_id]
+      raise "Map#{map_id} missing Event #{event_id}" unless event
+      page = (event.instance_variable_get(:@pages) || []).first
+      list = page.instance_variable_get(:@list) || []
+      list.reject! do |command|
+        command_code(command) == 117 && (12..18).include?(command_parameters(command)[0])
+      end
+      list.unshift(event_command(117, 0, [common_id]))
+      page.instance_variable_set(:@list, list)
+      save_data(path, map)
+    end
+    puts "PHONE_TIMELINE|common_events=12..18|maps=3,6,10,21,22,23|gift=25-Dec-19:00"
   end
 
   def event_command(code, indent, parameters)
@@ -2590,8 +3844,30 @@ when "audit-map-state"
   RVData2Audit.audit_map_state
 when "replace-script"
   RVData2Audit.replace_runtime_script(ARGV.fetch(0), ARGV.fetch(1))
+when "insert-script"
+  RVData2Audit.insert_runtime_script(ARGV.fetch(0), ARGV.fetch(1), ARGV[2] || "Main")
+when "prepare-map027-demo"
+  RVData2Audit.prepare_map027_demo_events
+when "create-atlantis-mirror-chase"
+  RVData2Audit.create_atlantis_mirror_and_chase_maps
+when "remove-khas-awesome-light-effects"
+  RVData2Audit.remove_khas_awesome_light_effects
+when "fix-atlantis-chase-exit-map"
+  RVData2Audit.fix_atlantis_chase_exit_map
+when "implement-atlantis-post-chase-scene"
+  RVData2Audit.implement_atlantis_post_chase_scene
+when "create-atlantis-clone-encirclement-map"
+  RVData2Audit.create_atlantis_clone_encirclement_map
+when "apply-atlantis-route-balloons"
+  RVData2Audit.apply_atlantis_route_balloons
+when "create-atlantis-chase-epilogue"
+  RVData2Audit.create_atlantis_chase_epilogue
 when "dump-common-events"
   RVData2Audit.dump_common_events
+when "apply-map026-khas-lighting"
+  RVData2Audit.apply_map026_khas_lighting
+when "create-phone-timeline-presets"
+  RVData2Audit.create_phone_timeline_presets
 when "create-camera-presets"
   RVData2Audit.create_camera_presets
 when "rename-map003-events"

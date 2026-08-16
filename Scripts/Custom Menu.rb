@@ -158,6 +158,7 @@ class Game_Config
   attr_accessor :phone_widget_small_right_title
   attr_accessor :phone_widget_small_right_big
   attr_accessor :phone_widget_small_right_sub
+  attr_accessor :phone_timeline_stage
 
   def initialize
     reset_phone_widgets
@@ -165,15 +166,16 @@ class Game_Config
 
   def reset_phone_widgets
     @phone_widget_weather_title = "Cloudy"
-    @phone_widget_weather_time  = "Monday 08:45"
+    @phone_widget_weather_time  = "21 Dec • 08:45"
     @phone_widget_weather_temp  = "23°"
     @phone_widget_weather_sub   = "Wind 12 km/h"
     @phone_widget_small_left_title = "Calendar"
-    @phone_widget_small_left_big   = "24"
-    @phone_widget_small_left_sub   = "No events"
+    @phone_widget_small_left_big   = "21"
+    @phone_widget_small_left_sub   = "December"
     @phone_widget_small_right_title = "Status"
     @phone_widget_small_right_big   = "87%"
     @phone_widget_small_right_sub   = "Battery"
+    @phone_timeline_stage = :prologue
   end
 
   def set_phone_weather(title, time_text, temp_text, sub_text)
@@ -230,6 +232,86 @@ module PhoneMenuScript
   def self.reset_widgets
     return unless $game_config
     $game_config.reset_phone_widgets
+  end
+
+  def self.advance_timeline(stage)
+    PhoneTimeline.advance(stage)
+  end
+
+  def self.force_timeline(stage)
+    PhoneTimeline.apply(stage, true)
+  end
+end
+
+#==============================================================================
+# Phone Timeline
+#------------------------------------------------------------------------------
+# Story-controlled clock. Presets only move forward, so revisiting an older map
+# cannot rewind the phone date/time or restore battery accidentally.
+#==============================================================================
+module PhoneTimeline
+  ORDER = [
+    :prologue, :city, :bus, :atlantis_gate, :home, :book_shop,
+    :christmas_gift
+  ]
+
+  PRESETS = {
+    :prologue => {
+      :weather => ["Cloudy", "21 Dec • 08:45", "23°", "Wind 12 km/h"],
+      :calendar => ["Calendar", "21", "December"],
+      :battery => ["Status", "87%", "Battery"]
+    },
+    :city => {
+      :weather => ["Cloudy", "21 Dec • 17:35", "21°", "Wind 15 km/h"],
+      :calendar => ["Calendar", "21", "December"],
+      :battery => ["Status", "54%", "Battery"]
+    },
+    :bus => {
+      :weather => ["Cloudy", "21 Dec • 18:05", "20°", "Wind 14 km/h"],
+      :calendar => ["Calendar", "21", "December"],
+      :battery => ["Status", "48%", "Battery"]
+    },
+    :atlantis_gate => {
+      :weather => ["Clear", "21 Dec • 19:00", "18°", "Atlantis"],
+      :calendar => ["Calendar", "21", "December"],
+      :battery => ["Status", "43%", "Battery"]
+    },
+    :home => {
+      :weather => ["Indoors", "21 Dec • 19:20", "22°", "Home"],
+      :calendar => ["Calendar", "21", "December"],
+      :battery => ["Status", "38%", "Battery"]
+    },
+    :book_shop => {
+      :weather => ["Indoors", "21 Dec • 20:10", "18°", "Old Book Shop"],
+      :calendar => ["Calendar", "21", "December"],
+      :battery => ["Status", "31%", "Battery"]
+    },
+    :christmas_gift => {
+      :weather => ["Snowy", "25 Dec • 19:00", "17°", "Christmas Party"],
+      :calendar => ["Calendar", "25", "Christmas"],
+      :battery => ["Status", "76%", "Battery"]
+    }
+  }
+
+  def self.advance(stage)
+    apply(stage, false)
+  end
+
+  def self.apply(stage, force = false)
+    return false unless $game_config
+    key = stage.to_sym
+    data = PRESETS[key]
+    return false unless data
+    current = $game_config.phone_timeline_stage
+    current_index = ORDER.index(current && current.to_sym) || -1
+    target_index = ORDER.index(key)
+    return false unless target_index
+    return false if !force && target_index < current_index
+    $game_config.set_phone_weather(*data[:weather])
+    $game_config.set_phone_left_widget(*data[:calendar])
+    $game_config.set_phone_right_widget(*data[:battery])
+    $game_config.phone_timeline_stage = key
+    true
   end
 end
 
@@ -1412,8 +1494,12 @@ module PhoneMenu
     5 => "Cà Phê",
     6 => "Snowgirl",
     7 => "Snowgirl",
-    8 => "Hakase Aura farming"
+    8 => "Hakase Aura farming",
+    9 => "Ending — Rượt đuổi"
 }
+  GALLERY_PICTURE_FILES = {
+    9 => "EDRuotDuoi"
+  }
   GALLERY_CURSOR_FILE = "Cursor"
   GALLERY_BUTTON_FILE = "Button"
 
@@ -1462,14 +1548,19 @@ class Scene_Menu < Scene_MenuBase
   end
 
   def gallery_thumbnail_bitmap(picture_id)
-    filename = gallery_picture_unlocked?(picture_id) ? picture_id.to_s : "0"
+    filename = if gallery_picture_unlocked?(picture_id)
+      PhoneMenu::GALLERY_PICTURE_FILES[picture_id] || picture_id.to_s
+    else
+      "0"
+    end
     Cache.gallery(filename)
   rescue
     Cache.gallery("0")
   end
 
   def gallery_picture_bitmap(picture_id)
-    Cache.gallery(picture_id.to_s)
+    filename = PhoneMenu::GALLERY_PICTURE_FILES[picture_id] || picture_id.to_s
+    Cache.gallery(filename)
   rescue
     nil
   end

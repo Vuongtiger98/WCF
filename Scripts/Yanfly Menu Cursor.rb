@@ -101,6 +101,10 @@ class Sprite_MenuCursor < Sprite_Base
   # update
   #--------------------------------------------------------------------------
   def update
+    # Scene transitions may run one final update_basic after pre_terminate has
+    # already disposed the cursor sprites. Do not touch a dead sprite/window.
+    return if disposed?
+    return if @window.nil? || @window.disposed?
     super
     update_visibility
     update_position
@@ -207,7 +211,10 @@ class Scene_Base
   # new method: dispose_menu_cursors
   #--------------------------------------------------------------------------
   def dispose_menu_cursors
-    @menu_cursors.each { |cursor| cursor.dispose }
+    return unless @menu_cursors
+    @menu_cursors.each do |cursor|
+      cursor.dispose if cursor && !cursor.disposed?
+    end
   end
   
   #--------------------------------------------------------------------------
@@ -223,7 +230,10 @@ class Scene_Base
   # new method: update_menu_cursors
   #--------------------------------------------------------------------------
   def update_menu_cursors
-    @menu_cursors.each { |cursor| cursor.update }
+    return unless @menu_cursors
+    @menu_cursors.each do |cursor|
+      cursor.update if cursor && !cursor.disposed?
+    end
   end
   
 end # Scene_Base

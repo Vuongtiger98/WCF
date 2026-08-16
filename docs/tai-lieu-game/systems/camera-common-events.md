@@ -1,6 +1,6 @@
 # Camera và Common Events
 
-Common Events hiện có 10 mục. Các mục 1–7 là bộ effect/camera dùng lại; 8–10 đang trống/generic.
+Common Events 1–10 là bộ effect/camera dùng lại. Common Events 12–18 điều khiển timeline điện thoại.
 
 | ID | Tên | Chức năng |
 |---:|---|---|
@@ -12,6 +12,8 @@ Common Events hiện có 10 mục. Các mục 1–7 là bộ effect/camera dùng
 | 6 | FX Shock | Zoom/zoom blur nhanh |
 | 7 | FX Horror Tension | Zoom 110, tone/color tối, gaussian blur |
 | 8–10 | chưa đặt tên | Chưa có logic đáng kể |
+| 12–17 | PHONE — Route timeline | Cập nhật ngày, giờ, địa điểm và pin từ Silver Wing tới tiệm sách Atlantis |
+| 18 | PHONE — Christmas Gift | Mốc hội tụ trao quà: 25/12 lúc 19:00 |
 
 ## API đang được sử dụng
 
@@ -30,4 +32,3 @@ Tạo các Common Event chuẩn hóa theo vai trò, không theo map:
 5. `FX_DialogueSoft`, `FX_Dramatic`, `FX_Shock`, `FX_Horror` — preset hiệu ứng.
 
 Không nên tạo thêm script camera mới ngay. Hãy gom preset vào Common Events, kiểm tra reset sau mỗi cutscene, rồi mới quyết định có cần mở rộng engine hay không.
-

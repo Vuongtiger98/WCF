@@ -3,6 +3,8 @@
 #==============================================================================
 
 module CattoPetting
+  DEMO_BGM = ["Theme2", 75, 100]
+
   BODY_IMAGE = "Body"
   HEAD_IMAGE = "Head"
   BITE_IMAGE = "Bite"
@@ -88,16 +90,20 @@ class Scene_CattoPetting < Scene_Base
   include CattoPetting
 
   def start
+    $game_system.save_bgm
     super
     create_main_sprites
     create_ui
     create_retry_objects
     init_game
+    RPG::BGM.new(DEMO_BGM[0], DEMO_BGM[1], DEMO_BGM[2]).play
   end
 
   def terminate
     super
     dispose_catto_all
+    RPG::BGM.stop
+    $game_system.replay_bgm
   end
 
   def init_game

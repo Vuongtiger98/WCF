@@ -166,7 +166,10 @@ class Sprite_Character < Sprite_Base
     dispose_balloon
     @balloon_duration = 8 * balloon_speed + balloon_wait
     @balloon_sprite = ::Sprite.new(viewport)
-    @balloon_sprite.bitmap = Cache.system("Balloon")
+    # This project ships two complete 10-row balloon sheets instead of the
+    # default Balloon.png. IDs 1..10 use Balloon1; IDs 11..20 use Balloon2.
+    sheet = ((@balloon_id - 1) / 10) + 1
+    @balloon_sprite.bitmap = Cache.system("Balloon#{sheet}")
     @balloon_sprite.ox = 16
     @balloon_sprite.oy = 32
     update_balloon
@@ -191,7 +194,7 @@ class Sprite_Character < Sprite_Base
         @balloon_sprite.y = y - height
         @balloon_sprite.z = z + 200
         sx = balloon_frame_index * 32
-        sy = (@balloon_id - 1) * 32
+        sy = ((@balloon_id - 1) % 10) * 32
         @balloon_sprite.src_rect.set(sx, sy, 32, 32)
       else
         end_balloon

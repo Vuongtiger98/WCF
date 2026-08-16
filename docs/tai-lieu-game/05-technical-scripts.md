@@ -95,15 +95,35 @@ KUL Graphics còn diễn giải region/height theo cấu hình riêng trong KUL 
 - `Map Screenshot`: công cụ chụp/debug map, có thể hiển thị region/passage.
 - `HP Bar Over Player`, `Text Over Event`: thông tin hiển thị trên map.
 
+### Title screen và easter egg Hải Quỳ
+
+- `MOG_T_Logo` đã được chỉnh để `Salt_Pebbles` bay từ ngoài mép trái vào giữa màn hình trong 60 frame, giảm tốc ở cuối, phát SE tạm `cute-squeak-1`, dừng 45 frame rồi fade 20 frame; sau đó mới chạy `Logo_0`, `Logo_1`, ...
+- `MOG_T_Name` luôn vẽ foreground `Graphics/Titles1/Title name.png` ở tâm màn hình; không phụ thuộc tùy chọn Draw Game Title và không còn dùng background `WCF title` trong Database.
+- Nếu thư mục game có `HaiQuy.txt`, mỗi lần tạo Scene Title sẽ chọn ngẫu nhiên `Title_Screen_1` hoặc `Title_Screen_2`.
+- Nếu không có `HaiQuy.txt`, title luân phiên `Title_Screen_3` và `Title_Screen_4`; cứ 180 frame bắt đầu một transition glitch dài 24 frame.
+- Sau ending, `HAIQUY_TITLE.set_ending_background(filename)` tạm ưu tiên ảnh trong `Graphics/Gallery` làm nền Title của phiên hiện tại. Route rượt đuổi dùng `EDRuotDuoi`; khởi động lại game vẫn quay về quy tắc title easter/glitch bình thường.
+- Nội dung chuẩn của file easter egg là `Anizoa Drosallie  Hexacoral  Dahria  Actini`.
+- Script Call bật easter egg: `HAIQUY_TITLE.create_easter_egg`.
+- Script Call tắt easter egg: `HAIQUY_TITLE.delete_easter_egg`.
+- Việc tạo/xóa file chỉ ảnh hưởng lần tạo Scene Title kế tiếp. Nếu gọi trong game và muốn thấy ngay, sau đó dùng `SceneManager.goto(Scene_Title)`.
+
 ### Menu điện thoại và minigame
 
 - `MOG_Picture_Gallery`: gallery nền tảng; script call `picture_gallery`, `enable_picture(id)`, `disable_picture(id)`.
 - `Cutscene Group Chat`: chat trong cutscene, choice và branch.
 - `Custom Menu`: menu điện thoại, Contacts, Gallery, item/save/load/system.
+- `Custom Menu` có `PhoneTimeline`: widget ngày/giờ/pin được lưu theo save và chỉ tiến về phía trước qua Common Event 12–18. CE18 là mốc hội tụ trao quà ngày 25/12 lúc 19:00.
 - `Custom Menu` hiện đã tích hợp Gallery Upgrade và Saved Group Chat Patch. Không thêm lại hai patch cũ vào slot riêng.
 - Gallery unlock toàn cục lưu tại `Save/GlobalGallery.rvdata2`.
 - Group chat lưu trong `$game_config.phone_group_chats`; các API chính gồm `PhoneGroupChatSave.add_text`, `add_image`, `add_system`, `add_choice_result`, `save_current_cutscene`.
 - `BulletHell`: minigame danmaku; Variable 19 điểm hiện tại, Variable 20 high score.
+- Các mốc tăng spawn, enemy cap và tỉ lệ loại enemy dùng `@game_time` của riêng lượt chơi; không dùng `Graphics.frame_count`, vì bộ đếm toàn cục này không reset khi chọn chơi lại.
+- `Random Event Patch`: addon của BulletHell, chạy event định kỳ gồm Firework Line, Spiral Fan Boss, Coffee Drop, Tsunami, Slash Trap và Gravity Well.
+- Gravity Well có bốn pha: cảnh báo 90 frame; hút Player theo lực radial tăng phi tuyến và tạo vật thể quỹ đạo trong 720 frame; gom toàn bộ vật thể vào lõi trong 150 frame đồng thời chuyển lõi dần sang đỏ; sau đó phóng chúng ra và collapse trong 90 frame kèm vòng đạn cuối. Vật thể được rải trên nhiều bán kính từ gần lõi tới giao điểm với mép màn hình, luân phiên quay thuận/ngược chiều và sinh mỗi 7 frame để tránh vùng đứng yên an toàn. Mỗi vật thể thứ tư dùng sprite alien xoay tròn nhưng vẫn được xử lý như projectile: chạm Player gây damage, không có HP và không tham gia điều kiện wave. `FORCE_EVENT_ID = 0` nên hệ thống đang dùng weight bình thường; đặt thành `6` khi cần ép Gravity Well để test.
+- Death-state BulletHell đã được khóa cứng: sau khi chết, projectile/orbit/pickup ngừng collision và bị dọn; `destroy_player` không thể chạy lặp. `Z/Enter` chơi lại sau khi game-over hiện đủ, `A` thoát về map kể cả khi ảnh game-over đang fade.
+- Khi chuẩn bị random event, chỉ `update_event_preparation` được phép điều khiển enemy retreat; không gọi pattern movement, tránh `anchor_hover`/`orbit_anchor` kéo enemy về anchor.
+- Trong Firework Line, kẻ phản đòn dùng `event_center_x` làm tọa độ bám Player độc lập với pattern di chuyển thường; nó có thể đi tới hai mép theo nửa chiều rộng sprite, và lần sync sau base update chỉ khôi phục vị trí chứ không di chuyển thêm lần hai.
+- Slash Trap dùng `Sprite_Player#hitbox_x/#hitbox_y` thay cho sprite origin và cộng bán kính hitbox vào phép thử đoạn thẳng, nên vùng gây damage khớp hiệu ứng chém ở cả focus và normal mode.
 - `Catto Petting Minigame`: minigame petting; `RESULT_VARIABLE_ID = 0` nghĩa là hiện không ghi điểm ra Variable.
 - `Transform Form Selection`: ghi form vào Variable 4.
 
@@ -116,6 +136,12 @@ KUL Graphics còn diễn giải region/height theo cấu hình riêng trong KUL 
 ### Message/UI — cần test thứ tự load
 
 `Yanfly Message System`, addon, `Galv Double Message`, `Pop Message`, `Yanfly Gabwindow` và Group Chat đều sửa message/input/window. Không phát hiện lỗi cấu hình tĩnh mới sau lần hợp nhất menu điện thoại; cần test message thường, message skip, gab window và chat choice riêng.
+
+### Balloon cảm xúc
+
+Project dùng hai sheet `Graphics/System/Balloon1.png` và `Balloon2.png` thay cho `Balloon.png` mặc định. Runtime `Sprite_Character` ánh xạ ID 1–10 vào mười hàng của `Balloon1`, ID 11–20 vào mười hàng của `Balloon2`. Route Atlantis hiện ưu tiên các ID: 1 ngạc nhiên, 2 nghi vấn, 5 tức giận, 6 ngượng/căng thẳng, 8 im lặng, 9 nảy ý, 10 ngủ; ID 11–12 của `Balloon2` dành cho sốc và va chạm mạnh.
+
+Event command vẫn là Show Balloon chuẩn của VX Ace (`213`): target `-1` là Player, `0` là event đang chạy, số dương là event ID trên map. Với scene controller, phải trỏ đúng ID NPC thay vì `0`, vì `0` sẽ đặt balloon trên controller vô hình.
 
 ### Picture/layer/parallax — rủi ro Z-order
 

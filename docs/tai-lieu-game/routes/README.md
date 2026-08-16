@@ -12,6 +12,6 @@
 
 Route đầu tiên đã được chốt là ending Atlantis. Tuy nhiên map Atlantis chưa dựng; trước khi dựng route sẽ kiểm kê tuần tự các map hiện hữu, bắt đầu từ Map003 Văn phòng Silver Wing. Map generic được bỏ qua.
 
-Map019 được giữ làm map test siêu thị, không thuộc route Atlantis. Flow hiện tại của Atlantis là Map010 → Map021 → Map022. Ở Map022, pha mì dẫn đến Map023; tìm chìa khóa và vào Map026 rồi đọc thư dẫn ngay đến ký ức Map024. Map023 không còn choice prototype tự viết; hiện chỉ chứa phần mở đầu tại tiệm đúng kịch bản. Map024 không còn thoại chase prototype tự viết; hiện dừng ở cờ `HQ_MEMORY_CHASE_READY` vì chưa có map gương/Clone.
+Map019 được giữ làm map test siêu thị, không thuộc route Atlantis. Flow hiện tại bắt đầu Map010 → Map021 → Map022 rồi tách nhánh. Pha mì/nghỉ ngơi dẫn đến Map023 tiệm sách. Tìm chìa khóa, vào Map026 và đọc thư dẫn tới ký ức Map024 → Map028 do người dùng tự dựng → Map034 clone bao vây → Map029 chase QTE → Map025 đối đầu Vực Sâu → Map035 epilogue phòng ngủ/Group Chat → Map036 after-ending hint → Title. Map025 không phải scene Aira; đây là cảnh Hải Quỳ tự khẳng định tên Dahria. Không gộp nhánh tiệm sách và nhánh thư/chase nếu chưa có điều kiện hội tụ rõ trong nguồn.
 
 Mỗi route cần ghi entry condition, transfer, flag đọc/ghi, gift/recipient, scene hội tụ, trao quà và ending. Không dùng `EVxxx` làm traceability; cần đổi tên event theo `SCN-xxx` sau khi route được duyệt.

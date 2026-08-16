@@ -135,6 +135,25 @@ module Light_Core
     :static => true, :shadows => true,
     :offset => [0,0],
   },
+
+  # Small moving light for dark exploration maps. Unlike "small", this source
+  # must be dynamic because it follows the player every frame.
+  "player_small" => {
+    :light => "small",
+    :opacity => 235, :variation => 0,
+    :static => false, :shadows => true,
+    :offset => [0,0],
+  },
+
+  # Moving, otherworldly aura used by Hải Quỳ's clones in the dark Atlantis
+  # scenes. It follows event movement and is visually distinct from the warm
+  # neutral light carried by the player.
+  "atlantis_clone" => {
+    :light => "violet",
+    :opacity => 190, :variation => 18,
+    :static => false, :shadows => true,
+    :offset => [0,0],
+  },
   
   
   "big" => {

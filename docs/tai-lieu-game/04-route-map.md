@@ -192,15 +192,15 @@ Tên flag chỉ là đề xuất tài liệu, chưa phải tên switch trong pro
 
 ```text
 Map010 xe bus
-→ cảnh nghỉ ngơi/nhà-kho Hải Quỳ
-→ tiệm sách phép Atlantis
-→ khám phá và chọn sách
-→ Quái Vật Vực Sâu ngụy trang xuất hiện
-→ chase/đuổi bắt
-→ ending Atlantis
+→ nhà Hải Quỳ
+├─ pha mì/nghỉ ngơi → tiệm sách
+│  ├─ tìm sách trước → Hakase/Shylvie → tiệc
+│  └─ gặp chủ tiệm trước → tạo vật Vực Sâu nổ → ending giải cứu
+└─ mở phòng kho và đọc thư → ký ức → gương → chase
+   → Hải Quỳ khẳng định tên Dahria → Oni Onii hỗ trợ → màn hình đen
 ```
 
-Các trạng thái cần theo dõi: đã chọn Atlantis, đã đọc thư, đã vào tiệm sách, sách đã chọn, chase đã kích hoạt và ending đã đạt. Map021 hiện chỉ là route gate tạm; cần redesign thành scene nghỉ ngơi hoặc chuyển tiếp trước khi dựng các map sau.
+Không gộp nhánh chọn sách, nhánh chủ tiệm và nhánh đọc thư thành một đường bắt buộc. Các trạng thái cần theo dõi độc lập: đã chọn Atlantis, đã đọc thư, đã vào tiệm sách, sách đã chọn, chase đã kích hoạt và ending đã đạt.
 
 ## 10. Tổng số đường đi
 

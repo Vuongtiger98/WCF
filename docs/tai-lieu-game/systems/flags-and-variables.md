@@ -41,6 +41,7 @@ Flag route đề xuất, chưa ghi vào Database: `WCF_ROUTE_GROUP`, `WCF_GIFT_I
 | Switch 36 | `ATL_CHASE_CLEARED` | Đã hoàn tất chase |
 | Variable 30 | `ATL_STEP` | Tiến độ route Atlantis |
 | Variable 31 | `ATL_BOOK_ID` | Sách đã chọn (1=Ma Vương, 2=dịch chuyển) |
+| Variable 41 | `ENDING_HINT_ID` | Router Map036; `1` = Atlantis route rượt đuổi |
 
 ## Nhà và phòng kho Hải Quỳ — runtime hiện tại
 

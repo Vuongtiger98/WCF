@@ -17,20 +17,16 @@ Quy tắc ưu tiên vẫn giữ nguyên: file cùng độ ưu tiên nếu mâu t
 
 ### 2.1. Route Atlantis không phải một map đơn
 
-Route Atlantis hiện có chuỗi:
+DOCX không mô tả route Atlantis như một chuỗi tuyến tính duy nhất. Sau khi về nhà, nội dung tách thành các hướng sau:
 
 ```text
-Xe bus
-→ điểm xuống Atlantis
-→ nhà/kho Hải Quỳ
-→ đọc thư/thông tin cảnh báo
-→ chuẩn bị và sửa Brilliant Anchor
-→ tiệm sách phép Atlantis
-→ chọn sách cho Hakase hoặc Shylvie
-→ Quái Vật Vực Sâu ngụy trang
-→ chase
-→ reveal Dahria/Aira
-→ dừng trước điểm hội tụ tiệc
+Xe bus → điểm xuống Atlantis → nhà Hải Quỳ
+├─ pha mì/nghỉ ngơi → tiệm sách
+│  ├─ tìm sách trước → chọn sách cho Hakase hoặc Shylvie → tiệc tiêu chuẩn
+│  └─ nói chuyện chủ tiệm trước → hộp thiếc/tạo vật Vực Sâu phát nổ → ending giải cứu riêng
+└─ tìm chìa khóa → phòng kho → đọc thư
+   → ký ức bãi rác/gương → chase → đối đầu Vực Sâu cùng Oni Onii
+   → kết thúc nhánh ở màn hình đen; điểm nối sau đó chưa được DOCX xác định tuyến tính
 ```
 
 ### 2.2. Map tương tác phải dùng tọa độ trong DOCX
@@ -69,7 +65,7 @@ Scene chính:
 3. Tương tác Brilliant Anchor.
 4. Đọc thư/tin cảnh báo.
 5. Bật `ATL_READ_LETTER`, tăng `ATL_STEP`.
-6. Chuyển sang tiệm sách.
+6. Đọc thư lập tức chuyển sang ký ức/chase theo chỉ dẫn viết hoa trong nguồn; không chuyển sang tiệm sách.
 
 Các tương tác ký ức quan trọng cần ưu tiên: ảnh gia đình, ảnh Atlantis, nhật ký, cassette/TV, tủ váy đỏ, ảnh thời nhỏ và khu vực sửa chữa.
 
@@ -85,7 +81,7 @@ Map023 cần có:
 - Bật `ATL_OWNER_MET` sau scene/chủ tiệm.
 - Dùng thoại suy nghĩ cho phần đọc sách và `\bm[event_id]` cho người khác nói.
 
-### Giai đoạn C — Chase
+### Giai đoạn C — nhánh thư/ký ức và Chase
 
 Map024 cần được tách thành:
 
@@ -100,15 +96,17 @@ Flag:
 - `ATL_CHASE_STARTED` khi chase bắt đầu.
 - `ATL_CHASE_CLEARED` khi tới đích hợp lệ.
 
-### Giai đoạn D — Reveal trước hội tụ
+### Giai đoạn D — đối đầu sau Chase
 
-Map025 là scene reveal:
+Map025 là cảnh đối đầu cuối nhánh chase:
 
 - Hải Quỳ tự gọi tên Dahria.
 - Nghi ngờ Dahria không phải tên thật.
-- Aira xuất hiện ở tầng suy nghĩ/ký ức.
-- Không giải thích toàn bộ nguồn gốc Poseidon ở đây nếu kịch bản chưa yêu cầu.
-- Bật `ATL_END_READY`, sau đó dừng trước scene hội tụ tiệc.
+- Quái vật phủ nhận tên và thân phận của Hải Quỳ.
+- Hải Quỳ chủ động khẳng định `Dahria…chính là ta!`; nguồn không có Aira đối thoại trong cảnh này.
+- Oni Onii dùng `ECLIPSE BLOCKCHAIN`, Hải Quỳ kết liễu bằng `ANEMONE DIAMOND SHOWER`.
+- Không giải thích toàn bộ nguồn gốc Poseidon.
+- Bật `ATL_END_READY`, sau đó dừng ở màn hình đen vì điểm nối tiếp theo chưa rõ trong bố cục nhiều cột của DOCX.
 
 ## 4. Tương tác các map khác
 
@@ -169,12 +167,11 @@ Không dùng lại Variable 2/3/4/20/40 cho route Atlantis.
 4. Chốt layout collision của Map023 và Map024.
 5. Cung cấp tài nguyên clone/quái vật/chase nếu muốn chase giống kịch bản.
 6. Xác nhận bản tin nhắn hiện hành là bản ưu tiên cao hơn v1/v2.
-7. Xác nhận các đoạn reveal Dahria/Aira được phép xuất hiện trước hội tụ ở mức nào.
+7. Xác nhận điểm nối sau màn hình đen của nhánh chase; không tự chèn Aira vào cảnh Map025.
 
 ## 9. Trạng thái triển khai hiện tại
 
 - Map021: điểm xuống Atlantis, giữ nguyên vai trò route gate.
 - Map022: prototype parallax nhà, event hiện cần thay bằng toàn bộ tọa độ DOCX.
-- Map023–025: prototype route đã tạo để kiểm tra transfer/flag, chưa phải bản production.
+- Map023 đã có nội dung tiệm sách; Map024/029/025 hiện tạo thành nhánh thư–ký ức–chase riêng. Map025 đã thay prototype bằng thoại Cảnh số 5 đúng nguồn, vẫn dùng visual placeholder.
 - Tài liệu thiết kế đã cập nhật theo nội dung mới; binary map tiếp theo chỉ nên sửa sau khi duyệt kế hoạch này.
-

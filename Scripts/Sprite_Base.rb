@@ -30,6 +30,9 @@ class Sprite_Base < Sprite
   # * Frame Update
   #--------------------------------------------------------------------------
   def update
+    # Some scene-changing custom effects can retain a Sprite_Base reference
+    # for one final tick after the map spriteset has disposed it.
+    return if disposed?
     super
     update_animation
     @@ani_checker.clear

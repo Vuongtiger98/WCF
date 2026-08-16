@@ -182,3 +182,5 @@ anti-animation lag.rb
 parallax lock yanfly.rb
 victor fog.rb
 victor module.rb
+Atlantis Shrimp Fishing.rb
+Atlantis Mirror Maze Chase.rb

@@ -185,5 +185,4 @@ Route mì cay hiện kết thúc khi Hải Quỳ rời tiệc và chưa có epil
 | Route | EPI-XX | Epilogue |
 # Bổ sung timeline từ bản kịch bản mới
 
-Sau cảnh xe bus và trước ending Atlantis, Hải Quỳ về nhà/kho nghỉ ngơi, sửa Brilliant Anchor và đọc/nhận thông tin dẫn tới tiệm sách Atlantis. Tại tiệm sách, Hải Quỳ chọn sách cho Hakase hoặc Shylvie; sau đó Quái Vật Vực Sâu ngụy trang xuất hiện, mở chase và ending. Các chi tiết về Dahria/Aira/Poseidon được giữ ở tầng reveal, không giải thích sớm trong timeline chính.
-
+Sau cảnh xe bus, Hải Quỳ về nhà. Nhánh chuẩn pha mì/nghỉ ngơi rồi tới tiệm sách để chọn sách cho Hakase hoặc Shylvie. Nói chuyện với chủ tiệm trước khi tìm sách mở ending tạo vật Vực Sâu riêng. Một nhánh khác yêu cầu tìm chìa khóa, vào phòng kho và đọc thư; chỉ dẫn trong nguồn yêu cầu đọc xong thư phải chuyển ngay sang ký ức/gương/chase, kết thúc bằng việc Hải Quỳ khẳng định tên Dahria và cùng Oni Onii tiêu diệt quái vật. Không tự chèn Aira vào cảnh đối đầu Map025 và không gộp ba nhánh thành một timeline tuyến tính.
