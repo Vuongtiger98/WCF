@@ -145,6 +145,25 @@ module Light_Core
     :offset => [0,0],
   },
 
+  # Cutscene character light for maps whose temporary/blank height data must
+  # not cast a shadow over the light source itself. Uses the same small.png.
+  "actor_small" => {
+    :light => "small",
+    :opacity => 255, :variation => 0,
+    :static => false, :shadows => false,
+    :offset => [0,0],
+  },
+
+  # Neutral cutscene key light. Character coordinates are anchored at their
+  # feet, so lift the larger 288px light to cover the torso and face. Keep the
+  # offset within KUL's documented safe range (-15..15).
+  "cutscene_actor" => {
+    :light => "light",
+    :opacity => 255, :variation => 0,
+    :static => false, :shadows => false,
+    :offset => {2=>[0,-15], 4=>[0,-15], 6=>[0,-15], 8=>[0,-15]},
+  },
+
   # Moving, otherworldly aura used by Hải Quỳ's clones in the dark Atlantis
   # scenes. It follows event movement and is visually distinct from the warm
   # neutral light carried by the player.

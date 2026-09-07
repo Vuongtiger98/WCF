@@ -407,7 +407,7 @@ class Scene_AtlantisShrimpFishing < Scene_Base
     @power = 0.0
     @power_dir = 1.0
     @respawn_timer = 0
-    @message = "Câu đủ 10 tôm khi chúng chuyển màu vàng."
+    @message = "Kéo lên 10 tôm vào thời điểm chúng chuyển màu vàng."
     @message_timer = 180
     @beam_timer = 0
     @beam_cooldown = 0
@@ -581,10 +581,8 @@ class Scene_AtlantisShrimpFishing < Scene_Base
     b.font.size = 18
     b.font.bold = false
     b.font.color = TEXT_COLOR
-    rod_text = @rod_mode == :normal ? "Cần câu thường" : "Trượng phép Hải Quỳ"
-    b.draw_text(18, 38, 300, 26, "Dụng cụ: #{rod_text}")
-    b.draw_text(Graphics.width - 330, 8, 315, 24, "Z: Thả / Kéo / Bắn", 2)
-    b.draw_text(Graphics.width - 350, 32, 335, 24, "Shift: Đổi cần    X/Esc: Thoát", 2)
+    rod_text = @rod_mode == :normal ? "Cần câu tôm" : "Găng tay của Hải Quỳ"
+    b.draw_text(Graphics.width - 330, 8, 315, 24, "Z: Thả mồi / Kéo về / Bắn beam", 2)
     if @phase == :idle && @rod_mode == :normal
       width = 180
       x = Graphics.width - 205
@@ -624,7 +622,7 @@ class Scene_AtlantisShrimpFishing < Scene_Base
       @rod_mode = @rod_mode == :normal ? :magic : :normal
       setup_rod_bitmap
       AtlantisShrimpFishing.play_se(CHANGE_ROD_SE)
-      show_message(@rod_mode == :normal ? "Đã đổi sang cần câu thường." : "Trượng phép: dọn sạch và tạo lại hồ.", 90)
+      show_message(@rod_mode == :normal ? "Đã đổi sang cần câu." : "Găng tay: bắn beam dọn biển sạch sẽ.", 90)
       refresh_ui
     end
     return unless Input.trigger?(:C)
@@ -741,7 +739,7 @@ class Scene_AtlantisShrimpFishing < Scene_Base
   def escaped_shrimp
     shrimp = @hooked_creature
     return unless shrimp
-    show_message("Tôm giật đứt dây rồi chạy mất!", 100)
+    show_message("Tôm giật đứt dây câu rồi chạy mất!", 100)
     show_emotion(3, 70)
     AtlantisShrimpFishing.play_se(LINE_BREAK_SE)
     shrimp.throw_back
@@ -754,20 +752,20 @@ class Scene_AtlantisShrimpFishing < Scene_Base
       shrimp = @hooked_creature
       case shrimp.ripe_state
       when :black
-        show_message("Còn đen quá. Hải Quỳ vứt tôm trở lại hồ!", 110)
+        show_message("Hạt cà phê chưa chín. Hải Quỳ vứt tôm trở về biển!", 110)
         show_emotion(2, 75)
         AtlantisShrimpFishing.play_se(THROW_SE)
         shrimp.throw_back
       when :yellow
         @caught += 1
-        show_message("Bắt được tôm vàng! Cà phê Atlantis #{@caught}/#{TARGET}.", 110)
+        show_message("Bắt được tôm vàng! Tôm nhả ra cà phê Atlantis #{@caught}/#{TARGET}.", 110)
         AtlantisShrimpFishing.play_se(CATCH_SE)
         show_emotion(5, 80)
         shrimp.state = :dead
         shrimp.sprite.visible = false if shrimp.sprite
         complete_game if @caught >= TARGET
       when :red
-        show_message("Quá muộn rồi!", 75)
+        show_message("Kéo lên muộn, tôm nổ banh xác.", 75)
         show_emotion(3, 75)
         shrimp.start_explosion(self)
       end
@@ -787,7 +785,8 @@ class Scene_AtlantisShrimpFishing < Scene_Base
     @hooked_creature = creature
     @last_struggle_direction = nil
     show_emotion(0, 60)
-    show_message("Tôm đã ăn hạt! Kéo lên đúng lúc nó chuyển vàng.", 120)
+    @message_timer = 0
+    refresh_message
   end
 
   def on_shrimp_color(color)
@@ -873,7 +872,7 @@ class Scene_AtlantisShrimpFishing < Scene_Base
     @beam.visible = true
     @phase = :beam
     show_emotion(1, BEAM_WARNING + BEAM_ACTIVE + 24)
-    show_message("Trượng phép Hải Quỳ đang nạp năng lượng...", 70)
+    show_message("Găng tay của Hải Quỳ đang nạp năng lượng...", 70)
   end
 
   def update_beam
@@ -898,7 +897,7 @@ class Scene_AtlantisShrimpFishing < Scene_Base
       @beam.visible = false
       @phase = :idle
       @respawn_timer = RESPAWN_DELAY
-      show_message("Hồ đã được reset một cách rất nhẹ nhàng.", 100)
+      show_message("Đám tôm cá cũ trong biển đã bị dọn sạch sẽ.", 100)
     end
   end
 
@@ -950,10 +949,10 @@ class Scene_AtlantisShrimpFishing < Scene_Base
       b.font.bold = true
       if direction == :away
         b.font.color = Color.new(255, 90, 70)
-        b.draw_text(0, 2, 132, 24, "<< CHẠY XA", 1)
+        b.draw_text(0, 2, 132, 24, "<<<", 1)
       else
         b.font.color = Color.new(90, 255, 150)
-        b.draw_text(0, 2, 132, 24, "LAO VỀ >>", 1)
+        b.draw_text(0, 2, 132, 24, ">>>", 1)
       end
       @last_struggle_direction = direction
     end
@@ -1012,7 +1011,7 @@ class Scene_AtlantisShrimpFishing < Scene_Base
     @phase = :complete
     $game_temp.atlantis_shrimp_result = @caught
     AtlantisShrimpFishing.play_se(COMPLETE_SE)
-    show_message("Đã đủ 10 tôm vàng! Nhấn Z để quay lại quán cà phê.", 999999)
+    show_message("Đã đủ cà phê, nhấn Z quay lại quán cà phê hoặc câu thêm nữa.", 999999)
   end
 
   def dispose_creatures

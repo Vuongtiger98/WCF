@@ -438,6 +438,60 @@ class Scene_Map < Scene_Base
 end # Scene_Map
 
 #==============================================================================
+# ■ WCFEventNotice
+#------------------------------------------------------------------------------
+# Shared notification bridge for systems that are not Game_Interpreter.
+#==============================================================================
+module WCFEventNotice
+  CG_UNLOCKED = "\ec[6]Đã unlock CG\ec[0]"
+  NEW_MESSAGE = "\ec[6]Đã nhận tin nhắn mới\ec[0]"
+  COALESCE_FRAMES = 20
+
+  def self.notify(text)
+    return unless $game_temp
+    return if Switch.hide_event_window
+    frame = Graphics.frame_count
+    last = $game_temp.instance_variable_get(:@wcf_event_notice_last)
+    return if last && last[0] == text && frame - last[1] <= COALESCE_FRAMES
+    $game_temp.instance_variable_set(:@wcf_event_notice_last, [text, frame])
+    queue = $game_temp.instance_variable_get(:@wcf_event_notice_queue)
+    queue = [] unless queue
+    queue << text
+    $game_temp.instance_variable_set(:@wcf_event_notice_queue, queue)
+    flush
+  end
+
+  def self.cg_unlocked
+    notify(CG_UNLOCKED)
+  end
+
+  def self.new_message
+    notify(NEW_MESSAGE)
+  end
+
+  def self.flush
+    return unless SceneManager.scene_is?(Scene_Map)
+    return if $game_message && $game_message.visible
+    scene = SceneManager.scene
+    return unless scene.respond_to?(:event_window_add_text)
+    queue = $game_temp.instance_variable_get(:@wcf_event_notice_queue) || []
+    return if queue.empty?
+    text = queue.shift
+    formatted = YEA::EVENT_WINDOW::HEADER_TEXT + text
+    formatted += YEA::EVENT_WINDOW::CLOSER_TEXT
+    scene.event_window_add_text(formatted)
+  end
+end
+
+class Scene_Map < Scene_Base
+  alias wcf_event_notice_update update
+  def update
+    wcf_event_notice_update
+    WCFEventNotice.flush
+  end
+end
+
+#==============================================================================
 # 
 # ▼ End of File
 # 

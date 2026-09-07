@@ -113,6 +113,7 @@ class Game_SimplePhoneChat
   attr_reader   :entries
   attr_reader   :choices
   attr_reader   :choice_branches
+  attr_accessor :required_choice
 
   def initialize
     @title = "Chat"
@@ -121,6 +122,7 @@ class Game_SimplePhoneChat
     @entries = []
     @choices = []
     @choice_branches = {}
+    @required_choice = false
   end
 
   def add_actor(id, name, avatar_filename)
@@ -203,6 +205,12 @@ end
 #==============================================================================
 module GroupChat
   def self.start(chat)
+    scene = SceneManager.scene
+    message_window = scene.instance_variable_get(:@message_window) rescue nil
+    if message_window &&
+        message_window.respond_to?(:force_clear_pop_message_visuals)
+      message_window.force_clear_pop_message_visuals
+    end
     $game_temp.group_chat_data = chat
     $game_temp.group_chat_result = nil
     SceneManager.call(Scene_SimplePhoneChat)
@@ -241,8 +249,26 @@ class Scene_SimplePhoneChat < Scene_Base
   end
 
   def terminate
+    # SceneManager resumes the map only after this scene terminates. Commit the
+    # chosen entry one final time here so late method overrides cannot leave a
+    # route variable unset even though the player visibly made a choice.
+    if @branch_used && @chat && @chat.choices[@choice_index]
+      commit_choice_side_effects(@chat.choices[@choice_index])
+    end
     super
     dispose_chat
+  end
+
+  def commit_choice_side_effects(choice)
+    return unless choice
+    value = choice[:value]
+    $game_temp.group_chat_result = value
+    $game_switches[choice[:switch]] = true if choice[:switch]
+    if choice[:variable]
+      var_id, var_value = choice[:variable]
+      $game_variables[var_id] = var_value
+    end
+    value
   end
 
   def update
@@ -327,7 +353,14 @@ class Scene_SimplePhoneChat < Scene_Base
         return_scene
       end
     elsif Input.trigger?(:B)
-      return_scene
+      # A required-choice chat must not be closable before a choice has been
+      # committed. Previously B could close the chat while it was still
+      # revealing messages, leaving its route variable at 0.
+      if @chat.required_choice && !@branch_used
+        Sound.play_buzzer
+      else
+        return_scene
+      end
     end
   end
   
@@ -360,8 +393,12 @@ class Scene_SimplePhoneChat < Scene_Base
     elsif Input.trigger?(:C)
       apply_choice
     elsif Input.trigger?(:B)
-      Sound.play_cancel
-      return_scene
+      if @chat.required_choice
+        Sound.play_buzzer
+      else
+        Sound.play_cancel
+        return_scene
+      end
     end
   end
 
@@ -373,20 +410,7 @@ def apply_choice
   choice = @chat.choices[@choice_index]
   return unless choice
 
-  value = choice[:value]
-  $game_temp.group_chat_result = value
-
-  # === Apply switch ===
-  if choice[:switch]
-    $game_switches[choice[:switch]] = true
-  end
-
-  # === Apply variable ===
-  if choice[:variable]
-    var_id = choice[:variable][0]
-    var_val = choice[:variable][1]
-    $game_variables[var_id] = var_val
-  end
+  value = commit_choice_side_effects(choice)
 
   @branch_used = true
   @choice_active = false
@@ -845,6 +869,84 @@ end
 # Ending Atlantis — route rượt đuổi. Kept as a reusable preset so the map
 # event only starts the cutscene and then stores the exact conversation log.
 module GroupChatPreset
+  # Supermarket route scene 5. The choice writes Variable 43 (MKT_TARGET),
+  # allowing the map event to resume only after the phone scene closes.
+  def self.market_recipient
+    chat = Game_SimplePhoneChat.new
+    chat.title = "Wanderer Office"
+    chat.subtitle = "The chosen one"
+    chat.required_choice = true
+    setup_wanderer_members(chat)
+    chat.add_text(:quy, "Mọi người ơi, tui đã quyết định được giáng sinh này sẽ tặng quà cho ai rồi.", :right)
+    chat.add_text(:shylvie, "Ai thế? Là tôi hả?!")
+    chat.add_text(:hakase, "Ai vậy?")
+    chat.add_text(:kohi, "Ai rứa?")
+    chat.add_choice("Leo", 1, :variable => [43, 1])
+    chat.add_choice("Kohi", 2, :variable => [43, 2])
+    chat.add_choice("Shylvie", 3, :variable => [43, 3])
+    chat.add_choice("Hakase", 4, :variable => [43, 4])
+    chat.add_branch_text(1, :quy, "Là Leo!", :right)
+    chat.add_branch_text(1, :leo, "Hả? Là tui á? Bà chắc chưa á?")
+    chat.add_branch_text(1, :quy, "Như đinh đóng cột! Mọi người tiếp tục vòng tặng nhé! Tớ sủi đây, hihi!", :right)
+    chat.add_branch_text(2, :quy, "Là Kohi!!", :right)
+    chat.add_branch_text(2, :shylvie, "Ui! Hóng quá!")
+    chat.add_branch_text(2, :leo, "Bà chắc sẽ tặng Kohi chưa?")
+    chat.add_branch_text(2, :quy, "Như đinh đóng cột! Mọi người tiếp tục vòng tặng nhé! Tớ sủi đây, hihi!", :right)
+    chat.add_branch_text(3, :quy, "Là Shylvie", :right)
+    chat.add_branch_text(3, :shylvie, "Ôi vinh dự thế!!")
+    chat.add_branch_text(3, :quy, "Vậy là không muốn được tặng hả?", :right)
+    chat.add_branch_text(3, :shylvie, "Ừ đúng rồi đó~ Không muốn được tặng đó")
+    chat.add_branch_text(3, :quy, "Thì thôi~", :right)
+    chat.add_branch_text(3, :leo, "Bà chắc sẽ tặng Shylvie chưa?")
+    chat.add_branch_text(3, :quy, "Chắc chắn rồi. Mọi người tiếp tục vòng tặng nhé. Tớ đi đây.", :right)
+    chat.add_branch_text(4, :quy, "Là Hakase!", :right)
+    chat.add_branch_text(4, :hakase, "Yatta!! Vui quá!! Hóng quà à nghen!!")
+    chat.add_branch_text(4, :leo, "Bà chắc sẽ tặng Hakase chưa?")
+    chat.add_branch_text(4, :quy, "Chắc chắn rồi. Mọi người tiếp tục vòng tặng nhé. Tớ đi đây.", :right)
+    GroupChat.start(chat)
+  end
+
+  # Route mì cay: người nhận được kịch bản cố định là Leo, nên đoạn chat này
+  # không mở menu chọn người như route siêu thị.
+  def self.noodle_recipient
+    chat = Game_SimplePhoneChat.new
+    chat.title = "Wanderer Office"
+    chat.subtitle = "The chosen one"
+    setup_wanderer_members(chat)
+    chat.add_text(:quy, "Mọi người ơi, tui đã quyết định được giáng sinh này sẽ tặng quà cho ai rồi.", :right)
+    chat.add_text(:shylvie, "Ai thế? Là tôi hả?!")
+    chat.add_text(:hakase, "Ai vậy?")
+    chat.add_text(:kohi, "Ai rứa?")
+    chat.add_text(:quy, "Là Leo.", :right)
+    chat.add_text(:shylvie, "Ui! Hóng quá!")
+    chat.add_text(:leo, "Bà chắc sẽ tặng tôi chưa?")
+    chat.add_text(:quy, "Như đinh đóng cột! Mọi người tiếp tục vòng tặng nhé! Tớ sủi đây, hihi!", :right)
+    GroupChat.start(chat)
+  end
+
+  # Route hỏi Leo: tin nhắn riêng tại trạm xe buýt.  Lựa chọn được ghi vào
+  # Variable 55 để event map chuyển đến đúng cửa hàng sau khi giao diện điện
+  # thoại đóng lại.
+  def self.leo_shop_choice
+    chat = Game_SimplePhoneChat.new
+    chat.title = "Leo"
+    chat.subtitle = "Tin nhắn riêng"
+    chat.required_choice = true
+    chat.add_actor(:quy, "Hải Quỳ", "Contact_Quy")
+    chat.add_actor(:leo, "Leo", "Contact_Leo")
+    chat.add_text(:leo, "Hải Quỳ, bà tính đi đâu mua đồ vậy?")
+    chat.add_text(:quy, "Tôi đang tính đi ra siêu thị hoặc là về Atlantis để mua á. Sao vậy?", :right)
+    chat.add_text(:leo, "Bà có muốn tôi giới thiệu bà đến mấy cửa hàng mà tôi quen ở các chiều không gian khác không? Họ có mấy món mà các thành viên khác sẽ thích đấy.")
+    chat.add_text(:quy, "Tuyệt vời ông mặt trời!! Vậy ông gửi cho tui tọa độ của…", :right)
+    chat.add_choice("Cửa hàng cà phê", 1, :variable => [55, 1])
+    chat.add_choice("Cửa hàng vũ khí", 2, :variable => [55, 2])
+    chat.add_choice("Cửa tiệm dụng cụ ma pháp", 3, :variable => [55, 3])
+    chat.add_branch_text(1, :leo, "Ờ, đợi xíu!")
+    chat.add_branch_text(2, :leo, "Ờ, đợi xíu!")
+    chat.add_branch_text(3, :leo, "Ờ, đợi xíu!")
+    GroupChat.start(chat)
+  end
+
   def self.atlantis_chase_ending
     chat = Game_SimplePhoneChat.new
     chat.title = "Wanderer Office"

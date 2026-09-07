@@ -10,10 +10,7 @@ Bộ tài liệu mới không thay thế hoặc chỉnh sửa tài liệu nguồ
 
 > **Giai đoạn: Bản nháp để duyệt cấu trúc và cách diễn giải**
 
-Hiện mới có hai tài liệu:
-
-- [README.md](./README.md): quy ước và mục lục của bộ tài liệu.
-- [00-tong-quan-game.md](./00-tong-quan-game.md): tầm nhìn tổng thể, phạm vi và cấu trúc trải nghiệm.
+Bộ tài liệu hiện gồm các tài liệu tổng quan đánh số `00`–`05` và các nhóm chuyên môn `routes/`, `maps/`, `systems/`, `production/`, `archive/`. Đây là vị trí chuẩn duy nhất cho các nhóm này; không tạo bản song song trực tiếp dưới `docs/`.
 
 Các thông tin chưa thể xác định chắc chắn từ tài liệu nguồn được đánh dấu bằng một trong các nhãn sau:
 
@@ -94,7 +91,7 @@ Các thông tin chưa thể xác định chắc chắn từ tài liệu nguồn 
 
 ## Mục lục dự kiến
 
-Tên và cách chia file dưới đây là cấu trúc đề xuất. Chỉ hai file đầu đã được tạo trong giai đoạn duyệt này.
+Tên và cách chia file dưới đây là cấu trúc đang được sử dụng.
 
 | Tài liệu | Nội dung | Trạng thái |
 |---|---|---|
@@ -110,6 +107,7 @@ Tên và cách chia file dưới đây là cấu trúc đề xuất. Chỉ hai f
 | `systems/flags-and-variables.md` | Switch, variable, region, terrain tag và điều kiện event | Bản registry tạm |
 | `production/assets.md` | Sprite, CG, BG, BGM, SFX, voice và trạng thái | Checklist ban đầu |
 | `production/open-issues.md` | Mâu thuẫn và câu hỏi cần quyết định | Đang mở |
+| `production/tester-web-app-content-spec.md` | Đặc tả nội dung web app theo dõi playtest dành cho người chơi | Đang sử dụng |
 | `archive/source-map.md` | Ánh xạ từ tài liệu cũ sang tài liệu mới | Bản ánh xạ ban đầu |
 
 ## Mô hình nội dung
@@ -167,7 +165,7 @@ Mã định danh chính thức sẽ chỉ được đặt sau khi cây route và
 
 ## Nguồn tài liệu
 
-Nguồn chính hiện nằm trong thư mục `kich ban`, bao gồm:
+Nguồn chính hiện nằm trong thư mục `../kich ban`, bao gồm:
 
 - Các file `Kịch bản Wonder Christmas Fiesta_*.docx`.
 - Các file `Route *.docx`.

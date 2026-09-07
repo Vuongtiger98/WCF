@@ -3,9 +3,7 @@ Basic__Module.rb
 BattleManager.rb
 BulletHell.rb
 Cache.rb
-Catto Petting Minigame.rb
 Custom Menu.rb
-Cutscene Group Chat.rb
 Dash Control.rb
 DataManager.rb
 Disable key.rb
@@ -69,14 +67,12 @@ Map Screenshot.rb
 Map effects.rb
 Mog Event sensor range.rb
 Move the Menu.rb
-Multi Switch Condition Helper.rb
 Particles Weather.rb
 Particles.rb
 Pathfinder.rb
 Picture bug.rb
 Pictures under characters.rb
 Pop Message.rb
-Random Event Patch.rb
 SceneManager.rb
 Scene_Base.rb
 Scene_Battle.rb
@@ -182,5 +178,10 @@ anti-animation lag.rb
 parallax lock yanfly.rb
 victor fog.rb
 victor module.rb
-Atlantis Shrimp Fishing.rb
+Catto Petting Minigame.rb
+Cutscene Group Chat.rb
+Multi Switch Condition Helper.rb
+Random Event Patch.rb
 Atlantis Mirror Maze Chase.rb
+Atlantis Shrimp Fishing.rb
+WCF Snowball Rhythm.rb

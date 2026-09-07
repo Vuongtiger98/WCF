@@ -1408,9 +1408,12 @@ module GlobalGallery
 
   def self.unlock(id)
     data = load
+    already_unlocked = !!data[id]
     data[id] = true
     save(data)
     apply_to_game_system
+    WCFEventNotice.cg_unlocked if !already_unlocked &&
+      defined?(WCFEventNotice)
   end
 
   def self.lock(id)
@@ -1487,19 +1490,82 @@ end
 
 module PhoneMenu
   GALLERY_PICTURE_NAMES = {
-    1 => "Thăm ngàn",
-    2 => "Dơi",
-    3 => "Khiên",
-    4 => "Khoá",
-    5 => "Cà Phê",
-    6 => "Snowgirl",
-    7 => "Snowgirl",
-    8 => "Hakase Aura farming",
-    9 => "Ending — Rượt đuổi"
+    1 => "Hải Quỳ rời Silver Wing", 2 => "Kẹp hình con dơi",
+    3 => "Kẹp hình khiên", 4 => "Kẹp hình chìa khóa",
+    5 => "Kẹp hình hạt cà phê", 6 => "Hải Quỳ bị vùi trong tuyết",
+    7 => "Bully Quỳ bị vùi trong tuyết", 8 => "Hakase quấn khăn",
+    9 => "Ending — Rượt đuổi",
+    10 => "Máy pha cà phê — Leo",
+    11 => "Máy pha cà phê — Kohi",
+    12 => "Máy pha cà phê — Shylvie",
+    13 => "Máy pha cà phê — Hakase",
+    14 => "Dao và chảo — Leo", 15 => "Dao và chảo — Kohi",
+    16 => "Dao và chảo — Shylvie", 17 => "Dao và chảo — Hakase",
+    18 => "Đồ len — Leo", 19 => "Đồ len — Kohi",
+    20 => "Đồ len — Shylvie", 21 => "Đồ len — Hakase",
+    22 => "Bộ phá khóa — Leo", 23 => "Bộ phá khóa — Kohi",
+    24 => "Bộ phá khóa — Shylvie", 25 => "Bộ phá khóa — Hakase",
+    26 => "Hakase đóng băng khăn", 27 => "Tai nạn của Hakase",
+    28 => "Hải Quỳ thức dậy", 29 => "Bộ đồ đầu tiên",
+    30 => "Bộ đồ thứ hai", 31 => "Trang phục Giáng sinh",
+    32 => "Shylvie và chiếc khiên", 33 => "Hải Quỳ quàng khăn cho Shylvie",
+    34 => "Leo và thanh kiếm", 35 => "Kohi và những thanh gỗ",
+    36 => "Một phen hốt hoảng", 37 => "Kohi và ly nước I",
+    38 => "Kohi và ly nước II", 39 => "Hakase ôm Leo",
+    40 => "Hải Quỳ ăn", 41 => "Hải Quỳ và Bully Quỳ",
+    42 => "Áo khoác Leo tặng Hakase", 43 => "Áo khoác tàng hình",
+    44 => "Bánh kem vị cam", 45 => "Bao tay Hakase tặng Shylvie",
+    46 => "Bao tay Kohi tặng Hakase", 47 => "Bộ móc len",
+    48 => "Bút vàng", 49 => "Cà phê thường", 50 => "Cà phê Atlantis",
+    51 => "Cà phê Luminous", 52 => "Combo dao và chảo",
+    53 => "Congo Tourmaline", 54 => "Viên đá tặng Shylvie",
+    55 => "Đèn Hakase", 56 => "Cà phê Diamond",
+    57 => "Dụng cụ phá khóa", 58 => "Gậy phép thuật",
+    59 => "Giá đỡ kiếm", 60 => "Kệ gỗ chưa lắp",
+    61 => "Khăn tặng Shylvie", 62 => "Khăn tặng Hakase",
+    63 => "Khăn tặng Kohi", 64 => "Khăn tặng Leo",
+    65 => "Khiên rỉ sét", 66 => "Kiếm cách", 67 => "Kirby",
+    68 => "Knuckles plushie", 69 => "Mặt nạ đá", 70 => "Máy ép cam",
+    71 => "Mì Bully Quỳ", 72 => "Mì Hải Quỳ", 73 => "Nhựa",
+    74 => "Ốp lưng điện thoại", 75 => "Purple Garnet",
+    76 => "Rainbow Fluorite", 77 => "Sapphire", 78 => "Búp bê Tails",
+    79 => "Túi đeo chéo", 80 => "Váy tặng Shylvie", 81 => "Váy tặng Hải Quỳ",
+    82 => "Album nhà kho I", 83 => "Album nhà kho II",
+    84 => "Album nhà kho III", 85 => "Album nhà kho IV"
 }
   GALLERY_PICTURE_FILES = {
-    9 => "EDRuotDuoi"
+    1 => "CG1", 2 => "CG2", 3 => "CG3", 4 => "CG4",
+    5 => "CG5", 6 => "CG6", 7 => "CG7", 8 => "CG8",
+    9 => "EDRuotDuoi",
+    10 => "ED_MKT_COFFEE_LEO", 11 => "ED_MKT_COFFEE_KOHI",
+    12 => "ED_MKT_COFFEE_SHYLVIE", 13 => "ED_MKT_COFFEE_HAKASE",
+    14 => "ED_MKT_COOKWARE_LEO", 15 => "ED_MKT_COOKWARE_KOHI",
+    16 => "ED_MKT_COOKWARE_SHYLVIE", 17 => "ED_MKT_COOKWARE_HAKASE",
+    18 => "ED_MKT_KNITTING_LEO", 19 => "ED_MKT_KNITTING_KOHI",
+    20 => "ED_MKT_KNITTING_SHYLVIE", 21 => "ED_MKT_KNITTING_HAKASE",
+    22 => "ED_MKT_LOCK_LEO", 23 => "ED_MKT_LOCK_KOHI",
+    24 => "ED_MKT_LOCK_SHYLVIE", 25 => "ED_MKT_LOCK_HAKASE",
+    26 => "CG9", 27 => "CG10", 28 => "CG11", 29 => "CG12",
+    30 => "CG13", 31 => "CG14", 32 => "CG15", 33 => "CG16",
+    34 => "CG17", 35 => "CG18", 36 => "CG19", 37 => "CG20",
+    38 => "CG21", 39 => "CG22", 40 => "CG23", 41 => "CG24",
+    42 => "Aokhoacleotanghakase", 43 => "Aokhoactanghinh",
+    44 => "Banhkemcam", 45 => "Baotayhakasetangcv",
+    46 => "Baotaykohitanghakase", 47 => "Bomoclen", 48 => "Butvang",
+    49 => "Caphe", 50 => "capheatlantis", 51 => "CapheLuminous",
+    52 => "Combodaochao", 53 => "CongoTourmaline", 54 => "Datangcv",
+    55 => "Denhakase", 56 => "DiamondCoffee", 57 => "Dungcuphakhoa",
+    58 => "Gayphepthuat", 59 => "Giadokiem", 60 => "Kegochualap",
+    61 => "Khancv", 62 => "Khanhakase", 63 => "Khankohi",
+    64 => "Khanleo", 65 => "Khienriset", 66 => "Kiemcach",
+    67 => "Kirby", 68 => "Knucklesplushie", 69 => "Matnada",
+    70 => "Mayepcam", 71 => "Mibullyquy", 72 => "Mihaiquy",
+    73 => "Nhua", 74 => "Oplung", 75 => "PurpleGarnet",
+    76 => "RainbowFluorite", 77 => "Sapphire", 78 => "Tailsdoll",
+    79 => "Tuideocheo", 80 => "VayCV", 81 => "VayQuy",
+    82 => "Album_1", 83 => "Album_2", 84 => "Album_3", 85 => "Album_4"
   }
+  GALLERY_PICTURE_SOURCES = Hash[(1..8).to_a.concat((26..85).to_a).map { |id| [id, :pictures] }]
   GALLERY_CURSOR_FILE = "Cursor"
   GALLERY_BUTTON_FILE = "Button"
 
@@ -1512,6 +1578,149 @@ module PhoneMenu
   GALLERY_VIEW_Y = 0
   GALLERY_VIEW_W = Graphics.width
   GALLERY_VIEW_H = Graphics.height
+end
+
+module WCFGalleryScene
+  PICTURE_SLOT = 19
+
+  def self.screen
+    if $game_party && $game_party.in_battle
+      $game_troop && $game_troop.screen
+    else
+      $game_map && $game_map.screen
+    end
+  end
+
+  def self.show(id)
+    filename = PhoneMenu::GALLERY_PICTURE_FILES[id]
+    return unless filename && PhoneMenu::GALLERY_PICTURE_SOURCES[id] == :pictures
+    target = screen
+    return unless target
+    GlobalGallery.unlock(id)
+    target.pictures[PICTURE_SLOT].show(filename, 1,
+      Graphics.width / 2, Graphics.height / 2, 100, 100, 255, 0)
+  end
+
+  def self.hide
+    target = screen
+    target.pictures[PICTURE_SLOT].erase if target
+  end
+
+  def self.hold(frames)
+    frames.to_i.times { Fiber.yield }
+  end
+end
+
+#==============================================================================
+# ** WCFDiaryReader
+#------------------------------------------------------------------------------
+# Full-screen reader for the illustrated diary/letter pages used in Map026.
+# The event interpreter calls this module directly and yields once per frame, so
+# the map scene, lighting and event state remain intact behind the reader.
+#==============================================================================
+
+module WCFDiaryReader
+  BOOKS = {
+    :aira_child => ["Aira_Child_Diary", (1..9).map { |i| i.to_s }],
+    :aira_old => ["Aira_Old_Diary",
+      (1..13).map { |i| "Forgotten_Diary_#{i}" }],
+    :dahria_last => ["Dahria_Last_Letter",
+      ["Dahria_Last_Letter", "Dahria_Last_Letter1",
+       "Dahria_Last_Letter2"]],
+    :storage_album => ["", ["Album_1", "Album_2", "Album_3", "Album_4"],
+      [82, 83, 84, 85]]
+  }
+
+  def self.read(book_id)
+    book = BOOKS[book_id]
+    return unless book
+    folder, pages, gallery_ids = book
+    return if pages.empty?
+    (gallery_ids || []).each { |id| GlobalGallery.unlock(id) }
+
+    background = Sprite.new
+    background.bitmap = Bitmap.new(Graphics.width, Graphics.height)
+    background.bitmap.fill_rect(background.bitmap.rect, Color.new(0, 0, 0))
+    background.z = 500
+
+    page_sprite = Sprite.new
+    page_sprite.z = 501
+
+    header = Sprite.new
+    header.bitmap = Bitmap.new(Graphics.width, 28)
+    header.bitmap.fill_rect(header.bitmap.rect, Color.new(0, 0, 0, 150))
+    header.bitmap.font.size = 18
+    header.bitmap.font.bold = true
+    header.z = 502
+
+    footer = Sprite.new
+    footer.bitmap = Bitmap.new(Graphics.width, 28)
+    footer.bitmap.fill_rect(footer.bitmap.rect, Color.new(0, 0, 0, 170))
+    footer.bitmap.font.size = 17
+    footer.bitmap.draw_text(0, 0, Graphics.width, 28,
+      "←/→/Enter: Lật trang    Shift: Ẩn UI    Esc: Đóng", 1)
+    footer.y = Graphics.height - 28
+    footer.z = 502
+
+    index = 0
+    refresh_page(folder, pages, index, page_sprite, header)
+    loop do
+      Fiber.yield
+      if Input.repeat?(:RIGHT) || Input.trigger?(:C)
+        if index < pages.size - 1
+          index += 1
+          Sound.play_cursor
+          refresh_page(folder, pages, index, page_sprite, header)
+        else
+          Sound.play_buzzer
+        end
+      elsif Input.repeat?(:LEFT)
+        if index > 0
+          index -= 1
+          Sound.play_cursor
+          refresh_page(folder, pages, index, page_sprite, header)
+        else
+          Sound.play_buzzer
+        end
+      elsif Input.trigger?(:A)
+        visible = !header.visible
+        header.visible = visible
+        footer.visible = visible
+        Sound.play_cursor
+      elsif Input.trigger?(:B)
+        Sound.play_cancel
+        break
+      end
+    end
+  ensure
+    [footer, header, page_sprite, background].compact.each do |sprite|
+      sprite.bitmap.dispose if sprite.bitmap && !sprite.bitmap.disposed?
+      sprite.dispose unless sprite.disposed?
+    end
+  end
+
+  def self.refresh_page(folder, pages, index, sprite, header)
+    path = folder.empty? ? "Graphics/Pictures/" : "Graphics/Pictures/#{folder}/"
+    source = Cache.load_bitmap(path, pages[index])
+    old_bitmap = sprite.bitmap
+    bitmap = Bitmap.new(Graphics.width, Graphics.height)
+    scale = [Graphics.width.to_f / source.width,
+             Graphics.height.to_f / source.height].min
+    width = (source.width * scale).round
+    height = (source.height * scale).round
+    x = (Graphics.width - width) / 2
+    y = (Graphics.height - height) / 2
+    bitmap.stretch_blt(Rect.new(x, y, width, height), source, source.rect)
+    sprite.bitmap = bitmap
+    old_bitmap.dispose if old_bitmap && !old_bitmap.disposed?
+
+    header.bitmap.clear
+    header.bitmap.fill_rect(header.bitmap.rect, Color.new(0, 0, 0, 150))
+    header.bitmap.font.size = 18
+    header.bitmap.font.bold = true
+    header.bitmap.draw_text(0, 0, Graphics.width, 28,
+      "Trang #{index + 1} / #{pages.size}", 1)
+  end
 end
 
 class Scene_Menu < Scene_MenuBase
@@ -1548,19 +1757,14 @@ class Scene_Menu < Scene_MenuBase
   end
 
   def gallery_thumbnail_bitmap(picture_id)
-    filename = if gallery_picture_unlocked?(picture_id)
-      PhoneMenu::GALLERY_PICTURE_FILES[picture_id] || picture_id.to_s
-    else
-      "0"
-    end
+    filename = gallery_picture_unlocked?(picture_id) ? picture_id.to_s : "0"
     Cache.gallery(filename)
   rescue
     Cache.gallery("0")
   end
 
   def gallery_picture_bitmap(picture_id)
-    filename = PhoneMenu::GALLERY_PICTURE_FILES[picture_id] || picture_id.to_s
-    Cache.gallery(filename)
+    Cache.gallery(picture_id.to_s)
   rescue
     nil
   end
@@ -1686,6 +1890,7 @@ class Scene_Menu < Scene_MenuBase
       source = gallery_thumbnail_bitmap(picture_id)
       thumb.bitmap = Bitmap.new(PhoneMenu::GALLERY_THUMB_W, PhoneMenu::GALLERY_THUMB_H)
       thumb.bitmap.stretch_blt(thumb.bitmap.rect, source, source.rect)
+      source.dispose unless source.disposed?
       thumb.x = x
       thumb.y = y
       thumb.z = 100
@@ -1911,6 +2116,7 @@ class Scene_Menu < Scene_MenuBase
       bitmap,
       bitmap.rect
     )
+    bitmap.dispose unless bitmap.disposed?
 
     @gallery_zoomed = false
     @gallery_zoom_x = 0
@@ -2418,18 +2624,22 @@ module PhoneGroupChatSave
 
   def self.add_text(sender, text, side = nil, id = nil)
     $game_config.add_group_text(group_id(id), sender, text, side)
+    WCFEventNotice.new_message if defined?(WCFEventNotice)
   end
 
   def self.add_image(sender, image, side = nil, id = nil)
     $game_config.add_group_image(group_id(id), sender, image, side)
+    WCFEventNotice.new_message if defined?(WCFEventNotice)
   end
 
   def self.add_system(text, id = nil)
     $game_config.add_group_system(group_id(id), text)
+    WCFEventNotice.new_message if defined?(WCFEventNotice)
   end
 
   def self.add_choice_result(text, value = nil, id = nil)
     $game_config.add_group_choice_result(group_id(id), text, value)
+    WCFEventNotice.new_message if defined?(WCFEventNotice)
   end
 
   def self.clear(id = nil)
@@ -2912,8 +3122,10 @@ class Scene_SimplePhoneChat < Scene_Base
     choice = @chat.choices[@choice_index]
     return unless choice
 
-    value = choice[:value]
-    $game_temp.group_chat_result = value
+    # This patch is loaded after the base phone-chat scene. Delegate all route
+    # state side effects to the shared helper instead of reimplementing only a
+    # subset of them.
+    value = commit_choice_side_effects(choice)
 
     @chat.selected_choice_value = value
     @chat.selected_choice_text = choice[:text]
@@ -2950,6 +3162,8 @@ module PhoneGroupChatSave
         save_entry(gid, entry)
       end
     end
+
+    WCFEventNotice.new_message if defined?(WCFEventNotice)
 
     result = nil
     result = chat.selected_choice_value if chat.respond_to?(:selected_choice_value)

@@ -48,7 +48,7 @@
 #==============================================================================
 module MOG_PICTURE_GALLERY
        #Quantidade maxima de imagens na galeria. 
-       MAX_PICTURES = 40
+       MAX_PICTURES = 90
        #Definição da velocidade no movimento da imagem.
        SCROLL_SPEED = [3,3]
        #Definição da posição do texto de informação.
@@ -124,9 +124,21 @@ module Cache
  #------------------------------------------------------------------------------
  # ● Gallery
  #------------------------------------------------------------------------------   
- def self.gallery(filename)
-     load_bitmap("Graphics/Gallery/", filename)
- end
+  def self.gallery(filename)
+      mapped = filename.to_s
+      folder = "Graphics/Gallery/"
+      if mapped =~ /^\d+$/ && defined?(PhoneMenu)
+        id = mapped.to_i
+        mapped = PhoneMenu::GALLERY_PICTURE_FILES[id] || mapped
+        if PhoneMenu::GALLERY_PICTURE_SOURCES[id] == :pictures
+          folder = "Graphics/Pictures/"
+        end
+      end
+      source = load_bitmap(folder, mapped)
+      bitmap = Bitmap.new(source.width, source.height)
+      bitmap.blt(0, 0, source, source.rect)
+      bitmap
+  end
      
 end
 

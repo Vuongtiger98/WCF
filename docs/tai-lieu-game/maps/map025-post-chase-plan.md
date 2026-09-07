@@ -42,7 +42,13 @@ flowchart LR
 4. Dùng CE6 `FX — Shock`, screenshake và SE khi clone biến mất, bóng quái vật lớn xuất hiện sau Hải Quỳ.
 5. Gọi CE3 để xóa tone/blur của CE7, dọn KUL của Map034 rồi transfer sang Map029.
 
-Map034 có 12 clone E003–E014; mỗi clone sở hữu đúng một câu thoại nguồn, dùng Pop Message theo chính event ID và mang nguồn sáng tím động `atlantis_clone`. Map029 không lặp lại thoại mở đầu nhưng dùng năm clone E003–E007 làm vật cản QTE đúng mô tả truy đuổi trong kịch bản.
+Map034 có 11 clone E003–E013, dùng `$Clone1`–`$Clone11`; mỗi clone sở hữu đúng một câu thoại nguồn, dùng Pop Message theo chính event ID và mang nguồn sáng tím động `atlantis_clone`. Map029 không lặp lại thoại mở đầu và dùng đủ 11 clone E003–E013 (`$Clone1`–`$Clone11`) làm vật cản QTE. Một túi xáo trộn buộc cả 11 xuất hiện trước khi lặp.
+
+Nhịp kết Map034: các clone lần lượt chạy tới bám sát Hải Quỳ; sau khi tất cả tới nơi, Hải Quỳ quát `Buông tao ra!` và đánh văng cả vòng vây. Balloon `!` cùng hướng quay lên báo nhịp phát hiện, rồi quái vật mới tiến từ ngoài khung hình vào, gầm và dẫn sang chase.
+
+Map029 chạy theo trục dọc hướng xuống: Hải Quỳ ở phần trên màn hình, các clone xuất hiện phía dưới và quái vật đuổi từ phía trên. Hướng này thống nhất với frame quay xuống của `Monster1`.
+
+Paulie xuất hiện bằng high-drop hai giai đoạn: camera lên cao trong khi overlay còn ẩn, sau đó hiện ba frame đầu `$OniOnii_landing` trong shot đen và cùng camera đáp xuống. Impact dùng animation 138; khi animation kết thúc mới đổi về `$OniOnii`. Animation khống chế 139 phát trên quái vật trước atlas trói. Paulie nhảy tới bên phải Hải Quỳ, cách hai ô; cả hai quay vào nhau để đối thoại trực diện. Đòn kết thúc dùng animation 147, làm xác quái vật vỡ thành mảnh trong lúc camera blur và tối dần trước khi chuyển sang Map035.
 
 ### 4.2. Hiển thị thoại
 
@@ -51,9 +57,10 @@ Map034 có 12 clone E003–E014; mỗi clone sở hữu đúng một câu thoạ
 
 ### 4.3. Clone
 
-- Dùng charset Hải Quỳ hiện có làm placeholder.
+- Dùng đầy đủ charset `$Clone1`–`$Clone17`; `$Clone7.gif` một frame đã được chuyển nguyên pixel sang `$Clone7.png` để RGSS3 đọc qua `Cache.character`.
 - Trong chase, clone cản đường được xử lý bằng QTE: nhập đúng để Hải Quỳ đánh văng; nhập sai hoặc hết giờ tăng danger. Chúng không dùng collision chạm tự do ngoài QTE.
 - Sau CE6, xóa/ẩn toàn bộ clone trước khi bắt đầu chase để không còn hitbox thừa.
+- Chase chạy theo trục dọc: Hải Quỳ chạy lên, quái vật ở dưới, clone cản đường xuất hiện phía trên.
 
 ## 5. Map025 — đối đầu cuối chase
 
@@ -109,7 +116,9 @@ Oni Onii và Hải Quỳ đều dùng Pop Message đúng event anchor: Oni Onii 
 3. Dùng animation/SE/flash/screenshake có sẵn; camera lùi nhẹ để thấy cả Hải Quỳ và quái vật.
 4. Fade to black.
 5. Bật Switch 33 `ATL_END_READY` và đặt Variable 30 `ATL_STEP` sang bước hoàn tất route trước hội tụ.
-6. Gọi CE3 reset camera/effect và dọn light trước khi rời Map025.
+6. Reset Enhanced Camera trực tiếp và dọn toàn bộ KUL light sau khi màn hình đã đen; Map025 không gọi CE3 vì CE3 kích hoạt lại Map Effects.
+
+Map035 dùng `Game_Player` thay cho event Hải Quỳ riêng để giữ đúng form/graphic hiện tại của người chơi. Toàn bộ thoại Hải Quỳ dùng Pop Message `\bm[0]`; animation/balloon nhắm vào Player. Paulie phát animation teleport 116 có wait trước khi E003 bị ẩn.
 7. Dừng tại màn hình đen hoặc một event gate không playable; chưa transfer tới tiệc cho đến khi điểm nối được duyệt.
 
 ## 6. Điều kiện và flag

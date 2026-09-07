@@ -62,6 +62,10 @@ module YES
     LIMIT_SETTING = { # Start.
       :width            =>  0, # Set to 0 to disable limitation.
       :lines            =>  4, # Set to 0 to disable limitation.
+      # Window_Base draws each normal character in a rectangle twice its
+      # advance width. Keep a small final margin so the outline of the last
+      # Vietnamese glyph is not clipped by the contents bitmap.
+      :width_guard      =>  4,
     } # End.
     
     #===========================================================================
@@ -199,15 +203,29 @@ class Window_Message < Window_Base
   # new method: pop_message_initialize
   #--------------------------------------------------------------------------
   def pop_message_initialize(text)
+    changed_pop_state = false
     if text =~ /\\BM\[(\d+)\]/i
       setup_pop_message($1.to_i)
+      changed_pop_state = true
     end
     if text =~ /\\CBM/i
       cancel_pop_message
+      changed_pop_state = true
     end
     if text =~ /\\CBT\[(.*)\]/i
       create_bubble_sprite($1)
       @bubble_sprite.opacity = 255
+    end
+    # A pop target intentionally persists across consecutive Show Text
+    # commands. The original script only resized the window when the next
+    # command repeated \bm[id]. If it omitted the tag, longer text inherited
+    # the previous command's smaller window and was clipped at the right edge.
+    # Recalculate every continuing pop message, including narration or a new
+    # face that deliberately keeps the current anchor.
+    if @pop_message_id && !changed_pop_state
+      adjust_window_size
+      adjust_window_position(@pop_message_id)
+      @bubble_sprite.opacity = 255 if @bubble_sprite
     end
   end
   
@@ -235,6 +253,7 @@ class Window_Message < Window_Base
   # new method: setup_pop_message
   #--------------------------------------------------------------------------
   def setup_pop_message(id)
+    @pop_message_id = id
     create_bubble_sprite
     adjust_window_size
     adjust_window_position(id)
@@ -261,19 +280,14 @@ class Window_Message < Window_Base
   def adjust_window_position(id)
     hash = $game_map.events
     character = id <= 0 ? $game_player : hash[id]
-    #---
-    bitmap = Cache.character(character.character_name)
-    sign = character.character_name[/^[\!\$]./]
-    if sign && sign.include?('$')
-      ch = bitmap.height / 4
-    else
-      ch = bitmap.height / 8
-    end
-    #---
-    self.x = character.screen_x - self.width / 2
-    self.y = character.screen_y - self.height - ch
+    return unless character
+    anchor_x, baseline_y, top_y = pop_message_anchor(character)
+    @bubble_sprite.src_rect.set(0, 0, @bubble_sprite.bitmap.width,
+      @bubble_sprite.bitmap.height / 2) if @bubble_sprite
+    self.x = anchor_x - self.width / 2
+    self.y = top_y - self.height
     if @bubble_sprite
-      @bubble_sprite.x = character.screen_x - @bubble_sprite.width / 2
+      @bubble_sprite.x = anchor_x - @bubble_sprite.width / 2
       @bubble_sprite.y = self.y + self.height
       @bubble_sprite.y += YES::POP_MESSAGE::EFFECT_SETTING[:bubble_offset_y]
     end
@@ -282,7 +296,7 @@ class Window_Message < Window_Base
     self.x = 0 if self.x < 0
     self.x = Graphics.width - self.width if end_x > Graphics.width
     if self.y < 0
-      self.y = character.screen_y 
+      self.y = baseline_y
       if @bubble_sprite
         @bubble_sprite.y = self.y - @bubble_sprite.height
         @bubble_sprite.y -= YES::POP_MESSAGE::EFFECT_SETTING[:bubble_offset_y]
@@ -290,6 +304,33 @@ class Window_Message < Window_Base
                                     @bubble_sprite.width, @bubble_sprite.height)
       end
     end
+  end
+
+  def pop_message_anchor(character)
+    custom_x = character.instance_variable_get(:@pop_message_screen_x)
+    custom_top = character.instance_variable_get(:@pop_message_top_y)
+    custom_base = character.instance_variable_get(:@pop_message_baseline_y)
+    if custom_x && custom_top
+      return [custom_x, custom_base || character.screen_y, custom_top]
+    end
+    spriteset = SceneManager.scene.instance_variable_get(:@spriteset) rescue nil
+    sprites = spriteset.instance_variable_get(:@character_sprites) rescue nil
+    sprite = sprites && sprites.find do |entry|
+      entry.instance_variable_get(:@character).equal?(character)
+    end
+    if sprite && !sprite.disposed? && sprite.bitmap
+      viewport = sprite.viewport
+      offset_x = viewport ? viewport.rect.x - viewport.ox : 0
+      offset_y = viewport ? viewport.rect.y - viewport.oy : 0
+      draw_x = sprite.x + offset_x
+      draw_y = sprite.y + offset_y
+      top = draw_y - sprite.oy * sprite.zoom_y
+      return [draw_x, draw_y, top]
+    end
+    bitmap = Cache.character(character.character_name)
+    sign = character.character_name[/^[\!\$]./]
+    height = sign && sign.include?('$') ? bitmap.height / 4 : bitmap.height / 8
+    [character.screen_x, character.screen_y, character.screen_y - height]
   end
   
   #--------------------------------------------------------------------------
@@ -332,20 +373,107 @@ class Window_Message < Window_Base
   # new method: cal_width_line
   #--------------------------------------------------------------------------
   def cal_width_line(text)
+    # Do not use text_size(line) here. VX Ace renders messages one character at
+    # a time and advances by text_size(character).width. With fonts such as
+    # Verdana, especially for precomposed Vietnamese glyphs, measuring the
+    # whole string can be narrower than the sum of the advances actually used
+    # by Window_Base#process_normal_character. That mismatch made the final
+    # characters disappear outside the dynamically-sized pop window.
+    reset_font_settings
+    # `dup` also gives a mutable buffer when the caller passes a frozen string.
+    buffer = text.to_s.dup
     result = 0
-    text.each_line { |line|
-      result = text_size(line).width if result < text_size(line).width
-    }
-    return result
+    cursor = 0
+    final_advance = 0
+    until buffer.empty?
+      character = buffer.slice!(0, 1)
+      case character
+      when "\n"
+        result = [result, cursor + final_advance].max
+        cursor = 0
+        final_advance = 0
+      when "\f"
+        result = [result, cursor + final_advance].max
+        cursor = 0
+        final_advance = 0
+        reset_font_settings
+      when "\e"
+        code = obtain_escape_code(buffer).to_s.upcase
+        case code
+        when "I"
+          obtain_escape_param(buffer)
+          final_advance = 24
+          cursor += final_advance
+        when "{"
+          make_font_bigger
+          final_advance = 0
+        when "}"
+          make_font_smaller
+          final_advance = 0
+        when "FZ"
+          contents.font.size = obtain_escape_param(buffer)
+          final_advance = 0
+        when "FN"
+          buffer.sub!(/\[(.*?)\]/, "")
+          font_name = $1.to_s
+          contents.font.name = font_name.empty? ? Font.default_name : font_name
+          final_advance = 0
+        when "AMSF"
+          case obtain_escape_param(buffer)
+          when 0; reset_font_settings
+          when 1; contents.font.bold = !contents.font.bold
+          when 2; contents.font.italic = !contents.font.italic
+          when 3; contents.font.outline = !contents.font.outline
+          when 4; contents.font.shadow = !contents.font.shadow
+          end
+          final_advance = 0
+        when "PX"
+          cursor = obtain_escape_param(buffer)
+          final_advance = 0
+        when "C", "OC", "OO", "PY", "W"
+          obtain_escape_param(buffer)
+          final_advance = 0
+        when "PIC"
+          buffer.sub!(/\[(.*?)\]/, "")
+          final_advance = 0
+        else
+          final_advance = 0
+        end
+        result = [result, cursor + final_advance].max
+      else
+        final_advance = text_size(character).width
+        cursor += final_advance
+        # The renderer gives the last glyph a draw rectangle of twice its
+        # advance. Including one additional advance mirrors that requirement.
+        result = [result, cursor + final_advance].max
+      end
+    end
+    guard = YES::POP_MESSAGE::LIMIT_SETTING[:width_guard].to_i
+    return result + guard
+  ensure
+    # This method only runs while Window_Message owns a live contents bitmap.
+    # Avoid calling `disposed?`: its visibility differs between RGSS objects.
+    reset_font_settings if contents
   end
   
   #--------------------------------------------------------------------------
   # new method: cancel_pop_message
   #--------------------------------------------------------------------------
   def cancel_pop_message
+    @pop_message_id = nil
     update_placement
     reset_size
     create_bubble_sprite
+  end
+
+  # Scene-based overlays such as the phone Group Chat do not dispose the map's
+  # Window_Message. BubbleTag has no viewport, so explicitly hide it before a
+  # called scene is pushed or its arrow remains above that scene.
+  def force_clear_pop_message_visuals
+    @pop_message_id = nil
+    @bubble_sprite.opacity = 0 if @bubble_sprite
+    @face_window.hide_face if @face_window
+    self.pause = false
   end
   
   #--------------------------------------------------------------------------
@@ -403,7 +531,10 @@ class Window_Message < Window_Base
   #--------------------------------------------------------------------------
   alias yes_pop_message_close_and_wait close_and_wait
   def close_and_wait
-    @face_window.hide_face
+    # Normal messages (\cbm) can close without ever creating the auxiliary
+    # Pop Message face window. This happens when a route switches from free
+    # map dialogue to a black-screen cutscene. Do not call hide_face on nil.
+    @face_window.hide_face if @face_window
     @bubble_sprite.opacity = 0 if @bubble_sprite
     yes_pop_message_close_and_wait
     cancel_pop_message
@@ -415,6 +546,7 @@ class Window_Message < Window_Base
   alias yes_pop_message_update update
   def update
     yes_pop_message_update
+    adjust_window_position(@pop_message_id) if @pop_message_id && self.visible
     if @face_window
       @face_window.update 
       @face_window.z = self.z

@@ -2,6 +2,8 @@
 
 Tài liệu này là bản tra cứu kỹ thuật cho các script đang có trong `Data/Scripts.rvdata2` và bản export tương ứng trong `Scripts/`. Runtime là nguồn quyết định; thư mục export chỉ dùng để đọc, review và chỉnh sửa có kiểm soát.
 
+Checklist các lỗi runtime đặc thù RGSS3 và transfer/viewport được lưu tại [production/rgss3-runtime-pitfalls.md](production/rgss3-runtime-pitfalls.md). Phải kiểm tra checklist này khi thêm overlay, camera, lighting hoặc hiệu ứng tồn tại qua chuyển map.
+
 ## Quy ước quan trọng
 
 - Script được thực thi theo thứ tự slot trong `Data/Scripts.rvdata2`. Các script có `alias`/định nghĩa lại class phụ thuộc thứ tự này.
@@ -19,8 +21,8 @@ Tài liệu này là bản tra cứu kỹ thuật cho các script đang có tron
 | 1 | Galv Double Message | ON = khóa bỏ qua message |
 | 3 | Map015 Smart Toilet; điều kiện page Map013 | Trạng thái biến hình toilet; đang xung đột global |
 | 4 | KUL Fog Add-on; Map019 E33 | Bật/tắt fog |
-| 17 | KUL Graphics | Light system |
-| 18 | KUL Graphics | Ultra lighting system |
+| 17 | KUL Graphics | ON = tắt phần vẽ nguồn sáng (`draw_lights`); Map025 chủ động đặt OFF |
+| 18 | KUL Graphics | ON = tắt toàn bộ ultra lighting; Map025 chủ động đặt OFF |
 | 19 | KUL Item Lantern Add-on; Map019 E43 | Lantern; đang dùng trùng với logic map |
 | 21 | Yanfly Flip Pictures | Cho phép/lệnh flip picture |
 | 25 | Yanfly Gabwindow | ON = ẩn gab window |
@@ -115,7 +117,9 @@ KUL Graphics còn diễn giải region/height theo cấu hình riêng trong KUL 
 - `Custom Menu` có `PhoneTimeline`: widget ngày/giờ/pin được lưu theo save và chỉ tiến về phía trước qua Common Event 12–18. CE18 là mốc hội tụ trao quà ngày 25/12 lúc 19:00.
 - `Custom Menu` hiện đã tích hợp Gallery Upgrade và Saved Group Chat Patch. Không thêm lại hai patch cũ vào slot riêng.
 - Gallery unlock toàn cục lưu tại `Save/GlobalGallery.rvdata2`.
+- Gallery ID 1–81 dùng registry trong `Custom Menu`. CG/vật phẩm được nạp thẳng từ `Graphics/Pictures`, còn ending art tiếp tục nạp từ `Graphics/Gallery`; không cần giữ hai bản bitmap giống nhau. `WCFGalleryScene.show(id)` hiện ảnh và unlock, `hide` xóa ảnh, `hold(frames)` dùng cho nhịp trình bày không có Show Text. Danh sách ID/scene nằm trong `docs/gallery-assets.md`.
 - Group chat lưu trong `$game_config.phone_group_chats`; các API chính gồm `PhoneGroupChatSave.add_text`, `add_image`, `add_system`, `add_choice_result`, `save_current_cutscene`.
+- `WCFEventNotice` dùng cửa sổ của `Yanfly Event Popup` để báo `Đã unlock CG` khi `GlobalGallery.unlock(id)` thực sự đổi từ khóa sang mở, và `Đã nhận tin nhắn mới` khi `PhoneGroupChatSave` thêm/lưu nội dung. Thông báo phát sinh ngoài Scene_Map được queue tới lúc quay lại map; các thông báo giống nhau trong 20 frame được gộp. Switch 99 ON vẫn ẩn toàn bộ popup theo cấu hình gốc.
 - `BulletHell`: minigame danmaku; Variable 19 điểm hiện tại, Variable 20 high score.
 - Các mốc tăng spawn, enemy cap và tỉ lệ loại enemy dùng `@game_time` của riêng lượt chơi; không dùng `Graphics.frame_count`, vì bộ đếm toàn cục này không reset khi chọn chơi lại.
 - `Random Event Patch`: addon của BulletHell, chạy event định kỳ gồm Firework Line, Spiral Fan Boss, Coffee Drop, Tsunami, Slash Trap và Gravity Well.
@@ -139,11 +143,32 @@ KUL Graphics còn diễn giải region/height theo cấu hình riêng trong KUL 
 
 ### Balloon cảm xúc
 
-Project dùng hai sheet `Graphics/System/Balloon1.png` và `Balloon2.png` thay cho `Balloon.png` mặc định. Runtime `Sprite_Character` ánh xạ ID 1–10 vào mười hàng của `Balloon1`, ID 11–20 vào mười hàng của `Balloon2`. Route Atlantis hiện ưu tiên các ID: 1 ngạc nhiên, 2 nghi vấn, 5 tức giận, 6 ngượng/căng thẳng, 8 im lặng, 9 nảy ý, 10 ngủ; ID 11–12 của `Balloon2` dành cho sốc và va chạm mạnh.
+Project dùng hai sheet `Graphics/System/Balloon1.png` và `Balloon2.png` thay cho `Balloon.png` mặc định. Runtime `Sprite_Character` ánh xạ ID 1–10 vào mười hàng của `Balloon1`, ID 11–20 vào mười hàng của `Balloon2`. Route Atlantis hiện ưu tiên các ID: 1 ngạc nhiên, 2 nghi vấn, 5 tức giận, 6 ngượng/căng thẳng, 8 im lặng, 9 nảy ý, 10 ngủ. Trong minigame ném tuyết, phản ứng tích cực dùng ID 12 (hàng 2 của `Balloon2`) thay cho balloon bóng đèn; ID 11 vẫn dùng cho sốc/va chạm.
 
 Event command vẫn là Show Balloon chuẩn của VX Ace (`213`): target `-1` là Player, `0` là event đang chạy, số dương là event ID trên map. Với scene controller, phải trỏ đúng ID NPC thay vì `0`, vì `0` sẽ đặt balloon trên controller vô hình.
 
+### WCF Snowball Rhythm
+
+- `WCF Snowball Rhythm` là minigame rhythm tùy chọn tại giai đoạn khám phá tự do của Map038. Gọi bằng `WCF_SNOWBALL.start(EVENT_ID)`, trong đó `3` Shylvie, `4` Kohi, `5` Leo và `6` Hakase.
+- Minigame dùng đồng hồ frame nội bộ; BGM RTP `Battle1` chỉ làm nền và không quyết định timing. Trong pha phòng thủ, đối thủ ném từng quả cầu tuyết có ký hiệu `← ↓ ↑ →` về phía Hải Quỳ.
+- Chỉ có hai kết quả: bấm đúng hướng trong cửa sổ timing nhận `Perfect`, không mất máu và hất tuyết đi; bấm sai, quá sớm hoặc không bấm là `Miss` và mất nhiều HP. Chữ phán định nổi trực tiếp cạnh Hải Quỳ.
+- Quả tuyết của đối thủ không xoay để ký hiệu hướng luôn đọc được. Mỗi người có nhịp riêng: Shylvie ném ổn định và buộc nhập chuỗi dài hơn; Kohi hay tung loạt 3–4 quả và cho ít thời gian phản công; Leo ném thấp, nhanh với chuỗi phím đổi ngang/dọc; Hakase đổi mạnh kích thước, quỹ đạo và dùng chuỗi đối xứng. Quả bị hất văng và quả Hải Quỳ ném trả vẫn có thể xoay.
+- Input sai/quá sớm hiện `Miss` cạnh Hải Quỳ ngay lập tức rồi tăng tốc projectile; quả tuyết vẫn hoàn thành quỹ đạo, chạm người và vỡ thành các hạt tuyết. Khi còn HP, tuyết chỉ tích thành ụ thấp quanh chân.
+- Khi Hải Quỳ hết HP, đối thủ dùng finisher ném liên tục một trận tuyết để vùi cô thành người tuyết hoàn chỉnh. Khi đối thủ hết HP, Hải Quỳ lướt ra sau lưng với chuỗi bóng mờ xanh được giữ lại trong lúc dừng hình; camera zoom vào hai nhân vật, chữ hoạt hình `SMASH!!` bật lên cùng flash, camera zoom ra rồi đối thủ lộn vòng bay chéo lên góc trái màn hình. Sau khi animation kết liễu hoàn tất, scene lần lượt hiện `FATALITY` và `HẢI QUỲ WINS` hoặc `[TÊN ĐỐI THỦ] WINS`, rồi mới chuyển sang màn hình kết quả.
+- Scene tự đọc `Balloon1/2`: đối thủ báo hiệu chuẩn bị ném, Hải Quỳ phản ứng với Perfect/Miss/phản công, và đối thủ phản ứng khác nhau khi trúng quả Good/Perfect hoặc khi bước vào finisher. Đối thủ đồng thời có pose lấy đà khi ném và pose bật lùi/nghiêng người theo lực của cú ném trúng.
+- Phase phản công dùng cơ chế riêng theo đối thủ. Chỉ Kohi dùng giao diện chuỗi phím kiểu Audition: hoàn thành toàn bộ nhận `Perfect`, đạt ít nhất 50% nhận `Good`, dưới 50% nhận `Miss`. Shylvie dùng phản cầu liên tục, Leo dùng QTE né nhát chém không gian, còn Hakase dùng cơ chế giữ phím để đấu lực ma thuật.
+- Trận kết thúc khi một bên hết HP hoặc người chơi bấm `X/Esc`. Kết quả gần nhất ghi Variable 45 và Scene trả về Map038; BGM trước trận được phát lại. Mỗi chiến thắng được ghi vào bitmask Variable 46; khi đủ Shylvie/Kohi/Leo/Hakase (`15`), Switch 49 tự bật để event phần thưởng kiểm tra. Script call hỗ trợ `WCF_SNOWBALL.defeated?(ID)` và `WCF_SNOWBALL.all_cleared?`.
+- Graphic hiện tại chỉ hỗ trợ pose prototype bằng offset/scale sprite. Animation né hoàn chỉnh cần spritesheet riêng trong giai đoạn polish.
+
 ### Picture/layer/parallax — rủi ro Z-order
+
+`Atlantis Mirror Maze Chase` xử lý `Graphics/Characters/Monster1.png` và `Monster.png` như atlas custom 4×7, frame 298×313. Không gán hai ảnh trực tiếp làm graphic event vì VX Ace sẽ cắt sai theo charset 3×4/12×8. Map034/029/025 dùng E002 làm anchor trống; overlay lấy tọa độ màn hình, opacity và transparent từ anchor. Trong chase, camera lấy `Game_Player#real_x/real_y`; E002 nhận chính tọa độ nội suy đó với offset bốn tile phía trên. Không dùng proxy, không `moveto` mỗi frame và không chạy Player/quái vật bằng hai timer độc lập. `Monster1` loop 6 frame cho chase; `Monster` phát 26 frame một lần khi gọi `atlantis_monster_mode(2, :bound)`. Map029 loop dọc và manager tự chạy Player theo hướng 2.
+
+Lưu ý lifecycle: VX Ace transfer giữa các map mà không tạo lại `Scene_Map`. Script theo dõi thay đổi `$game_map.map_id`, dispose manager cũ và bind lại các `Game_Event` sau transfer. Nếu bỏ bước này, vào thẳng Map029 vẫn đúng nhưng Map034 → Map029 sẽ tiếp tục vẽ E002 cũ của Map034 trong khi chase điều khiển E002 mới.
+
+Map029 → Map025 giữ `fade_type=0` của transfer engine. Không trộn `Scene_Map#fadeout` (`Graphics.brightness`) với event Fade In (`Game_Screen#brightness`) vì hai hệ brightness khác nhau. E003 Map025 để graphic rỗng từ dữ liệu và chỉ nhận `$OniOnii_landing` trong `atlantis_paulie_high_drop`, nên Spriteset không thể làm lộ Paulie trước autorun.
+
+`Pop Message` đã được vá để lưu ID của `\bm[id]` và cập nhật vị trí cửa sổ/bubble tag mỗi frame. Anchor ưu tiên `Sprite_Character` thực tế nên đi theo move route, jump và zoom của character effect. Vì `Window_Message` không thuộc viewport map, tọa độ sprite phải đổi sang tọa độ màn hình bằng `viewport.rect - viewport.ox/oy`; thiếu bước này làm bubble lệch đúng bằng camera/viewport offset. Đối với atlas custom `Monster/Monster1`, `AtlantisMonsterDisplay` cung cấp riêng screen-X, baseline và top-Y đã quy đổi của overlay; không dùng chiều cao graphic rỗng của E002. Khi sprite sát mép trên, nhánh chuyển hộp thoại xuống dưới cũng dùng baseline overlay này.
 
 `Fixed Pictures`, `Pictures under characters`, `Yanfly Flip Pictures`, `Galv Layer Graphics`, parallax scripts và weather scripts cùng tác động viewport/Sprite/Picture. Không nên gộp thêm code. Cần kiểm thử map có `Bathroom_top`, picture fixed và nhân vật đứng dưới picture cùng lúc.
 
