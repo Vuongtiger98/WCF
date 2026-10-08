@@ -325,7 +325,13 @@ class Game_Map
   # * Automatically Switch BGM and BGS
   #--------------------------------------------------------------------------
   def autoplay
-    @map.bgm.play if @map.autoplay_bgm
+    if @map.autoplay_bgm
+      if @map.bgm.name.empty?
+        RPG::BGM.fade(1000)
+      else
+        @map.bgm.play
+      end
+    end
     @map.bgs.play if @map.autoplay_bgs
   end
   #--------------------------------------------------------------------------

@@ -1596,7 +1596,15 @@ module WCFGalleryScene
     return unless filename && PhoneMenu::GALLERY_PICTURE_SOURCES[id] == :pictures
     target = screen
     return unless target
+    hide
     GlobalGallery.unlock(id)
+    source = Cache.picture(filename)
+    if filename =~ /\ACG(?:[1-9]|1[0-9]|2[0-4])\z/ &&
+        source.width == 544 && source.height == 416
+      WCFFramedCG.show(filename, source)
+      @framed = true
+      return
+    end
     target.pictures[PICTURE_SLOT].show(filename, 1,
       Graphics.width / 2, Graphics.height / 2, 100, 100, 255, 0)
   end
@@ -1604,10 +1612,70 @@ module WCFGalleryScene
   def self.hide
     target = screen
     target.pictures[PICTURE_SLOT].erase if target
+    WCFFramedCG.hide if defined?(WCFFramedCG) && @framed
+    @framed = false
   end
 
   def self.hold(frames)
     frames.to_i.times { Fiber.yield }
+  end
+end
+
+#==============================================================================
+# ** WCFFramedCG
+#------------------------------------------------------------------------------
+# Presents legacy 544x416 CGs at their native size, centered inside the
+# 640x480 game window with a solid black matte behind them.  The dedicated
+# viewport keeps the artwork above the map but below Window_Message.
+#==============================================================================
+
+module WCFFramedCG
+  VIEWPORT_Z = 50
+
+  def self.show(filename, source = nil)
+    source ||= Cache.picture(filename)
+    # Compose the matte and CG before exposing any sprite. Keeping both pixels
+    # in one bitmap prevents a refresh from showing only the black backdrop
+    # while the CG is created or removed.
+    canvas = Bitmap.new(Graphics.width, Graphics.height)
+    canvas.fill_rect(canvas.rect, Color.new(0, 0, 0))
+    x = (Graphics.width - source.width) / 2
+    y = (Graphics.height - source.height) / 2
+    canvas.blt(x, y, source, source.rect)
+    hide
+    @viewport = Viewport.new(0, 0, Graphics.width, Graphics.height)
+    @viewport.z = VIEWPORT_Z
+    @picture = Sprite.new(@viewport)
+    @picture.bitmap = canvas
+    @picture.x = 0
+    @picture.y = 0
+  end
+
+  def self.hide
+    if @picture
+      bitmap = @picture.bitmap
+      @picture.dispose unless @picture.disposed?
+      bitmap.dispose if bitmap && !bitmap.disposed?
+      @picture = nil
+    end
+    # Clean up an instance created by the older two-sprite implementation if
+    # a save/test session hot-reloaded this script.
+    if @backdrop
+      bitmap = @backdrop.bitmap
+      @backdrop.dispose unless @backdrop.disposed?
+      bitmap.dispose if bitmap && !bitmap.disposed?
+      @backdrop = nil
+    end
+    if @viewport
+      # RGSS3's Viewport does not expose Sprite#disposed?. Probe a harmless
+      # property so this remains safe if the scene already disposed it.
+      begin
+        @viewport.rect
+        @viewport.dispose
+      rescue
+      end
+      @viewport = nil
+    end
   end
 end
 

@@ -39,7 +39,7 @@ Trong comment đầu page của event nguồn sáng:
 - `[static]`: nguồn đứng yên, ít tốn hiệu năng hơn.
 - `[dynamic]`: nguồn di chuyển/cập nhật shadow mỗi frame.
 - `[shadows]` hoặc `[no_shadows]`: bật/tắt bóng do nguồn đó tạo.
-- `[group name]`: gán nhóm ánh sáng nếu cần điều khiển opacity theo nhóm.
+- `[group name]`: có trong cú pháp gốc nhưng `Light_Source#set_group` của bản KUL hiện tại là hàm rỗng; không dùng cho gameplay cho tới khi có runtime implementation.
 
 Script call cho nhân vật:
 
@@ -58,7 +58,11 @@ $game_map.shadows.set_opacity(235)
 $game_map.shadows.set_opacity(0, 30)
 ```
 
-Tham số thứ hai của `set_opacity` là thời gian chuyển đổi theo frame. Preset mới `player_small` dùng asset `small.png` 128×128 nhưng đặt `static: false`, nên ánh sáng và shadow cập nhật đúng khi Hải Quỳ di chuyển. `small` gốc là nguồn tĩnh, chỉ nên đặt trên event đứng yên; `flashlight` là đèn định hướng theo hướng quay của Player.
+Tham số thứ hai của `set_opacity` là thời gian chuyển đổi theo frame. Preset `player_small` dùng asset `small.png` 128×128 nhưng đặt `static: false`, nên ánh sáng và shadow cập nhật đúng khi Hải Quỳ di chuyển. `small` gốc là nguồn tĩnh, chỉ nên đặt trên event đứng yên; `flashlight` là đèn định hướng theo hướng quay của Player.
+
+Map028 dùng bộ preset riêng: `maze_player_amber`/`maze_player_amber_wide` là đèn động vàng-cam 288→384 px của Player; `maze_barrel_fire` là lửa thùng tĩnh; `maze_cyan_static` và `maze_violet_static` là các hồ sáng dẫn đường; `maze_exit_beacon` đánh dấu lối ra. Tất cả đều bật Region shadow. Năm bitmap tương ứng có tâm gần trắng, mép RGB đen hoàn toàn và nằm trong `Graphics/Lights/maze_*.png`.
+
+Khi transfer no-fade giữa hai map dùng KUL, không được để Event `Fade Out Screen` là lệnh native cuối cùng: brightness bằng 0 sẽ tiếp tục che cả map đích dù KUL đã reveal. Với cảnh có CG nằm trên KUL, hãy Fade Out native để phủ cả CG; trong lúc screen đang đen, bật KUL opacity 255, ẩn CG rồi Fade In native lại dưới lớp KUL trước transfer. Ở map đích, dựng vị trí/graphic nhân vật rồi mới hạ KUL về opacity mục tiêu và chờ đủ số frame trước thoại đầu tiên. Nếu một map trung gian cần native Fade Out/Fade In để thay parallax, cũng phải hide/reset lớp KUL kế thừa trong lúc native screen đang đen.
 
 ### ID cấu hình phải giữ
 

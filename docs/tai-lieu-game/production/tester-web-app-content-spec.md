@@ -471,9 +471,9 @@ Từ Map42 (Phòng Hải Quỳ ở văn phòng Wanderer), Map43 (Phòng Shylvie)
 
 Bồn tắm phải khớp đúng chiếc bồn được vẽ ở góc dưới bên trái phòng. Khi Hải Quỳ tắm, ba hình đầu của cảnh tắm lặp ba lần, sau đó chạy các hình còn lại. Hình cuối giữ lại một lúc rồi màn hình mới tối và kết thúc cảnh.
 
-TV là chiếc TV được vẽ ở góc trên bên trái phòng. Hải Quỳ phải ngồi trước TV; không đặt thêm một hình TV mới chắn trước mặt cô.
+TV là chiếc TV được vẽ ở góc trên bên trái phòng. Hải Quỳ phải ngồi trước TV; không đặt thêm một sprite TV mới chắn trước mặt cô. Khi bắt đầu xem, camera zoom vào khu TV. Hình Hải Quỳ ngồi xem dùng layer `HQ_Room_TV_BeforeChristmas` nếu vào phòng từ free roam trước Giáng sinh và layer `HQ_Room_TV_Quy_Chrismast` nếu vào từ free roam trong tiệc Giáng sinh.
 
-Chuỗi xem TV gồm chín hình theo đúng thứ tự. Mỗi hình hiện vài giây, màn hình tối hoàn toàn, hình mới được đổi trong lúc tối, rồi màn hình sáng lại. Chỉ sau hình thứ chín mới tiếp tục tới bad ending “Thêm tập nữa thôi!”.
+Chuỗi xem TV gồm mười nền theo đúng thứ tự: `HQ_Room_TV`, `HQ_Room_TV_1`, rồi `HQ_Room_TV2` đến `HQ_Room_TV9`. Mỗi nền hiện vài giây; giữa hai nền, KUL làm màn hình tối hoàn toàn, parallax chỉ được đổi trong lúc tối, rồi KUL làm màn hình sáng lại. Không được thấy hình đổi trước khi màn hình tối xong. Chỉ sau nền thứ mười mới tiếp tục tới bad ending “Thêm tập nữa thôi!”.
 
 ### 6.6. Phòng họp và phòng chế tạo
 
@@ -607,7 +607,7 @@ Người chơi mở trò vuốt mèo tại Map19 (Siêu thị), thử tương t�
 
 ### 7.6. Xem TV dẫn tới bad ending
 
-Nội dung này được đặt trong nhóm minigame/phân đoạn đặc biệt nhưng liên kết tới trang Map42 (Phòng Hải Quỳ ở văn phòng Wanderer). Web app mô tả chuỗi chín màn hình TV, nhịp tối–đổi hình–sáng và bad ending “Thêm tập nữa thôi!” như phần Map tương tác ở trên.
+Nội dung này được đặt trong nhóm minigame/phân đoạn đặc biệt nhưng liên kết tới trang Map42 (Phòng Hải Quỳ ở văn phòng Wanderer). Web app mô tả chuỗi mười parallax TV, hai layer Hải Quỳ theo thời điểm free roam, nhịp zoom–tối–đổi nền–sáng và bad ending “Thêm tập nữa thôi!” như phần Map tương tác ở trên.
 
 ## 8. Nội dung dùng chung cần web app nhắc người chơi quan sát
 

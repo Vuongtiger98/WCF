@@ -1,0 +1,1 @@
+Copy video lỗi vào thư mục này trước khi gắn trong app.

@@ -885,24 +885,39 @@ module GroupChatPreset
     chat.add_choice("Kohi", 2, :variable => [43, 2])
     chat.add_choice("Shylvie", 3, :variable => [43, 3])
     chat.add_choice("Hakase", 4, :variable => [43, 4])
+
+    gift = $game_variables ? $game_variables[42].to_i : 1
     chat.add_branch_text(1, :quy, "Là Leo!", :right)
     chat.add_branch_text(1, :leo, "Hả? Là tui á? Bà chắc chưa á?")
     chat.add_branch_text(1, :quy, "Như đinh đóng cột! Mọi người tiếp tục vòng tặng nhé! Tớ sủi đây, hihi!", :right)
-    chat.add_branch_text(2, :quy, "Là Kohi!!", :right)
-    chat.add_branch_text(2, :shylvie, "Ui! Hóng quá!")
-    chat.add_branch_text(2, :leo, "Bà chắc sẽ tặng Kohi chưa?")
-    chat.add_branch_text(2, :quy, "Như đinh đóng cột! Mọi người tiếp tục vòng tặng nhé! Tớ sủi đây, hihi!", :right)
+
+    if gift == 2 || gift == 4
+      chat.add_branch_text(2, :quy, "Là Kohi", :right)
+      chat.add_branch_text(2, :kohi, "Oa!! Hóng quá!!")
+      chat.add_branch_text(2, :quy, "Kohi hóng như vậy sao?! Cơ mà Mọi người tiếp tục vòng tặng nhé! Tớ sủi đây, hihi!", :right)
+    else
+      chat.add_branch_text(2, :quy, "Là Kohi!!", :right)
+      chat.add_branch_text(2, :shylvie, "Ui! Hóng quá!")
+      chat.add_branch_text(2, :leo, "Bà chắc sẽ tặng Kohi chưa?")
+      chat.add_branch_text(2, :quy, "Như đinh đóng cột! Mọi người tiếp tục vòng tặng nhé! Tớ sủi đây, hihi!", :right)
+    end
+
     chat.add_branch_text(3, :quy, "Là Shylvie", :right)
     chat.add_branch_text(3, :shylvie, "Ôi vinh dự thế!!")
-    chat.add_branch_text(3, :quy, "Vậy là không muốn được tặng hả?", :right)
-    chat.add_branch_text(3, :shylvie, "Ừ đúng rồi đó~ Không muốn được tặng đó")
-    chat.add_branch_text(3, :quy, "Thì thôi~", :right)
+    if gift == 4
+      chat.add_branch_text(3, :quy, "Phải vinh dự chứ! Tui cá chắc chưa ai tặng ông món này luôn!", :right)
+      chat.add_branch_text(3, :shylvie, "Gì, nghe hoành tráng vậy? Tò mò ghê.")
+    else
+      chat.add_branch_text(3, :quy, "Vậy là không muốn được tặng hả?", :right)
+      chat.add_branch_text(3, :shylvie, "Ừ đúng rồi đó~ Không muốn được tặng đó")
+      chat.add_branch_text(3, :quy, "Thì thôi~", :right)
+    end
     chat.add_branch_text(3, :leo, "Bà chắc sẽ tặng Shylvie chưa?")
     chat.add_branch_text(3, :quy, "Chắc chắn rồi. Mọi người tiếp tục vòng tặng nhé. Tớ đi đây.", :right)
-    chat.add_branch_text(4, :quy, "Là Hakase!", :right)
+    chat.add_branch_text(4, :quy, "Là Hakase đó!", :right)
     chat.add_branch_text(4, :hakase, "Yatta!! Vui quá!! Hóng quà à nghen!!")
     chat.add_branch_text(4, :leo, "Bà chắc sẽ tặng Hakase chưa?")
-    chat.add_branch_text(4, :quy, "Chắc chắn rồi. Mọi người tiếp tục vòng tặng nhé. Tớ đi đây.", :right)
+    chat.add_branch_text(4, :quy, "Chắc chắn rồi!! Tớ đi đây, gặp lại mấy cậu sau!!", :right)
     GroupChat.start(chat)
   end
 
@@ -944,6 +959,21 @@ module GroupChatPreset
     chat.add_branch_text(1, :leo, "Ờ, đợi xíu!")
     chat.add_branch_text(2, :leo, "Ờ, đợi xíu!")
     chat.add_branch_text(3, :leo, "Ờ, đợi xíu!")
+    GroupChat.start(chat)
+  end
+
+  # Route hỏi Shylvie: tin nhắn riêng dẫn Hải Quỳ tới tiệm đá phong thủy.
+  # Event lưu lại cutscene này vào điện thoại sau khi giao diện đóng.
+  def self.shylvie_jewel_invite
+    chat = Game_SimplePhoneChat.new
+    chat.title = "Shylvie"
+    chat.subtitle = "Tin nhắn riêng"
+    chat.add_actor(:quy, "Hải Quỳ", "Contact_Quy")
+    chat.add_actor(:shylvie, "Shylvie", "Contact_Shylvie")
+    chat.add_text(:shylvie, "Hải Quỳ, bà có muốn tạt ngang qua cửa tiệm bán đá phong thủy không?")
+    chat.add_text(:quy, "Shylvie nhiệt tình giới thiệu quá nên chắc là có.", :right)
+    chat.add_text(:shylvie, "Để tui gửi tọa độ cho.")
+    chat.add_text(:quy, "Ừ, gửi tọa độ lẹ lên!", :right)
     GroupChat.start(chat)
   end
 

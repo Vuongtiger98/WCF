@@ -2,6 +2,7 @@
 
 require "digest"
 require "fileutils"
+require "json"
 require "zlib"
 
 # Minimal RGSS3 data classes needed by Ruby Marshal outside RPG Maker.
@@ -244,7 +245,7 @@ module RVData2Audit
         (page.instance_variable_get(:@list) || []).each do |command|
           code = command_code(command)
           parameters = command_parameters(command)
-          next unless [101, 102, 103, 108, 111, 117, 118, 119, 121, 122, 123, 201, 205, 212, 213, 214, 221, 222, 223, 225, 230, 231, 235, 284, 353, 354, 355, 401, 402, 403, 404, 408, 411, 412, 655].include?(code)
+          next unless [101, 102, 103, 108, 111, 117, 118, 119, 121, 122, 123, 201, 205, 212, 213, 214, 221, 222, 223, 225, 230, 231, 235, 241, 242, 243, 245, 246, 249, 250, 284, 353, 354, 355, 401, 402, 403, 404, 408, 411, 412, 655].include?(code)
 
           puts "CMD|#{code}|#{parameters.inspect}"
           if code == 205 && parameters[1]
@@ -2159,6 +2160,496 @@ module RVData2Audit
     system.instance_variable_set(:@switches, switches)
     save_data("Data/System.rvdata2", system)
     puts "MAP024_MEMORY|source=scene4_lines420_451|horizontal=scroll_text|mirror_chase_ready=S43"
+  end
+
+  # Rebuilds the storage diary handoff as a staged floor collapse, then turns
+  # Map024 into a short falling cutscene followed by player-controlled movement
+  # along falling_path to the Atlantis mirror maze.
+  def update_map024_falling_memory_pictures
+    source_path = "Data/Map026.rvdata2"
+    source_map = load_data(source_path)
+    source_event = (source_map.instance_variable_get(:@events) || {}).fetch(20)
+    source_page = (source_event.instance_variable_get(:@pages) || []).find do |candidate|
+      (candidate.instance_variable_get(:@list) || []).any? do |command|
+        [355, 655].include?(command_code(command)) &&
+          command_parameters(command)[0].to_s.include?("WCFDiaryReader.read(:dahria_last)")
+      end
+    end
+    raise "Map026 E020 final diary page missing" unless source_page
+    source_list = source_page.instance_variable_get(:@list) || []
+    diary_at = source_list.index do |command|
+      [355, 655].include?(command_code(command)) &&
+        command_parameters(command)[0].to_s.include?("WCFDiaryReader.read(:dahria_last)")
+    end
+
+    fall_route = RPG::MoveRoute.allocate
+    fall_route.instance_variable_set(:@repeat, false)
+    fall_route.instance_variable_set(:@skippable, true)
+    fall_route.instance_variable_set(:@wait, false)
+    route_command = lambda do |code, parameters = []|
+      move = RPG::MoveCommand.allocate
+      move.instance_variable_set(:@code, code)
+      move.instance_variable_set(:@parameters, parameters)
+      move
+    end
+    fall_route.instance_variable_set(:@list,
+      [route_command.call(37), route_command.call(29, [5])] +
+      Array.new(6) { route_command.call(1) } +
+      [route_command.call(38), route_command.call(0)])
+
+    source_sequence = source_list[0..diary_at] + [
+      event_command(213, 0, [-1, 1, true]),
+      event_command(230, 0, [12]),
+      event_command(355, 0, ["RPG::SE.new('Earth4',90,85).play # WCF_STORAGE_FLOOR_BREAK"]),
+      event_command(212, 0, [-1, 126, false]),
+      event_command(225, 0, [8, 8, 55, false]),
+      event_command(355, 0, ["$game_map.screen.start_tone_change(Tone.new(-68,-68,-68,0),30)"]),
+      event_command(230, 0, [30]),
+      event_command(205, 0, [-1, fall_route]),
+      event_command(355, 0, ["wcf_storage_floor_collapse(70,440) # WCF_STORAGE_ROOM_RISE"]),
+      event_command(355, 0, ["wcf_storage_hide_room # WCF_STORAGE_ROOM_HIDE"]),
+      event_command(221, 0, []),
+      event_command(211, 0, [0]),
+      event_command(122, 0, [33, 33, 0, 0, 3]),
+      event_command(121, 0, [42, 42, 0]),
+      event_command(355, 0, ["$game_player.drop_light; $game_map.shadows.set_opacity(0); map_effects.clear; wcf_storage_floor_collapse_reset # WCF_STORAGE_TRANSFER_CLEANUP"]),
+      event_command(201, 0, [0, 24, 10, 7, 8, 2]),
+      event_command(222, 0, []),
+      event_command(0, 0, [])
+    ]
+    source_page.instance_variable_set(:@list, source_sequence)
+    save_data(source_path, source_map)
+
+    path = "Data/Map024.rvdata2"
+    map = load_data(path)
+    events = map.instance_variable_get(:@events) || {}
+    event = events.fetch(1)
+    pages = event.instance_variable_get(:@pages) || []
+    page = pages.first
+    template = event
+
+    show_picture = lambda do |number, name, zoom = 100|
+      event_command(231, 0, [number, name, 1, 0, 320, 304, zoom, zoom, 255, 0])
+    end
+    wait = ->(frames) { event_command(230, 0, [frames]) }
+
+    sequence = [
+      event_command(355, 0, ["wcf_storage_floor_collapse_reset; wcf_falling_player_offset_reset; $game_map.shadows.set_opacity(0); $game_map.shadows.hide; map_effects.clear; ms_pro_cam_unlock_camera; ms_pro_cam_ignore_player(false) # WCF_FALLING_MEMORY_BLACK_SETUP"]),
+      event_command(355, 0, ["a=$game_actors[3]; a.set_graphic('$HaiQuyAtHome_Base',0,a.face_name,a.face_index); $game_player.refresh; $game_player.moveto(10,7); $game_player.set_direction(2) # WCF_FALLING_MEMORY_SPRITE_SETUP"]),
+      event_command(211, 0, [1]),
+      event_command(355, 0, ["char_effect(0,'Spin') # WCF_FALLING_MEMORY_FULL_SPIN"]),
+      wait.call(42),
+      event_command(355, 0, ["wcf_falling_player_leave_screen(60,360) # WCF_FALLING_MEMORY_LEAVE_SCREEN"]),
+      event_command(355, 0, ["char_effect(0,'Clear')"]),
+      event_command(211, 0, [0]),
+      event_command(355, 0, ["wcf_falling_player_offset_reset"]),
+      event_command(108, 0, ["WCF:FALLING_MEMORY:PICTURES_BEGIN"]),
+      show_picture.call(60, "falling_base", 1),
+      event_command(232, 0, [60, 0, 1, 0, 320, 304, 100, 100, 255, 0, 45, true]),
+      wait.call(60),
+      show_picture.call(61, "falling_HQ_ded_1"),
+      event_command(225, 0, [4, 6, 24, false]),
+      wait.call(42)
+    ]
+
+    # Long early holds sell Hải Quỳ's difficult attempt to recover; the pace
+    # gradually accelerates until the pose changes from ded to faint.
+    ded_holds = [62, 54, 48, 42, 36, 31, 28]
+    (2..8).each do |frame|
+      sequence << show_picture.call(61, "falling_HQ_ded_#{frame}")
+      sequence << wait.call(ded_holds[frame - 2])
+    end
+
+    faint_holds = [34, 28, 24, 20, 18, 16]
+    (1..7).each do |frame|
+      sequence << show_picture.call(61, "falling_HQ_faint_#{frame}")
+      sequence << wait.call(faint_holds[frame - 1]) if frame < 7
+    end
+    sequence.concat([
+      event_command(235, 0, [61]),
+      event_command(235, 0, [60]),
+      show_picture.call(62, "falling_path"),
+      event_command(355, 0, [
+        "a=$game_actors[3]; a.set_graphic('$HaiQuy_Badend',0,a.face_name,a.face_index); $game_player.refresh; " \
+        "$game_player.moveto(10,5); $game_player.set_direction(2); $game_player.instance_variable_set(:@through,false) # WCF_FALLING_MEMORY_FREE_ROAM"
+      ]),
+      event_command(211, 0, [1]),
+      *wrapped_message_commands(["Có lẽ phải đi đường này."], width: 42),
+      event_command(123, 0, ["A", 0]),
+      event_command(0, 0, [])
+    ])
+
+    page.instance_variable_set(:@list, sequence)
+    pages[0] = page
+    event.instance_variable_set(:@pages, pages)
+    events[1] = event
+
+    exit_commands = [
+      event_command(221, 0, []),
+      event_command(235, 0, [62]),
+      event_command(121, 0, [43, 43, 0]),
+      event_command(201, 0, [0, 28, 5, 3, 2, 2]),
+      event_command(222, 0, []),
+      event_command(0, 0, [])
+    ]
+    exit_page = page_from_template(template, exit_commands, trigger: 1, priority: 0)
+    existing_exit = events[2]
+    exit_x = existing_exit ? existing_exit.instance_variable_get(:@x) : 10
+    exit_y = existing_exit ? existing_exit.instance_variable_get(:@y) : 13
+    events[2] = event_from_pages(template, 2, "EXIT-MEMORY-PATH-TO-MIRROR-MAZE", exit_x, exit_y, [exit_page])
+    map.instance_variable_set(:@events, events)
+    map.instance_variable_set(:@note, "Landfill memory; black free-roam path; exit to remade Atlantis mirror maze")
+    save_data(path, map)
+
+    insert_runtime_script("WCF Storage Memory Transition", "Scripts/WCF Storage Memory Transition.rb")
+    audit_map024_falling_memory_pictures
+    puts "UPDATED|Map026:E020|diary_return+balloon+floor_break+room_rise+Map024"
+    puts "UPDATED|Map024|full_spin+leave_screen+base_zoom+falling_HQ_no_path|free_roam=10,5+$HaiQuy_Badend+falling_path|exit=#{exit_x},#{exit_y}->Map028"
+  end
+
+  def audit_map024_falling_memory_pictures
+    map = load_data("Data/Map024.rvdata2")
+    event = (map.instance_variable_get(:@events) || {}).fetch(1)
+    page = (event.instance_variable_get(:@pages) || []).first
+    list = page.instance_variable_get(:@list) || []
+    errors = []
+
+    picture_names = list.select { |command| command_code(command) == 231 }
+                        .map { |command| command_parameters(command)[1].to_s }
+    expected = ["falling_base"] +
+      (1..8).map { |i| "falling_HQ_ded_#{i}" } +
+      (1..7).map { |i| "falling_HQ_faint_#{i}" } + ["falling_path"]
+    missing = expected - picture_names
+    errors << "missing pictures: #{missing.join(', ')}" unless missing.empty?
+    misplaced = list.select { |command| command_code(command) == 231 }.reject do |command|
+      command_parameters(command)[2] == 1 && command_parameters(command)[4, 2] == [320, 304]
+    end
+    errors << "falling pictures are not center-origin at 320,304" unless misplaced.empty?
+    errors << "memory dialogue still has a face" if list.any? do |command|
+      command_code(command) == 101 && !command_parameters(command)[0].to_s.empty?
+    end
+
+    index_of = lambda do |code, &block|
+      list.index do |command|
+        command_code(command) == code && (!block || block.call(command_parameters(command)))
+      end
+    end
+    faint1 = index_of.call(231) { |p| p[1] == "falling_HQ_faint_1" }
+    faint7 = index_of.call(231) { |p| p[1] == "falling_HQ_faint_7" }
+    path_show = list.index { |c| command_code(c) == 231 && command_parameters(c)[1] == "falling_path" }
+    base_show = list.index { |c| command_code(c) == 231 && command_parameters(c)[1] == "falling_base" }
+    base_zoom = list.index { |c| command_code(c) == 232 && command_parameters(c)[0] == 60 }
+    hq_first = list.index { |c| command_code(c) == 231 && command_parameters(c)[1] == "falling_HQ_ded_1" }
+    free_roam = index_of.call(355) { |p| p[0].to_s.include?("WCF_FALLING_MEMORY_FREE_ROAM") }
+    dialogue = list.index { |c| command_code(c) == 401 && command_parameters(c)[0].to_s.include?("Có lẽ phải đi đường này") }
+    rotation = index_of.call(355) { |p| p[0].to_s.include?("WCF_FALLING_MEMORY_FULL_SPIN") }
+    sprite_leave = index_of.call(355) { |p| p[0].to_s.include?("WCF_FALLING_MEMORY_LEAVE_SCREEN") }
+    errors << "falling_base does not zoom from 1% to full size before Hải Quỳ" unless
+      base_show && base_zoom && hq_first && base_show < base_zoom && base_zoom < hq_first &&
+      command_parameters(list[base_show])[6, 2] == [1, 1] &&
+      command_parameters(list[base_zoom])[6, 2] == [100, 100]
+    errors << "falling_path appears during the falling_HQ animation" unless faint7 && path_show && faint7 < path_show
+    errors << "black falling sprite does not complete a 360-degree spin" unless rotation && command_parameters(list[rotation])[0].to_s.include?("char_effect(0,'Spin')")
+    errors << "black falling sprite does not leave the screen before pictures" unless rotation && sprite_leave && rotation < sprite_leave && sprite_leave < base_show
+    errors << "free roam staging order" unless path_show && free_roam && dialogue && path_show < free_roam && free_roam < dialogue
+    errors << "free roam graphic is not $HaiQuy_Badend" unless free_roam && command_parameters(list[free_roam])[0].to_s.include?("$HaiQuy_Badend")
+    errors << "free roam does not begin at 10,5" unless free_roam && command_parameters(list[free_roam])[0].to_s.include?("moveto(10,5)")
+    errors << "autorun still transfers directly to Map028" if list.any? { |c| command_code(c) == 201 }
+    errors << "player sprite is still visible during memory" unless list.any? { |c| command_code(c) == 211 && command_parameters(c)[0] == 0 }
+    errors << "player sprite is not restored for free roam" unless list.count { |c| command_code(c) == 211 && command_parameters(c)[0] == 1 } >= 2
+
+    exit_event = (map.instance_variable_get(:@events) || {})[2]
+    exit_list = exit_event && exit_event.instance_variable_get(:@pages).first.instance_variable_get(:@list) || []
+    exit_transfer = exit_list.find { |c| command_code(c) == 201 }
+    errors << "memory path exit location" unless exit_event &&
+      [exit_event.instance_variable_get(:@x), exit_event.instance_variable_get(:@y)] == [10, 13]
+    errors << "memory path does not transfer to Map028 at 5,3" unless exit_transfer && command_parameters(exit_transfer)[1, 3] == [28, 5, 3]
+
+    source_map = load_data("Data/Map026.rvdata2")
+    source_event = (source_map.instance_variable_get(:@events) || {}).fetch(20)
+    source_page = (source_event.instance_variable_get(:@pages) || []).find do |candidate|
+      (candidate.instance_variable_get(:@list) || []).any? do |command|
+        [355, 655].include?(command_code(command)) &&
+          command_parameters(command)[0].to_s.include?("WCF_STORAGE_ROOM_RISE")
+      end
+    end
+    source_list = source_page && source_page.instance_variable_get(:@list) || []
+    diary = source_list.index { |c| [355, 655].include?(command_code(c)) && command_parameters(c)[0].to_s.include?("WCFDiaryReader.read(:dahria_last)") }
+    balloon = source_list.index { |c| command_code(c) == 213 && command_parameters(c)[0, 2] == [-1, 1] }
+    floor_break = source_list.index { |c| command_code(c) == 212 && command_parameters(c)[0, 2] == [-1, 126] }
+    room_rise = source_list.index { |c| [355, 655].include?(command_code(c)) && command_parameters(c)[0].to_s.include?("WCF_STORAGE_ROOM_RISE") }
+    room_hide = source_list.index { |c| [355, 655].include?(command_code(c)) && command_parameters(c)[0].to_s.include?("WCF_STORAGE_ROOM_HIDE") }
+    source_transfer = source_list.index do |c|
+      command_code(c) == 201 && command_parameters(c)[1] == 24
+    end
+    errors << "Map026 diary collapse ordering" unless
+      diary && balloon && floor_break && room_rise && room_hide && source_transfer &&
+      diary < balloon && balloon < floor_break && floor_break < room_rise && room_rise < room_hide && room_hide < source_transfer
+    errors << "Map026 storage room is not hidden after the first 544x416 frame leaves" unless
+      room_rise && command_parameters(source_list[room_rise])[0].to_s.include?("wcf_storage_floor_collapse(70,440)")
+
+    runtime_path = "Scripts/WCF Storage Memory Transition.rb"
+    runtime_source = File.binread(runtime_path)
+    runtime = load_data("Data/Scripts.rvdata2")
+    runtime_entry = runtime.find { |entry| entry[1].to_s.strip == "WCF Storage Memory Transition" }
+    errors << "storage transition runtime script is not synchronized" unless runtime_entry &&
+      Zlib::Inflate.inflate(runtime_entry[2]) == runtime_source
+
+    puts "MAP024_FALLING_MEMORY_AUDIT|errors=#{errors.length}|pictures=#{picture_names.length}|free_roam=true|exit=Map028"
+    errors.each { |error| puts "ERROR|#{error}" }
+    raise "Map024 falling memory audit failed" unless errors.empty?
+  end
+
+  # Map024 has been re-authored as a 17x14 parallax map. Keep every piece of
+  # authored map data and every event position intact; only replace the event
+  # command lists that stage the falling memory and leave for the mirror maze.
+  def update_map024_falling_memory_layers
+    path = "Data/Map024.rvdata2"
+    map = load_data(path)
+    events = map.instance_variable_get(:@events) || {}
+    intro = events.fetch(1)
+    exit_event = events.fetch(2)
+    intro_page = (intro.instance_variable_get(:@pages) || []).fetch(0)
+    exit_page = (exit_event.instance_variable_get(:@pages) || []).fetch(0)
+
+    raise "Map024 must keep falling_base as its authored parallax" unless
+      map.instance_variable_get(:@parallax_name).to_s == "falling_base"
+    raise "Map024 exit was not kept at the authored 8,13 position" unless
+      [exit_event.instance_variable_get(:@x), exit_event.instance_variable_get(:@y)] == [8, 13]
+
+    layer_command = lambda do |layer_id, name, z|
+      event_command(355, 0, ["layer(24,#{layer_id},[\"#{name}\",0,0,255,#{z},0,0,0])"])
+    end
+    wait = ->(frames) { event_command(230, 0, [frames]) }
+
+    sequence = [
+      event_command(355, 0, ["wcf_storage_floor_collapse_reset; wcf_falling_player_offset_reset; $game_map.shadows.set_opacity(0); $game_map.shadows.hide; map_effects.clear; ms_pro_cam_unlock_camera; ms_pro_cam_ignore_player(false) # WCF_FALLING_MEMORY_BLACK_SETUP"]),
+      event_command(355, 0, ["del_layer(24,1); del_layer(24,2) # WCF_FALLING_MEMORY_LAYER_RESET"]),
+      event_command(355, 0, ["$game_map.change_parallax('',false,false,0,0) # WCF_FALLING_MEMORY_PARALLAX_HIDE"]),
+      event_command(355, 0, ["a=$game_actors[3]; a.set_graphic('$HaiQuyAtHome_Base',0,a.face_name,a.face_index); $game_player.refresh; $game_player.moveto(8,6); $game_player.set_direction(2) # WCF_FALLING_MEMORY_SPRITE_SETUP"]),
+      event_command(211, 0, [1]),
+      event_command(355, 0, ["char_effect(0,'Spin Loop') # WCF_FALLING_MEMORY_CONTINUOUS_SPIN"]),
+      wait.call(42),
+      event_command(355, 0, ["wcf_falling_player_leave_screen(60,360) # WCF_FALLING_MEMORY_LEAVE_SCREEN"]),
+      event_command(355, 0, ["char_effect(0,'Clear')"]),
+      event_command(211, 0, [0]),
+      event_command(355, 0, ["wcf_falling_player_offset_reset"]),
+      event_command(355, 0, ["$game_map.change_parallax('falling_base',false,false,0,0) # WCF_FALLING_MEMORY_PARALLAX_RESTORE"]),
+      event_command(108, 0, ["WCF:FALLING_MEMORY:LAYERS_BEGIN"]),
+      layer_command.call(1, "falling_HQ_ded_1", 200),
+      event_command(655, 0, ["refresh_layers"]),
+      event_command(225, 0, [4, 6, 24, false]),
+      wait.call(42)
+    ]
+
+    # Long early holds sell Hải Quỳ's difficult attempt to recover; the pace
+    # gradually accelerates until the pose changes from ded to faint.
+    ded_holds = [62, 54, 48, 42, 36, 31, 28]
+    (2..8).each do |frame|
+      sequence << layer_command.call(1, "falling_HQ_ded_#{frame}", 200)
+      sequence << wait.call(ded_holds[frame - 2])
+    end
+
+    faint_holds = [34, 28, 24, 20, 18, 16, 30]
+    (1..7).each do |frame|
+      sequence << layer_command.call(1, "falling_HQ_faint_#{frame}", 200)
+      sequence << wait.call(faint_holds[frame - 1])
+    end
+
+    sequence.concat([
+      event_command(355, 0, ["del_layer(24,1) # WCF_FALLING_MEMORY_ANIMATION_END"]),
+      event_command(355, 0, [
+        "a=$game_actors[3]; a.set_graphic('$HaiQuy_Badend',0,a.face_name,a.face_index); $game_player.refresh; " \
+        "$game_player.moveto(8,6); $game_player.set_direction(2); $game_player.instance_variable_set(:@through,false) # WCF_FALLING_MEMORY_FREE_ROAM"
+      ]),
+      event_command(211, 0, [1]),
+      wait.call(1),
+      layer_command.call(2, "falling_path", 0),
+      event_command(655, 0, ["refresh_layers"]),
+      *wrapped_message_commands(["Có lẽ phải đi đường này."], width: 42),
+      event_command(123, 0, ["A", 0]),
+      event_command(0, 0, [])
+    ])
+    intro_page.instance_variable_set(:@list, sequence)
+
+    exit_page.instance_variable_set(:@list, [
+      event_command(221, 0, []),
+      event_command(355, 0, ["del_layer(24,2) # WCF_FALLING_MEMORY_PATH_END"]),
+      event_command(121, 0, [43, 43, 0]),
+      event_command(201, 0, [0, 28, 5, 3, 2, 2]),
+      event_command(222, 0, []),
+      event_command(0, 0, [])
+    ])
+
+    save_data(path, map)
+
+    # Land directly at the new authored start tile. The Map024 autorun also
+    # stages this coordinate, but the transfer itself must not expose the old
+    # 10,7 tile for a frame before autorun begins.
+    source_path = "Data/Map026.rvdata2"
+    source_map = load_data(source_path)
+    source_transfers = []
+    (source_map.instance_variable_get(:@events) || {}).each_value do |source_event|
+      (source_event.instance_variable_get(:@pages) || []).each do |source_page|
+        source_list = source_page.instance_variable_get(:@list) || []
+        source_list.delete_if do |command|
+          command_code(command) == 355 &&
+            command_parameters(command)[0].to_s.include?("WCF_FALLING_MEMORY_DEST_PARALLAX_HIDE")
+        end
+        source_list.each_with_index do |command, command_index|
+          parameters = command_parameters(command)
+          source_transfers << [source_list, command_index, command] if
+            command_code(command) == 201 && parameters[1] == 24
+        end
+      end
+    end
+    raise "Expected exactly one Map026 transfer to Map024" unless source_transfers.length == 1
+    source_list, transfer_index, source_transfer = source_transfers.first
+    transfer_parameters = command_parameters(source_transfer).dup
+    transfer_parameters[2] = 8
+    transfer_parameters[3] = 6
+    source_transfer.instance_variable_set(:@parameters, transfer_parameters)
+    source_list.insert(transfer_index + 1,
+      event_command(355, 0, ["$game_map.change_parallax('',false,false,0,0) # WCF_FALLING_MEMORY_DEST_PARALLAX_HIDE"]))
+    save_data(source_path, source_map)
+
+    audit_map024_falling_memory_layers
+    puts "UPDATED|Map026:E020>Map024|landing=8,6"
+    puts "UPDATED|Map024:E001,E002|parallax=falling_base|continuous_spin=true|layers=falling_HQ+falling_path|free_roam=8,6|exit=8,13"
+  end
+
+  def audit_map024_falling_memory_layers
+    map = load_data("Data/Map024.rvdata2")
+    events = map.instance_variable_get(:@events) || {}
+    intro = events.fetch(1)
+    exit_event = events.fetch(2)
+    list = (intro.instance_variable_get(:@pages) || []).fetch(0).instance_variable_get(:@list) || []
+    exit_list = (exit_event.instance_variable_get(:@pages) || []).fetch(0).instance_variable_get(:@list) || []
+    errors = []
+
+    scripts = list.select { |command| [355, 655].include?(command_code(command)) }
+                  .map { |command| command_parameters(command)[0].to_s }
+    layer_names = scripts.filter_map do |script|
+      match = script.match(/layer\(24,\d+,\[\"(falling_[^\"]+)\"/)
+      match && match[1]
+    end
+    expected_animation = (1..8).map { |i| "falling_HQ_ded_#{i}" } +
+      (1..7).map { |i| "falling_HQ_faint_#{i}" }
+    missing = expected_animation + ["falling_path"] - layer_names
+    errors << "missing falling layers: #{missing.join(', ')}" unless missing.empty?
+    errors << "old picture commands remain" if (list + exit_list).any? do |command|
+      [231, 232, 233, 234, 235].include?(command_code(command))
+    end
+    errors << "falling_base is not the map parallax" unless
+      map.instance_variable_get(:@parallax_name).to_s == "falling_base"
+    errors << "falling_base is incorrectly shown as a layer" if layer_names.include?("falling_base")
+
+    index_of_script = lambda do |marker|
+      list.index do |command|
+        [355, 655].include?(command_code(command)) &&
+          command_parameters(command)[0].to_s.include?(marker)
+      end
+    end
+    spin = index_of_script.call("WCF_FALLING_MEMORY_CONTINUOUS_SPIN")
+    leave = index_of_script.call("WCF_FALLING_MEMORY_LEAVE_SCREEN")
+    parallax_hide = index_of_script.call("WCF_FALLING_MEMORY_PARALLAX_HIDE")
+    parallax_restore = index_of_script.call("WCF_FALLING_MEMORY_PARALLAX_RESTORE")
+    animation_end = index_of_script.call("WCF_FALLING_MEMORY_ANIMATION_END")
+    free_roam = index_of_script.call("WCF_FALLING_MEMORY_FREE_ROAM")
+    path_show = list.index do |command|
+      command_code(command) == 355 && command_parameters(command)[0].to_s.include?('layer(24,2,["falling_path"')
+    end
+    faint7 = list.index do |command|
+      command_code(command) == 355 && command_parameters(command)[0].to_s.include?('layer(24,1,["falling_HQ_faint_7"')
+    end
+    faint7_hold = faint7 && list.each_index.find do |index|
+      index > faint7 && command_code(list[index]) == 230
+    end
+    dialogue = list.index do |command|
+      command_code(command) == 401 && command_parameters(command)[0].to_s.include?("Có lẽ phải đi đường này")
+    end
+    player_show_after_animation = list.each_index.find do |index|
+      index > (animation_end || list.length) && command_code(list[index]) == 211 &&
+        command_parameters(list[index])[0] == 1
+    end
+
+    errors << "continuous Spin Loop is missing" unless spin &&
+      command_parameters(list[spin])[0].to_s.include?("char_effect(0,'Spin Loop')")
+    errors << "player does not leave before the layer animation" unless spin && leave && spin < leave
+    first_falling_layer = list.index do |command|
+      command_code(command) == 355 &&
+        command_parameters(command)[0].to_s.include?('layer(24,1,["falling_HQ_ded_1"')
+    end
+    errors << "falling_base is visible while the sprite spins" unless
+      parallax_hide && spin && leave && parallax_restore && first_falling_layer &&
+      parallax_hide < spin && spin < leave && leave < parallax_restore &&
+      parallax_restore < first_falling_layer
+    errors << "free roam does not begin at 8,6" unless free_roam &&
+      command_parameters(list[free_roam])[0].to_s.include?("moveto(8,6)")
+    errors << "final falling frame is not held before the animation ends" unless
+      faint7 && faint7_hold && animation_end && faint7 < faint7_hold && faint7_hold < animation_end
+    errors << "falling_path appears before Hải Quỳ returns" unless
+      animation_end && free_roam && player_show_after_animation && path_show && dialogue &&
+      animation_end < free_roam && free_roam < player_show_after_animation &&
+      player_show_after_animation < path_show && path_show < dialogue
+    errors << "free roam graphic is not $HaiQuy_Badend" unless free_roam &&
+      command_parameters(list[free_roam])[0].to_s.include?("$HaiQuy_Badend")
+    errors << "memory dialogue still has a face" if list.any? do |command|
+      command_code(command) == 101 && !command_parameters(command)[0].to_s.empty?
+    end
+    errors << "autorun still transfers directly to Map028" if list.any? do |command|
+      command_code(command) == 201
+    end
+
+    exit_transfer = exit_list.find { |command| command_code(command) == 201 }
+    errors << "memory path exit location is not 8,13" unless
+      [exit_event.instance_variable_get(:@x), exit_event.instance_variable_get(:@y)] == [8, 13]
+    errors << "memory path does not remove falling_path" unless exit_list.any? do |command|
+      command_code(command) == 355 && command_parameters(command)[0].to_s.include?("del_layer(24,2)")
+    end
+    errors << "memory path does not transfer to Map028 at 5,3" unless exit_transfer &&
+      command_parameters(exit_transfer)[1, 3] == [28, 5, 3]
+
+    source_map = load_data("Data/Map026.rvdata2")
+    source_transfers = []
+    (source_map.instance_variable_get(:@events) || {}).each_value do |source_event|
+      (source_event.instance_variable_get(:@pages) || []).each do |source_page|
+        source_list = source_page.instance_variable_get(:@list) || []
+        source_list.each_with_index do |command, command_index|
+          parameters = command_parameters(command)
+          source_transfers << [source_list, command_index, parameters] if
+            command_code(command) == 201 && parameters[1] == 24
+        end
+      end
+    end
+    errors << "Map026 does not land directly at Map024 8,6" unless
+      source_transfers.length == 1 && source_transfers.first[2][1, 3] == [24, 8, 6]
+    if source_transfers.length == 1
+      source_list, transfer_index, = source_transfers.first
+      destination_hide = source_list.index do |command|
+        command_code(command) == 355 &&
+          command_parameters(command)[0].to_s.include?("WCF_FALLING_MEMORY_DEST_PARALLAX_HIDE")
+      end
+      destination_fadein = source_list.each_index.find do |index|
+        index > transfer_index && command_code(source_list[index]) == 222
+      end
+      errors << "Map026 reveals falling_base before the Map024 autorun can hide it" unless
+        destination_hide && destination_fadein &&
+          transfer_index < destination_hide && destination_hide < destination_fadein
+    end
+
+    required_layers = expected_animation + ["falling_path"]
+    missing_files = required_layers.reject { |name| File.file?("Graphics/Layers/#{name}.png") }
+    errors << "missing files in Graphics/Layers: #{missing_files.join(', ')}" unless missing_files.empty?
+    errors << "Graphics/Parallaxes/falling_base.png is missing" unless
+      File.file?("Graphics/Parallaxes/falling_base.png")
+    event_script_syntax_errors([24, 26]).each do |syntax_error|
+      errors << "event script syntax: #{syntax_error}"
+    end
+
+    puts "MAP024_FALLING_MEMORY_LAYER_AUDIT|errors=#{errors.length}|map=#{map.instance_variable_get(:@width)}x#{map.instance_variable_get(:@height)}|parallax=falling_base|layers=#{layer_names.length}|player=8,6|exit=8,13"
+    errors.each { |error| puts "ERROR|#{error}" }
+    raise "Map024 falling memory layer audit failed" unless errors.empty?
   end
 
   def name_atlantis_flags
@@ -6541,6 +7032,40 @@ module RVData2Audit
       3 => expand.call("Route Khăn Len"),
       4 => expand.call("Route Bophakhoa")
     }
+    # The compact file faithfully mirrors the DOCX files here, including
+    # several copy/paste mistakes in the source documents.  Correct them at the
+    # import boundary so a future route rebuild cannot reintroduce the wrong
+    # recipient/colour into the live game.
+    in_coffee_kohi_scene9 = false
+    routes[1] = routes[1].map do |line|
+      in_coffee_kohi_scene9 = true if line.match?(/\AKOHI Cảnh 9\z/i)
+      if in_coffee_kohi_scene9 &&
+          line.match?(/\A(?:SHYL(?:VIE|IVE)|HAKASE) Cảnh 9\z/i)
+        in_coffee_kohi_scene9 = false
+      end
+      in_coffee_kohi_scene9 ? line.sub(
+        "tặng chiếc máy pha cà phê cho Leo",
+        "tặng chiếc máy pha cà phê cho Kohi") : line
+    end
+    routes[3] = routes[3].map do |line|
+      line = line.sub(
+        "Đúng là màu đỏ là màu của Shylvie đó",
+        "Đúng là màu xanh là màu của Shylvie đó")
+      line.sub(
+        "Cơ mà…chiếc khăn màu đỏ này…không biết có bị nhàm quá không ? Đúng là màu đỏ là màu của Leo đó nhưng mà…chiếc khăn này vẫn chưa có chất của Leo lắm",
+        "Cơ mà…chiếc khăn màu tím xám này…không biết có bị nhàm quá không ? Đúng là màu tím xám là màu của Hakase đó nhưng mà…chiếc khăn này vẫn chưa có chất của Hakase lắm")
+    end
+    in_lock_kohi_scene5 = false
+    routes[4] = routes[4].map do |line|
+      in_lock_kohi_scene5 = true if line.match?(/\AKOHI cảnh 5\z/i)
+      if in_lock_kohi_scene5 &&
+          line.match?(/\A(?:SHYL(?:VIE|IVE)|HAKASE) cảnh 5\z/i)
+        in_lock_kohi_scene5 = false
+      end
+      in_lock_kohi_scene5 ?
+        line.sub("Nhỡ đâu Leo cần thì sao ?", "Nhỡ đâu Kohi cần thì sao ?") :
+        line
+    end
     target_names = {1 => "Leo", 2 => "Kohi", 3 => "Shylvie", 4 => "Hakase"}
     heading_name = lambda { |name| name == "Shylvie" ? "SHYL(?:VIE|IVE)" : Regexp.escape(name) }
     section = lambda do |lines, start_pattern, end_pattern|
@@ -7461,7 +7986,7 @@ module RVData2Audit
       events = {}
       events[1] = make_event.call(1, "SCN-MEETING-ROOM-INIT", 0, 0,
         [event_command(355, 0, [cleanup]), event_command(214, 0, [])], 3, 0)
-      events[2] = make_event.call(2, "TRANSFER-MEETING-TO-WANDERER", 17, 17,
+      events[2] = make_event.call(2, "TRANSFER-MEETING-TO-WANDERER", 17, 5,
         [event_command(355, 0, [cleanup]), *return_commands.call(13, 38)], 1, 0)
       map.instance_variable_set(:@events, events)
       save_data("Data/Map%03d.rvdata2" % map_id, map)
@@ -7550,7 +8075,7 @@ module RVData2Audit
       map = load_data(path)
       events = map.instance_variable_get(:@events) || {}
       meeting_id = movie_offices.include?(office_id) ? meeting_movie_id : meeting_normal_id
-      [[130, "TRANSFER-WANDERER-TO-MEETING", meeting_entrance, meeting_id, [17,16]],
+      [[130, "TRANSFER-WANDERER-TO-MEETING", meeting_entrance, meeting_id, [17,6]],
        [131, "TRANSFER-WANDERER-TO-CRAFTING", crafting_entrance, crafting_id, [5,10]]].each do |event_id, name, xy, target_map, target_xy|
         occupied = events[event_id]
         if occupied && !occupied.instance_variable_get(:@name).to_s.include?(name)
@@ -7612,12 +8137,73 @@ module RVData2Audit
   # Map013 E005 is the only unassigned member-room door in the authored row:
   # E004 remains the guest room, E005 becomes Hai Quy's room, and E006-E009
   # retain the authored Shylvie/Leo/Hakase/Kohi order.
+  def hq_room_tv_bad_end_commands
+    parallaxes = ["HQ_Room_TV", "HQ_Room_TV_1"] +
+      (2..9).map { |index| "HQ_Room_TV#{index}" }
+
+    commands = [
+      event_command(101, 0, ["HaiQuy_Thuongphuc_Emote", 3, 0, 2]),
+      event_command(401, 0, ["Ngồi xem TV một chút chứ?"]),
+      event_command(102, 0, [["Xem xíu đi!", "Không xem"], 1]),
+      event_command(402, 0, [0, "Xem xíu đi!"]),
+      event_command(355, 1, [
+        "map_effects.clear; map_effects.active=true; map_effects.refresh_rate=60; " \
+        "map_effects.set_origin(28,32,0); map_effects.set_zoom(165,30,true) # WCF_HQ_TV_ZOOM"
+      ]),
+      event_command(230, 1, [30]),
+      event_command(355, 1, [
+        "$game_map.shadows.set_color(0,0,0); $game_map.shadows.set_opacity(0); $game_map.shadows.show; " \
+        "$game_map.shadows.set_opacity(255,24) # WCF_HQ_TV_KUL_BLACK"
+      ]),
+      event_command(230, 1, [24]),
+      event_command(355, 1, [
+        "$game_player.transparent=true; " \
+        "tv_layer=$game_variables[49]==38 ? 'HQ_Room_TV_Quy_Chrismast' : 'HQ_Room_TV_BeforeChristmas'; " \
+        "layer(42,0,[tv_layer,0,0,255,200,0,0,0]); refresh_layers # WCF_HQ_TV_LAYER"
+      ])
+    ]
+
+    parallaxes.each_with_index do |parallax, index|
+      if index > 0
+        commands << event_command(355, 1, [
+          "$game_map.shadows.set_opacity(255,24) # WCF_HQ_TV_KUL_BLACK_#{index + 1}"
+        ])
+        commands << event_command(230, 1, [24])
+      end
+      commands << event_command(284, 1, [parallax, false, false, 0, 0])
+      commands << event_command(355, 1, [
+        "$game_map.shadows.set_opacity(0,24) # WCF_HQ_TV_KUL_REVEAL_#{index + 1}"
+      ])
+      commands << event_command(230, 1, [24])
+      commands << event_command(230, 1, [120])
+    end
+
+    commands.concat([
+      event_command(101, 1, ["HaiQuy_Thuongphuc_Emote", 5, 0, 2]),
+      event_command(401, 1, ["Xem hết phim này đến phim khác…"]),
+      event_command(101, 1, ["HaiQuy_Thuongphuc_Emote", 5, 0, 2]),
+      event_command(401, 1, ["BAD ENDING: “Thêm tập nữa thôi!”"]),
+      event_command(355, 1, [
+        "$game_map.shadows.set_opacity(255,30) # WCF_HQ_TV_KUL_END"
+      ]),
+      event_command(230, 1, [30]),
+      event_command(355, 1, [
+        "del_layer(42,0); refresh_layers; map_effects.clear; map_effects.active=true; " \
+        "map_effects.set_zoom(100,0,false) # WCF_HQ_TV_CLEANUP"
+      ]),
+      event_command(354, 1, []),
+      event_command(402, 0, [1, "Không xem"]),
+      event_command(404, 0, [])
+    ])
+    commands
+  end
+
   def create_wanderer_private_rooms
     room_specs = {
       42 => ["Phòng Hải Quỳ — Wanderer", "HQ_Room_Normal", 20, 14,
              [[4, 17, 4, 11], [12, 13, 12, 13]], [13, 12, 8], [13, 13], 16],
       43 => ["Phòng Shylvie", "CV_Room_Lightoff_Base", 20, 18,
-             [[2, 15, 2, 15], [0, 2, 5, 7]], [2, 6, 6], [1, 6], 20],
+             [[2, 15, 2, 15], [0, 2, 5, 7]], [2, 9, 6], [1, 9], 20],
       44 => ["Phòng Leo", "Leo_Room_Base", 17, 17,
              [[2, 15, 3, 11], [1, 3, 6, 8]], [2, 7, 6], [1, 7], 24],
       45 => ["Phòng Hakase", "MystRoom_Base", 17, 17,
@@ -7858,42 +8444,11 @@ module RVData2Audit
     ]
     bath_id = add.call("SCN-HQ-OFFICE-BATH", 5, 9, [page.call(bath)])
     aliaz.call(bath_id, 5, 10, "SCN-HQ-OFFICE-BATH-ALIAS")
-    # !$TV_Sprite contains nine authored screens in the first three rows of
-    # its 3x4 single-character sheet. Show each screen for two seconds and
-    # hide every frame swap behind a normal screen fade.
-    tv_frames = [2, 4, 6].flat_map { |direction| [[direction, 0], [direction, 1], [direction, 2]] }
-    tv_animation = [
-      event_command(221, 1, []),
-      event_command(355, 1, [
-        "$game_player.moveto(5,5); $game_player.instance_variable_set(:@direction,8); " \
-        "$game_player.instance_variable_set(:@pattern,1); $game_player.instance_variable_set(:@original_pattern,1); " \
-        "$game_player.instance_variable_set(:@anime_count,0)"
-      ])
-    ]
-    tv_frames.each_with_index do |(direction, pattern), index|
-      tv_animation << event_command(221, 1, []) if index > 0
-      tv_animation << event_command(355, 1, [
-        "tv=$game_map.events[@event_id]; tv.set_graphic('!$TV_Sprite',0); " \
-        "tv.instance_variable_set(:@walk_anime,false); tv.instance_variable_set(:@step_anime,false); " \
-        "tv.instance_variable_set(:@direction_fix,true); tv.instance_variable_set(:@priority_type,0); " \
-        "tv.instance_variable_set(:@direction,#{direction}); tv.instance_variable_set(:@pattern,#{pattern}); " \
-        "tv.instance_variable_set(:@original_pattern,#{pattern}); tv.instance_variable_set(:@anime_count,0)"
-      ])
-      tv_animation << event_command(222, 1, [])
-      tv_animation << event_command(230, 1, [120])
-    end
-
-    television = text.call(["Ngồi xem TV một chút chứ?"], 0, 3) + [
-      event_command(102, 0, [["Xem xíu đi!", "Không xem"], 1]),
-      event_command(402, 0, [0, "Xem xíu đi!"]),
-      *tv_animation,
-      *text.call(["Xem hết phim này đến phim khác…", "BAD ENDING: “Thêm tập nữa thôi!”"], 1, 5),
-      event_command(221, 1, []),
-      event_command(354, 1, []),
-      event_command(402, 0, [1, "Không xem"]),
-      event_command(404, 0, [])
-    ]
-    tv_id = add.call("BAD-END-HQ-OFFICE-TELEVISION", 5, 4, [page.call(television)])
+    # The TV is baked into ten full-map parallaxes. Hải Quỳ is supplied by a
+    # full-screen layer selected from the office version used to enter Map42.
+    # Every parallax swap is hidden behind KUL black, never native Fade/Tint.
+    television = hq_room_tv_bad_end_commands
+    tv_id = add.call("BAD-END-HQ-OFFICE-TELEVISION", 5, 3, [page.call(television)])
     one.call("PROP-HQ-OFFICE-BED", [6, 5],
       ["Muốn leo lên giường nằm ngủ ghê! Nhưng mà mình ngủ sâu với lâu lắm! Thôi, để tối ngủ!!"], 5)
     room[:map].instance_variable_set(:@events, room[:events])
@@ -8182,7 +8737,7 @@ module RVData2Audit
   def audit_wanderer_private_rooms
     expected = {
       42 => ["HQ_Room_Normal", 20, 14, [13, 12], [13, 13], 16],
-      43 => ["CV_Room_Lightoff_Base", 20, 18, [2, 6], [1, 6], 20],
+      43 => ["CV_Room_Lightoff_Base", 20, 18, [2, 9], [1, 9], 20],
       44 => ["Leo_Room_Base", 17, 17, [2, 7], [1, 7], 24],
       45 => ["MystRoom_Base", 17, 17, [10, 15], [10, 16], 28],
       46 => ["Kohi_Room_Base", 17, 18, [4, 16], [4, 17], 32]
@@ -8343,33 +8898,33 @@ module RVData2Audit
     tv_commands = tv_event && (tv_event.instance_variable_get(:@pages) || []).flat_map do |page|
       page.instance_variable_get(:@list) || []
     end
-    expected_tv_frames = [2, 4, 6].flat_map do |direction|
-      [[direction, 0], [direction, 1], [direction, 2]]
-    end
-    actual_tv_frames = Array(tv_commands).filter_map do |command|
-      next unless command_code(command) == 355
-      script = command_parameters(command)[0].to_s
-      next unless script.include?("!$TV_Sprite")
-      match = script.match(/@direction,(\d+)\).*@pattern,(\d+)/)
-      match && [match[1].to_i, match[2].to_i]
-    end
+    expected_tv_parallaxes = ["HQ_Room_TV", "HQ_Room_TV_1"] +
+      (2..9).map { |index| "HQ_Room_TV#{index}" }
+    actual_tv_parallaxes = Array(tv_commands).select do |command|
+      command_code(command) == 284
+    end.map { |command| command_parameters(command)[0] }
     tv_waits = Array(tv_commands).select { |command| command_code(command) == 230 }
       .map { |command| command_parameters(command)[0] }
     tv_scripts = Array(tv_commands).select { |command| command_code(command) == 355 }
       .map { |command| command_parameters(command)[0].to_s }
-    tv_fadeouts = Array(tv_commands).count { |command| command_code(command) == 221 }
-    tv_fadeins = Array(tv_commands).count { |command| command_code(command) == 222 }
+    tv_native_fades = Array(tv_commands).count { |command| [221, 222, 223].include?(command_code(command)) }
     tv_coordinates = hq_events.select do |event|
       event.instance_variable_get(:@name).to_s.start_with?("BAD-END-HQ-OFFICE-TELEVISION")
     end.map do |event|
       [event.instance_variable_get(:@x), event.instance_variable_get(:@y)]
     end.sort
-    errors << "Map042 TV frame order" unless actual_tv_frames == expected_tv_frames
-    errors << "Map042 TV timing" unless tv_waits == [120] * 9
-    errors << "Map042 TV control event" unless tv_coordinates == [[5, 4]]
-    errors << "Map042 TV fade sequence" unless tv_fadeouts == 10 && tv_fadeins == 9
-    errors << "Map042 TV player seat" unless tv_scripts.any? { |script| script.include?("moveto(5,5)") }
-    errors << "Map042 TV layer" unless tv_scripts.count { |script| script.include?("@priority_type,0") } == 9
+    tv_script_text = tv_scripts.join("\n")
+    errors << "Map042 TV parallax order" unless actual_tv_parallaxes == expected_tv_parallaxes
+    errors << "Map042 TV hold timing" unless tv_waits.count(120) == 10
+    errors << "Map042 TV control event" unless tv_coordinates == [[5, 3]]
+    errors << "Map042 TV uses native Fade/Tint" unless tv_native_fades.zero?
+    errors << "Map042 TV still uses old sprite" if Array(tv_commands).any? { |command| command_parameters(command).join.include?("!$TV_Sprite") }
+    errors << "Map042 TV camera zoom" unless tv_script_text.include?("WCF_HQ_TV_ZOOM") && tv_script_text.include?("set_zoom(165,30,true)")
+    errors << "Map042 TV KUL sequence" unless tv_script_text.scan(/WCF_HQ_TV_KUL_REVEAL_/).length == 10 && tv_script_text.scan(/WCF_HQ_TV_KUL_BLACK/).length == 10
+    errors << "Map042 TV seasonal Hải Quỳ layers" unless
+      tv_script_text.include?("HQ_Room_TV_BeforeChristmas") &&
+        tv_script_text.include?("HQ_Room_TV_Quy_Chrismast") &&
+        tv_script_text.include?("$game_variables[49]==38")
 
     system = load_data("Data/System.rvdata2")
     variables = system.instance_variable_get(:@variables) || []
@@ -9441,7 +9996,8 @@ module RVData2Audit
     map19 = load_data(map19_path)
     market_events = map19.instance_variable_get(:@events)
     market_template = market_events.fetch(42)
-    market = [event_command(117, 0, [3]), event_command(222, 0, [])]
+    market = [event_command(117, 0, [3]), event_command(222, 0, []),
+      event_command(355, 0, ["$game_map.shadows.set_opacity(0); $game_map.shadows.hide # WCF_NOODLE_MARKET_KUL_OFF"])]
     market.concat(narration.call("Cùng với Aira, tôi mau chóng mua nguyên vật liệu cho nồi mì cay được bà ấy đặt tên là “dữ tợn”."))
     market.concat(narration.call("Hành baro, bắp cải, thịt gà, thịt bò, hải sản, bột mì… rồi cả vi cá mập, đầu heo, mía và nhộng tằm. Công thức này thực sự ổn chứ?"))
     market.concat([
@@ -10259,6 +10815,8 @@ module RVData2Audit
     save_data(map10_path, map10); save_data(map23_path, map23); save_data("Data/Map049.rvdata2", map49)
     save_data(map38_path, map38); save_data("Data/Map050.rvdata2", map50); save_data(map36_path, map36)
     save_data(infos_path, infos); save_data(system_path, system)
+    install_map050_falling_characters(silent: true)
+    repair_magic_book_route_kul(silent: true)
 
     errors = []
     verify23 = load_data(map23_path); verify23_events = verify23.instance_variable_get(:@events)
@@ -10329,6 +10887,434 @@ module RVData2Audit
     errors << "Map036 hint title exit missing" unless verify_hint_list.any? { |command| command_code(command) == 354 }
     raise "Atlantis Shylvie book route audit failed: #{errors.join(', ')}" unless errors.empty?
     puts "ATL_BOOK_SHY_ROUTE|Map023>049>038>050>036>Title|free=62|continue=64|hint=19|snowball=3,4,5,6|CG=none_assigned|errors=0"
+  end
+
+  # Map050 is the teleport-book epilogue where Hải Quỳ, Shylvie and Leo are
+  # suspended in the sky for the whole conversation. !$Falling is a single
+  # 3x4 character sheet whose first two cells in rows 1/2/3 belong to those
+  # three characters. A repeating forced route keeps exactly those two cells
+  # alternating and applies a small independent ±8 degree sway.
+  def install_map050_falling_characters(silent: false)
+    path = "Data/Map050.rvdata2"
+    map = load_data(path)
+    events = map.instance_variable_get(:@events) || {}
+    main = events.fetch(1)
+    [2, 3, 4, 5, 6].each { |id| raise "Map050 E#{id} missing" unless events[id] }
+
+    set_page_graphic = lambda do |event, name, direction, pattern = 0|
+      page = (event.instance_variable_get(:@pages) || []).first
+      graphic = page.instance_variable_get(:@graphic)
+      graphic.instance_variable_set(:@character_name, name)
+      graphic.instance_variable_set(:@character_index, 0)
+      graphic.instance_variable_set(:@direction, direction)
+      graphic.instance_variable_set(:@pattern, pattern)
+      page.instance_variable_set(:@direction_fix, true)
+      page.instance_variable_set(:@step_anime, false)
+    end
+    set_page_graphic.call(events[2], "!$Falling", 2)
+    set_page_graphic.call(events[3], "!$Falling", 4)
+    set_page_graphic.call(events[5], "!$Falling", 6)
+    set_page_graphic.call(events[4], "", 2)
+    set_page_graphic.call(events[6], "", 2)
+
+    falling_route = lambda do |phase, frame_phase|
+      route = RPG::MoveRoute.allocate
+      route.instance_variable_set(:@repeat, true)
+      route.instance_variable_set(:@skippable, true)
+      route.instance_variable_set(:@wait, false)
+      update = RPG::MoveCommand.allocate
+      update.instance_variable_set(:@code, 45)
+      update.instance_variable_set(:@parameters, [
+        "t=Graphics.frame_count; @pattern=((t/10)+#{frame_phase})%2; @angle=Math.sin(t*0.055+#{phase})*8.0 # WCF_MAP050_FALLING_LOOP"
+      ])
+      finish = RPG::MoveCommand.allocate
+      finish.instance_variable_set(:@code, 0)
+      finish.instance_variable_set(:@parameters, [])
+      route.instance_variable_set(:@list, [update, finish])
+      route
+    end
+
+    page = (main.instance_variable_get(:@pages) || []).first
+    list = page.instance_variable_get(:@list) || []
+    list.reject! do |command|
+      code = command_code(command)
+      params = command_parameters(command)
+      marked_script = [355, 655].include?(code) &&
+        params[0].to_s.include?("WCF_MAP050_FALLING")
+      marked_route = code == 205 && params[1] &&
+        (params[1].instance_variable_get(:@list) || []).any? do |move|
+          (move.instance_variable_get(:@parameters) || [])[0].to_s.
+            include?("WCF_MAP050_FALLING_LOOP")
+        end
+      marked_script || marked_route
+    end
+
+    office_layer = list.index do |command|
+      [355, 655].include?(command_code(command)) &&
+        command_parameters(command)[0].to_s.include?('layer(50,0,["Map_Wanderer_Office_top"')
+    end
+    if office_layer
+      list[office_layer] = event_command(355, 0,
+        ["del_layer(50,0) # WCF_MAP050_FALLING_SKY_ONLY"])
+    elsif !list.any? { |command| [355, 655].include?(command_code(command)) &&
+        command_parameters(command)[0].to_s.include?("WCF_MAP050_FALLING_SKY_ONLY") }
+      list.insert(1, event_command(355, 0,
+        ["del_layer(50,0) # WCF_MAP050_FALLING_SKY_ONLY"]))
+    end
+
+    reveal_index = list.index do |command|
+      [355, 655].include?(command_code(command)) &&
+        command_parameters(command)[0].to_s.include?("$game_map.shadows.set_opacity(0,30)")
+    end
+    raise "Map050 KUL reveal marker missing" unless reveal_index
+    setup = [
+      event_command(355, 0, [
+        "[[2,2],[3,4],[5,6]].each{|id,dir| e=$game_map.events[id]; e.set_graphic('!$Falling',0); e.set_direction(dir); e.instance_variable_set(:@pattern,0); e.transparent=false; e.opacity=255} # WCF_MAP050_FALLING_SETUP"
+      ]),
+      event_command(355, 0, [
+        "[4,6].each{|id| e=$game_map.events[id]; e.transparent=true if e} # WCF_MAP050_FALLING_HIDE_OTHERS"
+      ]),
+      event_command(205, 0, [2, falling_route.call(0.0, 0)]),
+      event_command(205, 0, [3, falling_route.call(2.1, 1)]),
+      event_command(205, 0, [5, falling_route.call(4.2, 0)])
+    ]
+    list.insert(reveal_index, *setup)
+    page.instance_variable_set(:@list, list)
+    map.instance_variable_set(:@events, events)
+    save_data(path, map)
+    puts "UPDATED|Map050|falling=HQ:E2,Shylvie:E3,Leo:E5|frames=2_each|sway=8deg|sky_only=true" unless silent
+  end
+
+  def audit_map050_falling_characters
+    map = load_data("Data/Map050.rvdata2")
+    events = map.instance_variable_get(:@events) || {}
+    errors = []
+    expected = {2 => 2, 3 => 4, 5 => 6}
+    expected.each do |id, direction|
+      event = events[id]
+      page = event && (event.instance_variable_get(:@pages) || []).first
+      graphic = page && page.instance_variable_get(:@graphic)
+      errors << "E#{id} missing !$Falling row #{direction}" unless graphic &&
+        graphic.instance_variable_get(:@character_name) == "!$Falling" &&
+        graphic.instance_variable_get(:@direction) == direction
+    end
+    [4, 6].each do |id|
+      page = events[id] && (events[id].instance_variable_get(:@pages) || []).first
+      graphic = page && page.instance_variable_get(:@graphic)
+      errors << "E#{id} remains visible" unless graphic &&
+        graphic.instance_variable_get(:@character_name).to_s.empty?
+    end
+
+    main = events[1]
+    list = main && main.instance_variable_get(:@pages).first.instance_variable_get(:@list) || []
+    first_dialogue = list.index { |command| command_code(command) == 101 }
+    reveal = list.index do |command|
+      [355, 655].include?(command_code(command)) &&
+        command_parameters(command)[0].to_s.include?("set_opacity(0,30)")
+    end
+    setup = list.index do |command|
+      command_code(command) == 355 &&
+        command_parameters(command)[0].to_s.include?("WCF_MAP050_FALLING_SETUP")
+    end
+    errors << "falling setup is not hidden before KUL reveal/dialogue" unless setup && reveal &&
+      first_dialogue && setup < reveal && reveal < first_dialogue
+    errors << "office foreground layer still enabled" if list.any? do |command|
+      [355, 655].include?(command_code(command)) &&
+        command_parameters(command)[0].to_s.include?('layer(50,0,["Map_Wanderer_Office_top"')
+    end
+
+    routes = list.select do |command|
+      next false unless command_code(command) == 205 && expected.key?(command_parameters(command)[0])
+      route = command_parameters(command)[1]
+      (route.instance_variable_get(:@list) || []).any? do |move|
+        (move.instance_variable_get(:@parameters) || [])[0].to_s.
+          include?("WCF_MAP050_FALLING_LOOP")
+      end
+    end
+    errors << "expected three falling loops, got #{routes.length}" unless routes.length == 3
+    routes.each do |command|
+      route = command_parameters(command)[1]
+      script = (route.instance_variable_get(:@list) || []).map do |move|
+        (move.instance_variable_get(:@parameters) || [])[0].to_s
+      end.join(" ")
+      errors << "falling route does not repeat" unless route.instance_variable_get(:@repeat)
+      errors << "falling route uses more than two frames" unless script.include?("%2")
+      errors << "falling route sway is not ±8 degrees" unless script.include?("*8.0")
+    end
+    errors << "Map050 is not using BlueSky" unless map.instance_variable_get(:@parallax_name) == "BlueSky"
+
+    puts "MAP050_FALLING_AUDIT|errors=#{errors.length}|characters=#{routes.length}|frames=2|sway=8deg"
+    errors.each { |error| puts "ERROR|#{error}" }
+    raise "Map050 falling character audit failed" unless errors.empty?
+  end
+
+  # Normalizes the KUL handoff shared by all routes leaving the Atlantis book
+  # shop. The midnight bedroom parallaxes are already color-graded dark, so
+  # their visible state must be opacity 0. On the shared Christmas office,
+  # Player/NPC staging and the KUL reveal must both finish before the greeting.
+  def repair_magic_book_route_kul(silent: false)
+    [49, 51].each do |map_id|
+      path = format("Data/Map%03d.rvdata2", map_id)
+      map = load_data(path)
+      main = (map.instance_variable_get(:@events) || {}).fetch(1)
+      page = (main.instance_variable_get(:@pages) || []).first
+      list = page.instance_variable_get(:@list) || []
+      list.each do |command|
+        next unless [355, 655].include?(command_code(command))
+        params = command_parameters(command).dup
+        text = params[0].to_s
+        next unless text.match?(/\$game_map\.shadows\.set_opacity\(185,(20|30)\)/)
+        params[0] = text.sub("set_opacity(185,", "set_opacity(0,")
+        command.instance_variable_set(:@parameters, params)
+      end
+      page.instance_variable_set(:@list, list)
+      save_data(path, map)
+    end
+
+    # The live checkout flow routes both books through shared Map037 (V83 is
+    # 49 or 51), not through the archived Map049/051 maps. The shop leaves KUL
+    # fully black. Disable that overlay only after native Fadeout has made the
+    # first room setup safe. At the end, native Fadeout still covers the CG;
+    # while it is black, install KUL black, hide the CG, and native Fadein
+    # underneath KUL before transfer so Game_Screen brightness is 255 there.
+    map37_path = "Data/Map037.rvdata2"
+    map37 = load_data(map37_path)
+    main37 = (map37.instance_variable_get(:@events) || {}).fetch(1)
+    [49, 51].each do |variant|
+      page = (main37.instance_variable_get(:@pages) || []).find do |candidate|
+        condition = candidate.instance_variable_get(:@condition)
+        condition.instance_variable_get(:@variable_valid) &&
+          condition.instance_variable_get(:@variable_id) == 83 &&
+          condition.instance_variable_get(:@variable_value) == variant
+      end
+      raise "Map037 preparation page V83=#{variant} missing" unless page
+      list = page.instance_variable_get(:@list) || []
+      list.reject! do |command|
+        [355, 655].include?(command_code(command)) &&
+          command_parameters(command)[0].to_s.include?("WCF_MAGIC_BOOK_PREP_KUL_OFF")
+      end
+      first_fadeout = list.index { |command| command_code(command) == 221 }
+      raise "Map037 V83=#{variant} initial Fadeout missing" unless first_fadeout
+      list.insert(first_fadeout + 1, event_command(355, 0, [
+        "$game_map.shadows.set_opacity(0); $game_map.shadows.hide # WCF_MAGIC_BOOK_PREP_KUL_OFF"
+      ]))
+      transfer = list.index do |command|
+        command_code(command) == 201 && command_parameters(command)[1] == 38
+      end
+      raise "Map037 V83=#{variant} -> Map038 transfer missing" unless transfer
+      handoff = list.index do |command|
+        [355, 655].include?(command_code(command)) &&
+          command_parameters(command)[0].to_s.include?("WCF_MAGIC_BOOK_PREP_KUL_TO_OFFICE")
+      end
+      if handoff
+        unless handoff.positive? && command_code(list[handoff - 1]) == 221
+          list.insert(handoff, event_command(221, 0, []))
+          handoff += 1
+          transfer += 1
+        end
+        params = command_parameters(list[handoff]).dup
+        params[0] = "$game_map.shadows.set_color(0,0,0); $game_map.shadows.show; $game_map.shadows.set_opacity(255) # WCF_MAGIC_BOOK_PREP_KUL_TO_OFFICE"
+        list[handoff].instance_variable_set(:@parameters, params)
+        if command_code(list[handoff + 1]) == 230 && command_parameters(list[handoff + 1])[0] == 30
+          list.delete_at(handoff + 1)
+          transfer -= 1
+        end
+      else
+        final_fadeout = (0...transfer).to_a.reverse.find do |index|
+          command_code(list[index]) == 221
+        end
+        raise "Map037 V83=#{variant} terminal Fadeout missing" unless final_fadeout
+        handoff = final_fadeout + 1
+        list.insert(handoff, event_command(355, 0, [
+          "$game_map.shadows.set_color(0,0,0); $game_map.shadows.show; $game_map.shadows.set_opacity(255) # WCF_MAGIC_BOOK_PREP_KUL_TO_OFFICE"
+        ]))
+        transfer += 1
+      end
+      gallery_hide = (handoff...transfer).find do |index|
+        [355, 655].include?(command_code(list[index])) &&
+          command_parameters(list[index])[0].to_s.include?("WCFGalleryScene.hide")
+      end
+      raise "Map037 V83=#{variant} final gallery hide missing" unless gallery_hide
+      fadein = ((gallery_hide + 1)...transfer).find { |index| command_code(list[index]) == 222 }
+      list.insert(gallery_hide + 1, event_command(222, 0, [])) unless fadein
+      page.instance_variable_set(:@list, list)
+    end
+    save_data(map37_path, map37)
+
+    map38_path = "Data/Map038.rvdata2"
+    map38 = load_data(map38_path)
+    main38 = (map38.instance_variable_get(:@events) || {}).fetch(1)
+    [61, 66].each do |switch_id|
+      page = (main38.instance_variable_get(:@pages) || []).find do |candidate|
+        condition = candidate.instance_variable_get(:@condition)
+        condition.instance_variable_get(:@switch1_valid) &&
+          condition.instance_variable_get(:@switch1_id) == switch_id
+      end
+      raise "Map038 route page for Switch #{switch_id} missing" unless page
+      list = page.instance_variable_get(:@list) || []
+      first_text = list.index { |command| command_code(command) == 101 }
+      reveal = list.index do |command|
+        [355, 655].include?(command_code(command)) &&
+          command_parameters(command)[0].to_s.include?("KUL_FREE_REVEAL")
+      end
+      raise "Map038 Switch #{switch_id} KUL reveal/text missing" unless first_text && reveal
+      if first_text < reveal
+        setup = list.index do |command|
+          [355, 655].include?(command_code(command)) &&
+            command_parameters(command)[0].to_s.include?("$game_player.moveto(hq.x,hq.y)")
+        end
+        wait = (reveal...list.length).find { |index| command_code(list[index]) == 230 }
+        raise "Map038 Switch #{switch_id} player setup/reveal wait missing" unless setup && wait
+        dialogue = list[first_text...setup]
+        staging = list[setup..wait]
+        list[first_text..wait] = staging + dialogue
+      end
+      page.instance_variable_set(:@list, list)
+    end
+    save_data(map38_path, map38)
+    puts "UPDATED|MagicBookKUL|live_prep=Map037:V83=49,51|archived_bedrooms=Map049,051:opacity0|office=Map038:S61,S66:reveal_before_dialogue" unless silent
+  end
+
+  def audit_magic_book_route_kul
+    errors = []
+    [49, 51].each do |map_id|
+      map = load_data(format("Data/Map%03d.rvdata2", map_id))
+      list = map.instance_variable_get(:@events).fetch(1).
+        instance_variable_get(:@pages).first.instance_variable_get(:@list)
+      scripts = list.select { |command| [355, 655].include?(command_code(command)) }.
+        map { |command| command_parameters(command)[0].to_s }
+      errors << "Map#{map_id} still darkens its pre-darkened bedroom parallax" if
+        scripts.any? { |text| text.include?("set_opacity(185,") }
+      first_text = list.index { |command| command_code(command) == 101 }
+      reveal = list.index do |command|
+        [355, 655].include?(command_code(command)) &&
+          command_parameters(command)[0].to_s.include?("set_opacity(0,30)")
+      end
+      errors << "Map#{map_id} does not reveal before dialogue" unless reveal && first_text && reveal < first_text
+    end
+
+
+    map37 = load_data("Data/Map037.rvdata2")
+    main37 = map37.instance_variable_get(:@events).fetch(1)
+    [49, 51].each do |variant|
+      page = main37.instance_variable_get(:@pages).find do |candidate|
+        condition = candidate.instance_variable_get(:@condition)
+        condition.instance_variable_get(:@variable_valid) &&
+          condition.instance_variable_get(:@variable_id) == 83 &&
+          condition.instance_variable_get(:@variable_value) == variant
+      end
+      list = page && page.instance_variable_get(:@list) || []
+      kul_off = list.index do |command|
+        [355, 655].include?(command_code(command)) &&
+          command_parameters(command)[0].to_s.include?("WCF_MAGIC_BOOK_PREP_KUL_OFF")
+      end
+      first_fadeout = list.index { |command| command_code(command) == 221 }
+      first_fadein = list.index { |command| command_code(command) == 222 }
+      transfer = list.index do |command|
+        command_code(command) == 201 && command_parameters(command)[1] == 38
+      end
+      kul_to_office = list.index do |command|
+        [355, 655].include?(command_code(command)) &&
+          command_parameters(command)[0].to_s.include?("WCF_MAGIC_BOOK_PREP_KUL_TO_OFFICE")
+      end
+      last_text = list.rindex { |command| command_code(command) == 101 } || -1
+      gallery_hide = transfer && (last_text...transfer).find do |index|
+        [355, 655].include?(command_code(list[index])) &&
+          command_parameters(list[index])[0].to_s.include?("WCFGalleryScene.hide")
+      end
+      terminal_fadein = transfer && gallery_hide && ((gallery_hide + 1)...transfer).find do |index|
+        command_code(list[index]) == 222
+      end
+      errors << "Map037 V83=#{variant} does not disable inherited KUL under Fadeout" unless
+        first_fadeout && kul_off && first_fadein && first_fadeout < kul_off && kul_off < first_fadein
+      errors << "Map037 V83=#{variant} lacks KUL-black office handoff" unless
+        kul_to_office && gallery_hide && terminal_fadein && transfer &&
+          kul_to_office < gallery_hide &&
+          gallery_hide < terminal_fadein && terminal_fadein < transfer
+      errors << "Map037 V83=#{variant} uses native Fade Out after KUL owns the handoff" if
+        kul_to_office && transfer && list[(kul_to_office + 1)...transfer].any? do |command|
+          command_code(command) == 221
+        end
+      errors << "Map037 V83=#{variant} leaves native brightness black at transfer" unless terminal_fadein
+    end
+
+    map38 = load_data("Data/Map038.rvdata2")
+    main38 = map38.instance_variable_get(:@events).fetch(1)
+    [61, 66].each do |switch_id|
+      page = main38.instance_variable_get(:@pages).find do |candidate|
+        condition = candidate.instance_variable_get(:@condition)
+        condition.instance_variable_get(:@switch1_valid) &&
+          condition.instance_variable_get(:@switch1_id) == switch_id
+      end
+      list = page && page.instance_variable_get(:@list) || []
+      first_text = list.index { |command| command_code(command) == 101 }
+      reveal = list.index do |command|
+        [355, 655].include?(command_code(command)) &&
+          command_parameters(command)[0].to_s.include?("KUL_FREE_REVEAL")
+      end
+      player = list.index do |command|
+        [355, 655].include?(command_code(command)) &&
+          command_parameters(command)[0].to_s.include?("$game_player.transparent=false")
+      end
+      errors << "Map038 S#{switch_id} reveals after dialogue" unless reveal && first_text && reveal < first_text
+      errors << "Map038 S#{switch_id} reveals before Player staging" unless player && reveal && player < reveal
+    end
+
+    # Every exit from the book shop must first bring KUL fully black. The two
+    # normal books now enter shared Map037 and select its variant through V83.
+    map23 = load_data("Data/Map023.rvdata2")
+    transfers = []
+    (map23.instance_variable_get(:@events) || {}).each_value do |event|
+      (event.instance_variable_get(:@pages) || []).each do |page|
+        list = page.instance_variable_get(:@list) || []
+        list.each_with_index do |command, index|
+          next unless command_code(command) == 201 && [37, 53].include?(command_parameters(command)[1])
+          destination = command_parameters(command)[1]
+          variant = list[0...index].reverse_each.find do |prior|
+            command_code(prior) == 122 && command_parameters(prior)[0] == 83
+          end
+          variant_value = variant && command_parameters(variant)[4]
+          label = destination == 37 ? "37(V83=#{variant_value})" : "53"
+          transfers << label
+          black = list[0...index].any? do |prior|
+            [355, 655].include?(command_code(prior)) &&
+              command_parameters(prior)[0].to_s.include?("set_opacity(255")
+          end
+          errors << "Map023 -> Map#{label} lacks KUL black handoff" unless black
+          if destination == 37 && ![49, 51].include?(variant_value)
+            errors << "Map023 -> Map037 has unexpected preparation variant #{variant_value.inspect}"
+          end
+        end
+      end
+    end
+    errors << "Map023 has no audited magic-book exits" if transfers.empty?
+
+    # Destination cutscenes reveal before their first text and return to KUL
+    # black before transfer. Targets differ deliberately by scene mood.
+    [50, 52, 53, 54, 55].each do |map_id|
+      map = load_data(format("Data/Map%03d.rvdata2", map_id))
+      list = map.instance_variable_get(:@events).fetch(1).
+        instance_variable_get(:@pages).first.instance_variable_get(:@list)
+      first_text = list.index { |command| command_code(command) == 101 }
+      transfer = list.index { |command| command_code(command) == 201 }
+      reveal = list.index do |command|
+        next false unless [355, 655].include?(command_code(command))
+        text = command_parameters(command)[0].to_s
+        match = text.match(/set_opacity\((\d+),/)
+        match && match[1].to_i < 255
+      end
+      terminal_black = transfer && list[0...transfer].rindex do |command|
+        [355, 655].include?(command_code(command)) &&
+          command_parameters(command)[0].to_s.include?("set_opacity(255")
+      end
+      errors << "Map#{map_id} has no KUL reveal" unless reveal
+      errors << "Map#{map_id} reveal occurs after dialogue" if reveal && first_text && reveal > first_text
+      errors << "Map#{map_id} lacks terminal KUL black" unless terminal_black
+    end
+
+    puts "MAGIC_BOOK_KUL_AUDIT|errors=#{errors.length}|shop_exits=#{transfers.sort.join(',')}|live_prep=37:49,51|maps=49,50,51,52,53,54,55|office_pages=61,66"
+    errors.each { |error| puts "ERROR|#{error}" }
+    raise "Magic-book KUL audit failed" unless errors.empty?
   end
 
   # Complete the owner-first Atlantis branch: the sealed Abyss book destroys
@@ -10940,6 +11926,7 @@ module RVData2Audit
     save_data(map10_path, map10); save_data(map23_path, map23); save_data("Data/Map051.rvdata2", map51)
     save_data(map38_path, map38); save_data("Data/Map052.rvdata2", map52); save_data(map36_path, map36)
     save_data(infos_path, infos); save_data(system_path, system)
+    repair_magic_book_route_kul(silent: true)
 
     errors = []
     verify23 = load_data(map23_path); verify23_events = verify23.instance_variable_get(:@events)
@@ -11020,6 +12007,9 @@ module RVData2Audit
   # Map013.  New maps own all route-specific staging; shared maps only gain
   # pages/events identified by the LEO_SHOP names below.
   def implement_leo_shop_routes
+    raise "Disabled: this legacy generator rebuilds Map058 and would overwrite " \
+      "manual event positions. Use a targeted event repair instead."
+
     active_sw, free_sw, continue_sw, done_sw = 72, 73, 74, 75
     branch_var, stage_var = 55, 56
     say = lambda do |face, index, text, indent = 0, tag = "\\cbm "|
@@ -11570,6 +12560,10 @@ module RVData2Audit
     map66.instance_variable_set(:@note,"[lighting on]\r\n[opacity 255]\r\n[color 000000000]\r\n<full lock parallax>\r\n<tile lock parallax>\r\nShylvie jewel party; KUL only")
     party_template = map66.instance_variable_get(:@events).fetch(1)
     party = setup.call(66,"Map_Wanderer_Office_GiangSinh_Top","WCF_SHY_JEWEL_PARTY")
+    party.insert(5,
+      event_command(355,0,["$game_player.transparent=true; (2..6).each{|id| e=$game_map.events[id]; e.transparent=true if e}; ms_pro_cam_ignore_player(true); ms_pro_cam_center_at(15,25,1); ms_pro_cam_wait_for_scrolling # WCF_WANDERER_PARTY_STAGE"]),
+      event_command(355,0,["layer(66,1,['Wanderer_Party_After_',0,0,255,150,0,0,0]) # WCF_WANDERER_PARTY_AFTER"]),
+      event_command(655,0,["refresh_layers"]))
     party.concat(narr.call("E hèm! Đã đến lúc cho sự kiện chính ngày hôm nay rồi."))
     {1=>"JEWEL_PARTY_LEO",2=>"JEWEL_PARTY_KOHI",3=>"JEWEL_PARTY_SHY",4=>"JEWEL_PARTY_HAK"}.each do |branch,label|
       party << event_command(111,0,[1,branch_var,0,branch,0]); party << event_command(119,1,[label]); party << event_command(412,0,[])
@@ -11585,7 +12579,9 @@ module RVData2Audit
     party << event_command(118,0,["JEWEL_PARTY_HAK"])
     party.concat(hqx.call("Đá phong thủy đó Hakase! Đây là Rainbow Fluorite, đá tri thức đó!")); party.concat(show_picture.call("RainbowFluorite",narr.call("Hakase truyền ma lực vào viên đá. Một dãy ký tự dài tỏa sáng và xoay quanh anh ấy.")))
     party.concat(hakase.call("Nó là phép thuật biến nho thành táo, biến báo thành gạch, biến cá trạch thành mèo, biến beo thành chó.",0)); party.concat(shy.call("Giờ nó còn là một viên pin ma lực xịn xò và có thể ghi chép thông tin nữa đó!",0)); party.concat(hakase.call("Cảm ơn Hải Quỳ và Shylvie nha! Nó tuyệt vời quá đi mất!",0))
-    party << event_command(118,0,["JEWEL_PARTY_DONE"]); party << event_command(122,0,[stage_var,stage_var,0,0,4]); party.concat(finish_transfer.call(67,8,7,"WCF_SHY_JEWEL_PARTY_EXIT"))
+    party << event_command(118,0,["JEWEL_PARTY_DONE"]); party << event_command(122,0,[stage_var,stage_var,0,0,4])
+    party << event_command(355,0,["ms_pro_cam_ignore_player(false); ms_pro_cam_focus_on(-1) # WCF_WANDERER_PARTY_CAMERA_RESET"])
+    party.concat(finish_transfer.call(67,8,7,"WCF_SHY_JEWEL_PARTY_EXIT"))
     map66.instance_variable_set(:@events,{1=>event_from_pages(party_template,1,"SCN-SHY-JEWEL-PARTY",0,0,[page_from_template(party_template,party,trigger:3,priority:0,switch_id:active_sw)])})
 
     # Map067: four next-morning outcomes, then exact route hints 25..28.
@@ -11615,9 +12611,12 @@ module RVData2Audit
     hints.each do |hint_id, lines|
       pages36.reject! { |page| c=page.instance_variable_get(:@condition); c.instance_variable_get(:@variable_valid) && c.instance_variable_get(:@variable_id)==41 && c.instance_variable_get(:@variable_value)==hint_id }
       commands = [event_command(355,0,["$game_player.transparent=true"]),
-        event_command(355,0,["$game_map.shadows.set_color(0,0,0); $game_map.shadows.show; $game_map.shadows.set_opacity(185) # WCF_SHY_JEWEL_HINT"])]
+        event_command(355,0,["$game_map.shadows.set_color(0,0,0); $game_map.shadows.show; $game_map.shadows.set_opacity(255) # WCF_SHY_JEWEL_HINT"]),
+        event_command(355,0,["$game_map.events[2].give_light('cutscene_actor')"]),
+        event_command(355,0,["$game_map.shadows.set_opacity(185,24) # WCF_SHY_JEWEL_HINT_REVEAL"]),
+        event_command(230,0,[24])]
       lines.each { |text| commands.concat(aira.call(text,text.include?("!") ? 3 : 1)) }
-      commands.concat([event_command(355,0,["$game_map.shadows.set_opacity(255,24)"]),event_command(230,0,[24]),event_command(355,0,["HAIQUY_TITLE.clear_ending_background"]),event_command(354,0,[])])
+      commands.concat([event_command(355,0,["$game_map.shadows.set_opacity(255,24) # WCF_SHY_JEWEL_HINT_END"]),event_command(230,0,[24]),event_command(355,0,["$game_map.events[2].drop_light"]),event_command(355,0,["HAIQUY_TITLE.clear_ending_background"]),event_command(354,0,[])])
       pages36 << page_from_template(router,commands,trigger:3,priority:0,variable_id:41,variable_value:hint_id)
     end
 
@@ -11636,6 +12635,162 @@ module RVData2Audit
     errors << "Jewel hints missing" unless (25..28).all?{|id| pages36.any?{|page| c=page.instance_variable_get(:@condition); c.instance_variable_get(:@variable_valid) && c.instance_variable_get(:@variable_id)==41 && c.instance_variable_get(:@variable_value)==id}}
     raise "Shylvie jewel route audit failed: #{errors.join(', ')}" unless errors.empty?
     puts "SHY_JEWEL_ROUTES|Map013>064>065>066>067>036>Title|branch=57|switches=76..79|hints=25..28|errors=0"
+  end
+
+  # Install the authored Wanderer table artwork at the two actual party
+  # phases. The prepared table remains visible during free exploration; the
+  # full seated group replaces it when a route's gift scene begins.
+  def install_wanderer_party_layers
+    required = %w[Wanderer_Party_Before Wanderer_Party_After_]
+    required.each do |name|
+      path = File.join("Graphics", "Layers", "#{name}.png")
+      raise "Missing party layer #{path}" unless File.file?(path)
+    end
+
+    add_layer = lambda do |list, map_id, name, marker, insert_at|
+      marker_indices = []
+      list.each_with_index do |command, index|
+        marker_indices << index if [355,655].include?(command_code(command)) &&
+          command_parameters(command)[0].to_s.include?(marker)
+      end
+      insert_at -= marker_indices.count { |index| index < insert_at }
+      list.reject! do |command|
+        [355,655].include?(command_code(command)) &&
+          command_parameters(command)[0].to_s.include?(marker)
+      end
+      list.insert(insert_at,
+        event_command(355,0,["layer(#{map_id},1,['#{name}',0,0,255,150,0,0,0]) # #{marker}"]),
+        event_command(655,0,["refresh_layers # #{marker}"]))
+    end
+    reveal_party = lambda do |list|
+      # Remove an older generated reveal and its matching wait so reruns do
+      # not accumulate delays.
+      reveal_indices = []
+      list.each_with_index do |command, index|
+        reveal_indices << index if [355,655].include?(command_code(command)) &&
+          command_parameters(command)[0].to_s.include?("WCF_WANDERER_PARTY_REVEAL")
+      end
+      reveal_indices.reverse_each do |index|
+        list.delete_at(index + 1) if list[index + 1] && command_code(list[index + 1]) == 230 && command_parameters(list[index + 1])[0] == 24
+        list.delete_at(index)
+      end
+
+      first_dialogue = list.index { |command| command_code(command) == 101 }
+      raise "Party continuation dialogue missing" unless first_dialogue
+      # The older supermarket/noodle continuations used native tone plus
+      # map_effects for black. Remove only those pre-dialogue commands; later
+      # exit transitions remain untouched.
+      list[0...first_dialogue].reverse_each do |command|
+        next unless [355,655].include?(command_code(command))
+        script = command_parameters(command)[0].to_s
+        list.delete(command) if script.include?("start_tone_change") || script.include?("map_effects.set_tone")
+      end
+      first_dialogue = list.index { |command| command_code(command) == 101 }
+      has_kul_black = list[0...first_dialogue].any? do |command|
+        [355,655].include?(command_code(command)) &&
+          command_parameters(command)[0].to_s.include?("shadows.set_opacity(255")
+      end
+      unless has_kul_black
+        list.insert(0,event_command(355,0,["$game_map.shadows.set_color(0,0,0); $game_map.shadows.show; $game_map.shadows.set_opacity(255,20) # WCF_WANDERER_PARTY_BLACK"]))
+      end
+      layer_refresh = list.index do |command|
+        command_code(command) == 655 && command_parameters(command)[0].to_s.include?("WCF_WANDERER_PARTY_AFTER")
+      end
+      raise "Party layer refresh missing" unless layer_refresh
+      list.insert(layer_refresh + 1,
+        event_command(355,0,["$game_map.shadows.set_opacity(0,24) # WCF_WANDERER_PARTY_REVEAL"]),
+        event_command(230,0,[24]))
+    end
+    stage_party = lambda do |list|
+      list.reject! do |command|
+        [355,655].include?(command_code(command)) &&
+          command_parameters(command)[0].to_s.include?("WCF_WANDERER_PARTY_STAGE")
+      end
+      party_layer = list.index do |command|
+        command_code(command) == 355 &&
+          command_parameters(command)[0].to_s.include?("WCF_WANDERER_PARTY_AFTER")
+      end
+      raise "Party composite layer missing" unless party_layer
+      list.insert(party_layer,event_command(355,0,["$game_player.transparent=true; (2..6).each{|id| e=$game_map.events[id]; e.transparent=true if e}; ms_pro_cam_ignore_player(true); ms_pro_cam_center_at(15,25,1); ms_pro_cam_wait_for_scrolling # WCF_WANDERER_PARTY_STAGE"]))
+    end
+    reset_party_camera = lambda do |list|
+      list.reject! do |command|
+        [355,655].include?(command_code(command)) &&
+          command_parameters(command)[0].to_s.include?("WCF_WANDERER_PARTY_CAMERA_RESET")
+      end
+      transfers = []
+      list.each_with_index { |command,index| transfers << index if command_code(command) == 201 }
+      transfers.reverse_each do |index|
+        indent = list[index].instance_variable_get(:@indent).to_i
+        list.insert(index,event_command(355,indent,["ms_pro_cam_ignore_player(false); ms_pro_cam_focus_on(-1) # WCF_WANDERER_PARTY_CAMERA_RESET"]))
+      end
+    end
+
+    map38_path = "Data/Map038.rvdata2"
+    map38 = load_data(map38_path)
+    events38 = map38.instance_variable_get(:@events) || {}
+    intro = events38.fetch(1)
+    prepared_pages = 0
+    intro.instance_variable_get(:@pages).each do |page|
+      list = page.instance_variable_get(:@list) || []
+      line_index = list.index do |command|
+        command_code(command) == 401 &&
+          command_parameters(command)[0].to_s.include?("bị xong!")
+      end
+      next unless line_index
+      add_layer.call(list,38,"Wanderer_Party_Before","WCF_WANDERER_PARTY_BEFORE",line_index+1)
+      prepared_pages += 1
+    end
+    raise "Map038 prepared-table beat missing" if prepared_pages == 0
+
+    continuation_events = 0
+    [7,118,119,120,121].each do |event_id|
+      event = events38[event_id]
+      next unless event
+      (event.instance_variable_get(:@pages) || []).each do |page|
+        list = page.instance_variable_get(:@list) || []
+        dialogue_index = list.index { |command| command_code(command) == 101 }
+        next unless dialogue_index
+        add_layer.call(list,38,"Wanderer_Party_After_","WCF_WANDERER_PARTY_AFTER",dialogue_index)
+        stage_party.call(list)
+        reveal_party.call(list)
+        reset_party_camera.call(list)
+        continuation_events += 1
+      end
+    end
+    raise "Map038 party continuation events missing" if continuation_events == 0
+
+    map66_path = "Data/Map066.rvdata2"
+    map66 = load_data(map66_path)
+    event66 = map66.instance_variable_get(:@events).fetch(1)
+    list66 = event66.instance_variable_get(:@pages).first.instance_variable_get(:@list)
+    black66 = list66.index do |command|
+      [355,655].include?(command_code(command)) &&
+        command_parameters(command)[0].to_s.include?("WCF_SHY_JEWEL_PARTY") &&
+        command_parameters(command)[0].to_s.include?("shadows.set_opacity(255")
+    end
+    raise "Map066 party blackout missing" unless black66
+    add_layer.call(list66,66,"Wanderer_Party_After_","WCF_WANDERER_PARTY_AFTER",black66+1)
+    stage_party.call(list66)
+    reset_party_camera.call(list66)
+
+    save_data(map38_path,map38)
+    save_data(map66_path,map66)
+
+    verify38 = load_data(map38_path)
+    all38 = verify38.instance_variable_get(:@events).values.compact.flat_map do |event|
+      event.instance_variable_get(:@pages).flat_map { |page| page.instance_variable_get(:@list) }
+    end
+    before_count = all38.count { |command| command_parameters(command)[0].to_s.include?("WCF_WANDERER_PARTY_BEFORE") && command_code(command)==355 }
+    after_count = all38.count { |command| command_parameters(command)[0].to_s.include?("WCF_WANDERER_PARTY_AFTER") && command_code(command)==355 }
+    reveal_count = all38.count { |command| command_parameters(command)[0].to_s.include?("WCF_WANDERER_PARTY_REVEAL") && command_code(command)==355 }
+    stage_count = all38.count { |command| command_parameters(command)[0].to_s.include?("WCF_WANDERER_PARTY_STAGE") && command_code(command)==355 }
+    reset_count = all38.count { |command| command_parameters(command)[0].to_s.include?("WCF_WANDERER_PARTY_CAMERA_RESET") && command_code(command)==355 }
+    verify66 = load_data(map66_path).instance_variable_get(:@events).fetch(1).instance_variable_get(:@pages).first.instance_variable_get(:@list)
+    raise "Map038 party layers audit failed" unless before_count == prepared_pages && after_count == continuation_events && reveal_count == continuation_events && stage_count == continuation_events && reset_count >= continuation_events
+    raise "Map066 party layer audit failed" unless verify66.count { |command| command_code(command)==355 && command_parameters(command)[0].to_s.include?("WCF_WANDERER_PARTY_AFTER") } == 1
+    raise "Map066 party stage audit failed" unless verify66.count { |command| command_code(command)==355 && command_parameters(command)[0].to_s.include?("WCF_WANDERER_PARTY_STAGE") } == 1
+    puts "WANDERER_PARTY_LAYERS|Map038_before=#{before_count}|Map038_after=#{after_count}|Map038_reveal=#{reveal_count}|Map038_stage=#{stage_count}|Map038_camera_reset=#{reset_count}|Map066_after=1|Map066_stage=1|camera=15,25|NPCs=2..6_hidden|z=150|errors=0"
   end
 
   # Repair only the branch invariant of the already-authored Leo shop maps.
@@ -11800,6 +12955,1203 @@ module RVData2Audit
     puts "LEO_SHOP_MAP038_KUL_REPAIRED|arrival=255>0/30|free_roam=0/30|native_fade_tint=0|manual_edits=preserved"
   end
 
+  # Final surgical review for the three Wanderer gift-route families.  This
+  # deliberately edits route-owned event pages only; map geometry, parallax
+  # placement and unrelated events are preserved because several maps also
+  # contain hand-authored changes.
+  def polish_wanderer_noodle_shylvie_leo_routes
+    say = lambda do |face, index, text, indent = 0|
+      result = wrapped_message_commands([text], tag: "\\cbm ", width: 30, indent: indent)
+      result.each do |command|
+        next unless command_code(command) == 101
+        command.instance_variable_set(:@parameters, [face, face.empty? ? 0 : index, 0, 2])
+      end
+      result
+    end
+    narr = lambda { |text, indent = 0| say.call("", 0, text, indent) }
+    hq = lambda { |text, index = 1, indent = 0| say.call("HaiQuy_Thuongphuc_Emote", index, text, indent) }
+    hqx = lambda { |text, index = 1, indent = 0| say.call("HaiQuy_Giangsinh_Emote", index, text, indent) }
+    aira = lambda { |text, index = 1, indent = 0| say.call("BullyQuy_Thuongphuc_Emote", index, text, indent) }
+    shy = lambda { |text, index = 1, indent = 0| say.call("CV_Giangsinh_Emote1", index, text, indent) }
+    leo = lambda { |text, index = 1, indent = 0| say.call("Leo_Giangsinh_Emote", index, text, indent) }
+    kohi = lambda { |text, index = 1, indent = 0| say.call("Kohi_Giangsinh_Emote1", index, text, indent) }
+    hak = lambda { |text, index = 1, indent = 0| say.call("Hakase_Giangsinh_Emote", index, text, indent) }
+    gallery = lambda do |id, commands, indent = 0|
+      [event_command(355, indent, ["WCFGalleryScene.show(#{id}) # WCF_ROUTE_REVIEW_GALLERY"])] +
+        commands + [event_command(355, indent, ["WCFGalleryScene.hide # WCF_ROUTE_REVIEW_GALLERY"])]
+    end
+    script_text = lambda do |command|
+      [355, 655].include?(command_code(command)) ? command_parameters(command)[0].to_s : ""
+    end
+    remove_legacy = lambda do |list|
+      list.reject! do |command|
+        [221, 222, 223].include?(command_code(command)) ||
+          (command_code(command) == 117 && command_parameters(command)[0] == 3) ||
+          script_text.call(command).match?(/start_tone_change|map_effects\.(?:set_tone|set_color)/)
+      end
+    end
+    insert_after_layer = lambda do |list, commands|
+      at = list.rindex { |command| script_text.call(command).include?("refresh_layers") } || 0
+      list.insert(at + 1, *commands)
+    end
+    reset_camera = event_command(355, 0,
+      ["map_effects.set_zoom(100,16,false); ms_pro_cam_ignore_player(false); ms_pro_cam_focus_on(-1) # WCF_ROUTE_CAMERA_RESET"])
+
+    # Route mì cay: replace the remaining native fade/tone path with KUL and
+    # give the shop, bedroom and kitchen their own restrained camera beats.
+    map20 = load_data("Data/Map020.rvdata2")
+    noodle_shop = map20.instance_variable_get(:@events).fetch(1)
+      .instance_variable_get(:@pages).first.instance_variable_get(:@list)
+    remove_legacy.call(noodle_shop)
+    noodle_shop.reject! { |command| script_text.call(command).include?("WCF_NOODLE_REVIEW_") }
+    first_message = noodle_shop.index { |command| command_code(command) == 101 } || 1
+    noodle_shop.insert(first_message,
+      event_command(355,0,["$game_switches[17]=false; $game_switches[18]=false; map_effects.clear; map_effects.active=true; map_effects.set_zoom(112,24,false) # WCF_NOODLE_REVIEW_SHOP_CAMERA"]),
+      event_command(355,0,["$game_map.shadows.set_color(0,0,0); $game_map.shadows.show; $game_map.shadows.set_opacity(255); ms_pro_cam_focus_on(-1) # WCF_NOODLE_REVIEW_SHOP_BLACK"]),
+      event_command(222,0,[]),
+      event_command(355,0,["$game_map.shadows.set_opacity(0,24) # WCF_NOODLE_REVIEW_SHOP_REVEAL"]), event_command(230,0,[24]))
+    noodle_shop.each_index.to_a.reverse_each do |index|
+      next unless command_code(noodle_shop[index]) == 201
+      indent = noodle_shop[index].instance_variable_get(:@indent)
+      noodle_shop.insert(index,
+        event_command(355,indent,["$game_map.shadows.set_opacity(255,24); map_effects.set_zoom(100,18,false) # WCF_NOODLE_REVIEW_SHOP_EXIT"]),
+        event_command(230,indent,[24]))
+    end
+    map20.instance_variable_set(:@note,"[lighting on]\r\n[opacity 255]\r\n[color 000000000]\r\nNOODLE route shop; KUL only; camera reviewed")
+    save_data("Data/Map020.rvdata2", map20)
+
+    map47 = load_data("Data/Map047.rvdata2")
+    noodle_prep = map47.instance_variable_get(:@events).fetch(1)
+      .instance_variable_get(:@pages).first.instance_variable_get(:@list)
+    remove_legacy.call(noodle_prep)
+    noodle_prep.reject! { |command| script_text.call(command).include?("WCF_NOODLE_REVIEW_") }
+    insert_after_layer.call(noodle_prep, [
+      event_command(355,0,["$game_switches[17]=false; $game_switches[18]=false; map_effects.clear; map_effects.active=true; map_effects.set_zoom(122,28,false); ms_pro_cam_ignore_player(true); ms_pro_cam_center_at_char(3,1) # WCF_NOODLE_REVIEW_PREP_CAMERA"]),
+      event_command(355,0,["$game_map.shadows.set_color(0,0,0); $game_map.shadows.show; $game_map.shadows.set_opacity(255) # WCF_NOODLE_REVIEW_PREP_BLACK"]),
+      event_command(355,0,["$game_map.events[3].give_light('cutscene_actor'); $game_map.shadows.set_opacity(185,28) # WCF_NOODLE_REVIEW_PREP_REVEAL"]), event_command(230,0,[28])])
+    transfer_at = noodle_prep.index { |command| command_code(command) == 201 }
+    noodle_prep.insert(transfer_at,
+      event_command(355,0,["$game_map.shadows.set_opacity(255,30) # WCF_NOODLE_REVIEW_PREP_EXIT"]),
+      event_command(230,0,[30]), Marshal.load(Marshal.dump(reset_camera))) if transfer_at
+    map47.instance_variable_set(:@note,"[lighting on]\r\n[opacity 255]\r\n[color 000000000]\r\n<full lock parallax>\r\n<tile lock parallax>\r\nNOODLE route prep; KUL only; camera reviewed")
+    save_data("Data/Map047.rvdata2", map47)
+
+    map14 = load_data("Data/Map014.rvdata2")
+    cooking_page = map14.instance_variable_get(:@events).fetch(25).instance_variable_get(:@pages).first
+    cooking = cooking_page.instance_variable_get(:@list)
+    remove_legacy.call(cooking)
+    cooking.reject! { |command| script_text.call(command).include?("WCF_NOODLE_REVIEW_") }
+    insert_after_layer.call(cooking, [
+      event_command(355,0,["$game_switches[17]=false; $game_switches[18]=false; map_effects.clear; map_effects.active=true; map_effects.set_zoom(118,24,false); ms_pro_cam_ignore_player(true); ms_pro_cam_center_at(14,6,1) # WCF_NOODLE_REVIEW_COOK_CAMERA"]),
+      event_command(355,0,["$game_map.shadows.set_color(0,0,0); $game_map.shadows.show; $game_map.shadows.set_opacity(255) # WCF_NOODLE_REVIEW_COOK_BLACK"]),
+      event_command(222,0,[]),
+      event_command(355,0,["$game_map.shadows.set_opacity(0,24) # WCF_NOODLE_REVIEW_COOK_REVEAL"]), event_command(230,0,[24])])
+    transfer_at = cooking.index { |command| command_code(command) == 201 }
+    cooking.insert(transfer_at,
+      event_command(355,0,["$game_map.shadows.set_opacity(255,30) # WCF_NOODLE_REVIEW_COOK_EXIT"]), event_command(230,0,[30]),
+      Marshal.load(Marshal.dump(reset_camera))) if transfer_at
+    save_data("Data/Map014.rvdata2", map14)
+
+    # Leo route: preserve authored dialogue and graphics, add saved-phone state,
+    # camera composition, and deterministic waits before every transfer.
+    {56=>[1,89,23],57=>[1,7,8],58=>[1,12,9],59=>[1,12,13],60=>[1,7,5]}.each do |map_id,(event_id,cx,cy)|
+      path = format("Data/Map%03d.rvdata2", map_id)
+      map = load_data(path)
+      page = map.instance_variable_get(:@events).fetch(event_id).instance_variable_get(:@pages).first
+      list = page.instance_variable_get(:@list)
+      remove_legacy.call(list)
+      list.reject! { |command| script_text.call(command).include?("WCF_LEO_REVIEW_") }
+      layer_at = list.rindex { |command| script_text.call(command).include?("refresh_layers") } || 0
+      list.insert(layer_at + 1,
+        event_command(355,0,["map_effects.clear; map_effects.active=true; map_effects.set_zoom(#{map_id == 60 ? 124 : 112},24,false); ms_pro_cam_ignore_player(true); ms_pro_cam_center_at(#{cx},#{cy},1) # WCF_LEO_REVIEW_CAMERA"]))
+      if map_id == 56
+        chat_at = list.index { |command| script_text.call(command).include?("WCF_LEO_SHOP_SYNC_CHOICE") }
+        list.insert(chat_at,
+          event_command(355,0,["PhoneGroupChatSave.save_current_cutscene(:wanderer_group) # WCF_LEO_REVIEW_PHONE_SAVE"])) if chat_at
+      end
+      list.each_index.to_a.reverse_each do |index|
+        next unless command_code(list[index]) == 201
+        indent = list[index].instance_variable_get(:@indent)
+        previous = list[[index - 3, 0].max...index].any? { |command| script_text.call(command).include?("set_opacity(255") }
+        unless previous
+          list.insert(index, event_command(355,indent,["$game_map.shadows.set_opacity(255,24) # WCF_LEO_REVIEW_EXIT"]), event_command(230,indent,[24]))
+        end
+        list.insert(index, event_command(355,indent,["map_effects.set_zoom(100,16,false); ms_pro_cam_ignore_player(false); ms_pro_cam_focus_on(-1) # WCF_LEO_REVIEW_CAMERA_RESET"]))
+      end
+
+      # KUL transitions are asynchronous: force the intended black frame to
+      # finish before a sleeping/outfit graphic is swapped on Map060.
+      if map_id == 60
+        list.each_index.to_a.reverse_each do |index|
+          next unless script_text.call(list[index]).include?("set_graphic")
+          prior = list[index - 1]
+          if prior && script_text.call(prior).include?("set_opacity(255")
+            list.insert(index, event_command(230,0,[script_text.call(prior).include?("20") ? 20 : 24]))
+          end
+        end
+      end
+      save_data(path, map)
+    end
+
+    # Shared Christmas office: remove legacy lighting from noodle/Leo intro,
+    # then graft Shylvie's route onto the same free-roam/snowball structure.
+    map38 = load_data("Data/Map038.rvdata2")
+    events38 = map38.instance_variable_get(:@events)
+    pages1 = events38.fetch(1).instance_variable_get(:@pages)
+    page_for_switch = lambda do |pages, id|
+      pages.find do |page|
+        c = page.instance_variable_get(:@condition)
+        c.instance_variable_get(:@switch1_valid) && c.instance_variable_get(:@switch1_id) == id
+      end
+    end
+    [55,72].each do |switch_id|
+      page = page_for_switch.call(pages1, switch_id)
+      next unless page
+      list = page.instance_variable_get(:@list)
+      remove_legacy.call(list)
+      unless list.any? { |command| script_text.call(command).include?("WCF_ROUTE_REVIEW_OFFICE_CAMERA") }
+        first_message = list.index { |command| command_code(command) == 101 } || 0
+        list.insert(first_message,
+          event_command(355,0,["map_effects.clear; map_effects.active=true; map_effects.set_zoom(108,30,false); ms_pro_cam_ignore_player(true); ms_pro_cam_center_at(14,21,1) # WCF_ROUTE_REVIEW_OFFICE_CAMERA"]))
+      end
+    end
+
+    leo_intro = page_for_switch.call(pages1,72)
+    raise "Map038 Leo intro page missing" unless leo_intro
+    pages1.reject! do |page|
+      c = page.instance_variable_get(:@condition)
+      c.instance_variable_get(:@switch1_valid) && [76,77,78].include?(c.instance_variable_get(:@switch1_id))
+    end
+    substitute = lambda do |page, switch_map, variable_map|
+      copy = Marshal.load(Marshal.dump(page))
+      condition = copy.instance_variable_get(:@condition)
+      if condition.instance_variable_get(:@switch1_valid)
+        old = condition.instance_variable_get(:@switch1_id)
+        condition.instance_variable_set(:@switch1_id, switch_map.fetch(old,old))
+      end
+      copy.instance_variable_get(:@list).each do |command|
+        params = command_parameters(command)
+        if command_code(command) == 121
+          params[0] = switch_map.fetch(params[0],params[0]); params[1] = switch_map.fetch(params[1],params[1])
+        elsif command_code(command) == 122
+          params[0] = variable_map.fetch(params[0],params[0]); params[1] = variable_map.fetch(params[1],params[1])
+        elsif [355,655].include?(command_code(command))
+          params[0] = params[0].to_s.gsub("WCF_LEO_SHOP", "WCF_SHY_JEWEL_SHARED")
+        end
+      end
+      copy
+    end
+    shy_intro = substitute.call(leo_intro,{72=>76,73=>77,74=>78},{56=>58})
+    # The standard party preparation remains authored dialogue; only its route
+    # state is changed. This gives Shylvie the same phone time, CG6/7, NPCs,
+    # room doors, free roam and snowball minigame as the other routes.
+    pages1 << shy_intro
+    shy_free = Marshal.load(Marshal.dump(page_for_switch.call(pages1,73)))
+    shy_free.instance_variable_get(:@condition).instance_variable_set(:@switch1_id,77)
+    pages1 << shy_free
+    shy_continue = Marshal.load(Marshal.dump(page_for_switch.call(pages1,74)))
+    shy_continue.instance_variable_get(:@condition).instance_variable_set(:@switch1_id,78)
+    pages1 << shy_continue
+
+    [3,4,6].each do |event_id|
+      event = events38.fetch(event_id); pages = event.instance_variable_get(:@pages)
+      pages.reject! { |p| c=p.instance_variable_get(:@condition); c.instance_variable_get(:@switch1_valid) && c.instance_variable_get(:@switch1_id)==77 }
+      source = page_for_switch.call(pages,48)
+      copy = Marshal.load(Marshal.dump(source)); copy.instance_variable_get(:@condition).instance_variable_set(:@switch1_id,77); pages << copy
+    end
+    leo_event = events38.fetch(5); leo_pages = leo_event.instance_variable_get(:@pages)
+    leo_pages.reject! { |p| c=p.instance_variable_get(:@condition); c.instance_variable_get(:@switch1_valid) && c.instance_variable_get(:@switch1_id)==77 }
+    leo_free = page_for_switch.call(leo_pages,73)
+    shy_leo_free = substitute.call(leo_free,{73=>77,74=>78},{56=>58}); leo_pages << shy_leo_free
+
+    template_event = events38[121] || events38.fetch(1)
+    template_page = template_event.instance_variable_get(:@pages).first
+    transfer_page = Marshal.load(Marshal.dump(template_page))
+    condition = transfer_page.instance_variable_get(:@condition)
+    condition.instance_variable_set(:@switch1_valid,true); condition.instance_variable_set(:@switch1_id,78)
+    condition.instance_variable_set(:@switch2_valid,false); condition.instance_variable_set(:@variable_valid,false)
+    transfer_page.instance_variable_set(:@trigger,3); transfer_page.instance_variable_set(:@priority_type,0)
+    transfer_page.instance_variable_set(:@list,[
+      event_command(355,0,["$game_map.shadows.set_opacity(255,30) # WCF_SHY_JEWEL_FREE_EXIT"]), event_command(230,0,[30]),
+      event_command(355,0,["map_effects.set_zoom(100,16,false); ms_pro_cam_ignore_player(false); ms_pro_cam_focus_on(-1)"]),
+      event_command(201,0,[0,66,14,21,2,2]), event_command(0,0,[])])
+    events38[122] = event_from_pages(template_event,122,"SCN-SHY-JEWEL-CONTINUE",14,21,[transfer_page])
+    save_data("Data/Map038.rvdata2",map38)
+
+    # Shylvie shop: exact authored phone invitation and the complete purchase
+    # banter for all four recipient choices. Pictures unlock their Gallery
+    # entries immediately and all text stays in the normal message window.
+    map64 = load_data("Data/Map064.rvdata2")
+    shop_event = map64.instance_variable_get(:@events).fetch(1)
+    shop_page = shop_event.instance_variable_get(:@pages).first
+    shop = [
+      event_command(355,0,["$game_player.transparent=true"]),
+      event_command(355,0,["layer(64,0,['Jewel_Shop_Top',0,0,255,200,0,0,0])"]), event_command(655,0,["refresh_layers"]),
+      event_command(355,0,["$game_switches[17]=false; $game_switches[18]=false; map_effects.clear; map_effects.active=true; map_effects.set_zoom(110,28,false); ms_pro_cam_ignore_player(true); ms_pro_cam_center_at(9,22,1) # WCF_SHY_REVIEW_SHOP_CAMERA"]),
+      event_command(355,0,["$game_map.shadows.set_color(0,0,0); $game_map.shadows.show; $game_map.shadows.set_opacity(255)"]),
+      event_command(355,0,["$game_map.shadows.set_opacity(0,24)"]), event_command(230,0,[24]),
+      event_command(355,0,["GroupChatPreset.shylvie_jewel_invite"]), event_command(230,0,[1]),
+      event_command(355,0,["PhoneGroupChatSave.save_current_cutscene(:wanderer_group) # WCF_SHY_REVIEW_PHONE_SAVE"])
+    ]
+    shop.concat(narr.call("Shylvie ngay lập tức gửi tôi tọa độ chính xác của cửa tiệm. Đồng thời dịch chuyển một chiếc vòng tay có gắn la bàn và một túi châu báu to đùng cho tôi."))
+    shop.concat(narr.call("Chà, tôi hy vọng chiếc vòng tay sẽ không phát nổ trong lúc tôi ở chiều không gian khác. Nếu không thì hết đường về luôn!"))
+    shop.concat(hq.call("Trời đất thánh thần Poseidon ơi… Chói quá…!!! Lại còn tràn đầy ma lực nữa chứ!!",3))
+    shop << event_command(355,0,["ms_pro_cam_center_at(9,14,36); map_effects.set_zoom(116,36,false); ms_pro_cam_wait_for_scrolling # WCF_SHY_REVIEW_SHELF_PAN"])
+    shop.concat(narr.call("Tôi dạo một vòng quanh tiệm, ngắm nghía hết kệ Ruby, Sapphire, Emerald cho tới Topaz, Tourmaline và Amber. Vốn hiểu biết hạn hẹp nên tôi chỉ nhận ra một số viên mà thôi."))
+    shop << event_command(102,0,[["Shylvie","Kohi","Leo","Hakase"],0])
+    branches = {
+      0 => ["Shylvie",3,53,[
+        [:n,"Tôi nhìn qua kệ Tourmaline, nhắm mắt lại và đưa tay chọn ngẫu nhiên một viên."],
+        [:a,"Congo Tourmaline cơ à? Ta tưởng ngươi sẽ mua viên đá màu xanh dương như Lapis Lazuli, Sapphire, Kyanite hay Zircon chứ?",1],
+        [:h,"Tặng màu xanh dương cho đứa thích màu xanh dương là quá tầm thường rồi. Giờ xu hướng phải tặng màu ‘xa lánh’!",1],
+        [:a,"Haha, màu ‘xa lánh’!!",0],[:h,"Nhận ra rồi sao?",0],
+        [:n,"Tôi quyết định mua Congo Tourmaline cho Shylvie. Bà chủ khen tôi có mắt tinh tường vì viên đá có thể triệu hồi một chiếc khiên phép thuật mạnh mẽ."],
+        [:h,"Chà, trùng hợp nhỉ?",1]]],
+      1 => ["Kohi",2,56,[
+        [:n,"Tôi nhìn qua kệ Kim Cương, nhắm mắt lại và đưa tay chọn ngẫu nhiên một viên."],
+        [:a,"Nè con nhãi kia, giàu dữ ha, mua hẳn kim cương luôn mà!",3],[:h,"Nhưng nó có hình hạt cà phê.",1],
+        [:a,"NHƯNG NÓ LÀ KIM CƯƠNG ĐẤY?!",3],[:h,"Thì kim cương, nhưng hình hạt cà phê.",1],
+        [:a,"Ừ rồi, hạt cà phê kim cương.",1],[:h,"Dễ thương ha!",0],
+        [:n,"Tôi quyết định mua viên kim cương hình hạt cà phê này cho Kohi."],
+        [:s,"BÀ MUA THẬT HẢ?!",3],[:h,"Chứ chả lẽ mua giả hả má.",1],[:s,"TUYỆT VỜI! Mà bà mua gì đó?",3],[:h,"Quên rồi.",1]]],
+      2 => ["Leo",1,75,[
+        [:n,"Tôi nhìn qua kệ Garnet, nhắm mắt lại và đưa tay chọn ngẫu nhiên một viên."],
+        [:a,"Ồ, là Purple Garnet này.",1],[:h,"Cũng rành về đá quý dữ ha?",1],
+        [:a,"Khùng hả má, nó có màu tím nè. Không lẽ gọi là Sting Garnet?",3],[:h,"Ừ cũng hợp lý, Sting nho uống cũng ngon…",1],
+        [:n,"Tôi quyết định mua Purple Garnet cho Leo. Bà chủ giải thích nó có thể giải trừ trạng thái bất lợi, độc tố và giúp tinh thần người dùng vui vẻ, tích cực hơn."],
+        [:h,"Sao nghe giống như một dạng thôi miên vậy?",3]]],
+      3 => ["Hakase",4,76,[
+        [:n,"Tôi nhìn qua kệ Fluorite, nhắm mắt lại và đưa tay chọn ngẫu nhiên một viên."],
+        [:a,"Ngươi tính tặng Rainbow Fluorite cho tên ma vương đáng gờm đó à?",1],
+        [:a,"Ta tính nói là ngươi chọn đúng loại đá cho kẻ ham học hỏi như hắn đấy.",1],[:h,"Thật á?",3],
+        [:a,"Thật. Xíu nữa ra hỏi ông chủ là biết liền à.",1],
+        [:n,"Tôi quyết định mua Rainbow Fluorite cho Hakase. Bà chủ cho biết đây là đá trí tuệ; mỗi viên chứa ngẫu nhiên một đến hai phép thuật và truyền đạt ngay cho người đầu tiên kích hoạt."],
+        [:h,"Chà, đáng để Hakase thử nhỉ?",0]]]
+    }
+    branches.each do |choice,(label,branch,gallery_id,lines)|
+      shop << event_command(402,0,[choice,label]); shop << event_command(122,1,[57,57,0,0,branch])
+      commands = []
+      lines.each do |kind,text_value,face_index|
+        commands.concat(case kind when :h then hq.call(text_value,face_index || 1,1) when :a then aira.call(text_value,face_index || 1,1) when :s then shy.call(text_value,face_index || 1,1) else narr.call(text_value,1) end)
+      end
+      shop.concat(gallery.call(gallery_id,commands,1))
+      shop << event_command(122,1,[58,58,0,0,2])
+      shop << event_command(355,1,["$game_map.shadows.set_opacity(255,28); map_effects.set_zoom(100,20,false) # WCF_SHY_REVIEW_SHOP_EXIT"])
+      shop << event_command(230,1,[28]); shop << event_command(201,1,[0,65,7,5,2,2])
+    end
+    shop << event_command(404,0,[]); shop << event_command(0,0,[])
+    shop_page.instance_variable_set(:@list,shop)
+    save_data("Data/Map064.rvdata2",map64)
+
+    # Shylvie preparation now visibly stages Hải Quỳ, then enters the shared
+    # Christmas free-roam map instead of skipping straight to the gift scene.
+    map65 = load_data("Data/Map065.rvdata2")
+    events65 = map65.instance_variable_get(:@events)
+    unless events65[3]
+      source_actor = load_data("Data/Map060.rvdata2").instance_variable_get(:@events).fetch(3)
+      actor = Marshal.load(Marshal.dump(source_actor)); actor.instance_variable_set(:@id,3); actor.instance_variable_set(:@x,7); actor.instance_variable_set(:@y,5)
+      actor.instance_variable_set(:@name,"NPC-HAI-QUY-JEWEL-PREP [E003]"); events65[3]=actor
+    end
+    prep_page = events65.fetch(1).instance_variable_get(:@pages).first
+    prep = [event_command(355,0,["$game_player.transparent=true"]),
+      event_command(355,0,["layer(65,0,['HQ_Room_Midnight_Top',0,0,255,200,0,0,0])"]),event_command(655,0,["refresh_layers"]),
+      event_command(355,0,["$game_switches[17]=false; $game_switches[18]=false; map_effects.clear; map_effects.active=true; map_effects.set_zoom(124,28,false); ms_pro_cam_ignore_player(true); ms_pro_cam_center_at_char(3,1)"]),
+      event_command(355,0,["$game_map.shadows.set_color(0,0,0); $game_map.shadows.show; $game_map.shadows.set_opacity(255); $game_map.events[3].give_light('cutscene_actor')"]),
+      event_command(355,0,["$game_map.shadows.set_opacity(185,28)"]),event_command(230,0,[28])]
+    prep_data={1=>[75,"Leo"],2=>[56,"Kohi"],3=>[53,"Shylvie"],4=>[76,"Hakase"]}
+    prep_data.each do |branch,(gallery_id,name)|
+      prep << event_command(111,0,[1,57,0,branch,0])
+      line = "Tôi đặt gói quà của #{name} lên bàn, lấy đồng hồ báo thức đè lên nó. Mặc dù còn vài ngày nữa mới tới tiệc Giáng sinh, tôi cứ có cảm giác bữa tiệc sẽ diễn ra vào ngày mai."
+      prep.concat(gallery.call(gallery_id,narr.call(line,1),1)); prep << event_command(412,0,[])
+    end
+    prep.concat(narr.call("Cảm giác ấy khiến tim tôi đập thình thịch. Nhưng nghĩ tới lúc mọi người mở quà, tâm trí tôi cũng dần được xoa dịu."))
+    prep << event_command(122,0,[58,58,0,0,3]); prep << event_command(355,0,["$game_map.shadows.set_opacity(255,30)"]); prep << event_command(230,0,[30])
+    prep << Marshal.load(Marshal.dump(reset_camera)); prep << event_command(201,0,[0,38,22,34,8,2]); prep << event_command(0,0,[])
+    prep_page.instance_variable_set(:@list,prep); save_data("Data/Map065.rvdata2",map65)
+
+    # The dedicated gift map keeps the user's current map art. Only its route
+    # controller receives a composed camera and Gallery-safe presentation.
+    map66 = load_data("Data/Map066.rvdata2")
+    party_page = map66.instance_variable_get(:@events).fetch(1).instance_variable_get(:@pages).first
+    party = party_page.instance_variable_get(:@list)
+    party.reject! { |command| script_text.call(command).include?("WCF_SHY_REVIEW_") }
+    first_message = party.index { |command| command_code(command)==101 } || 0
+    party.insert(first_message,
+      event_command(355,0,["map_effects.clear; map_effects.active=true; map_effects.set_zoom(112,30,false); ms_pro_cam_ignore_player(true); ms_pro_cam_center_at(14,21,24); ms_pro_cam_wait_for_scrolling # WCF_SHY_REVIEW_PARTY_CAMERA"]))
+    party.each do |command|
+      next unless command_code(command)==231 && command_parameters(command)[0]==20
+      name=command_parameters(command)[1]
+      id={"PurpleGarnet"=>75,"DiamondCoffee"=>56,"CongoTourmaline"=>53,"RainbowFluorite"=>76}[name]
+      command.instance_variable_set(:@code,355); command.instance_variable_set(:@parameters,["WCFGalleryScene.show(#{id}) # WCF_SHY_REVIEW_PARTY_GALLERY"]) if id
+    end
+    party.each do |command|
+      next unless command_code(command)==235 && command_parameters(command)[0]==20
+      command.instance_variable_set(:@code,355); command.instance_variable_set(:@parameters,["WCFGalleryScene.hide # WCF_SHY_REVIEW_PARTY_GALLERY"])
+    end
+    transfer_at=party.index{|command| command_code(command)==201}
+    party.insert(transfer_at,Marshal.load(Marshal.dump(reset_camera))) if transfer_at
+    save_data("Data/Map066.rvdata2",map66)
+
+    map67=load_data("Data/Map067.rvdata2")
+    epi=map67.instance_variable_get(:@events).fetch(1).instance_variable_get(:@pages).first.instance_variable_get(:@list)
+    epi.reject!{|command| script_text.call(command).include?("WCF_SHY_REVIEW_")}
+    first_message=epi.index{|command| command_code(command)==101} || 0
+    epi.insert(first_message,event_command(355,0,["map_effects.clear; map_effects.active=true; map_effects.set_zoom(108,30,false); ms_pro_cam_ignore_player(true); ms_pro_cam_center_at(14,21,1) # WCF_SHY_REVIEW_EPILOGUE_CAMERA"]))
+    transfer_at=epi.index{|command| command_code(command)==201}; epi.insert(transfer_at,Marshal.load(Marshal.dump(reset_camera))) if transfer_at
+    save_data("Data/Map067.rvdata2",map67)
+
+    # Hard audit of the invariants that caused earlier route regressions.
+    errors=[]
+    [20,47,14,56,57,58,59,60,64,65,66,67].each do |map_id|
+      map=load_data(format("Data/Map%03d.rvdata2",map_id))
+      commands=map.instance_variable_get(:@events).values.compact.flat_map{|event| event.instance_variable_get(:@pages).flat_map{|page| page.instance_variable_get(:@list)}}
+      errors << "Map#{map_id} native Fade/Tint remains" if commands.any?{|command| [221,222,223].include?(command_code(command))}
+    end
+    verify38=load_data("Data/Map038.rvdata2").instance_variable_get(:@events)
+    errors << "Shylvie shared free roam missing" unless [76,77,78].all?{|id| page_for_switch.call(verify38.fetch(1).instance_variable_get(:@pages),id)}
+    errors << "Shylvie continuation missing" unless verify38[122]
+    errors << "Shylvie phone preset missing" unless File.binread("Scripts/Cutscene Group Chat.rb").include?("def self.shylvie_jewel_invite")
+    raise "Wanderer route review failed: #{errors.join(', ')}" unless errors.empty?
+    puts "WANDERER_ROUTE_REVIEW|noodle=KUL+camera|leo=phone-save+camera+KUL-waits|shylvie=full-shop+shared-free-roam+snowball+gallery+camera|manual-map-geometry=preserved|errors=0"
+  end
+
+  # Follow-up pass for transitions and the long Shylvie gift/epilogue text.
+  # Kept separate so it can be audited or rerun without rebuilding any map.
+  def finalize_wanderer_route_review
+    say = lambda do |face,index,text,indent=0|
+      result=wrapped_message_commands([text],tag:"\\cbm ",width:30,indent:indent)
+      result.each{|c| c.instance_variable_set(:@parameters,[face,face.empty? ? 0 : index,0,2]) if command_code(c)==101}
+      result
+    end
+    narr=lambda{|text,indent=0| say.call("",0,text,indent)}
+    hq=lambda{|text,index=1,indent=0| say.call("HaiQuy_Thuongphuc_Emote",index,text,indent)}
+    hqx=lambda{|text,index=1,indent=0| say.call("HaiQuy_Giangsinh_Emote",index,text,indent)}
+    shy=lambda{|text,index=1,indent=0| say.call("CV_Giangsinh_Emote1",index,text,indent)}
+    leo=lambda{|text,index=1,indent=0| say.call("Leo_Giangsinh_Emote",index,text,indent)}
+    kohi=lambda{|text,index=1,indent=0| say.call("Kohi_Giangsinh_Emote1",index,text,indent)}
+    hak=lambda{|text,index=1,indent=0| say.call("Hakase_Giangsinh_Emote",index,text,indent)}
+    gallery=lambda{|id,commands| [event_command(355,0,["WCFGalleryScene.show(#{id}) # WCF_ROUTE_FINAL_GALLERY"])]+commands+[event_command(355,0,["WCFGalleryScene.hide # WCF_ROUTE_FINAL_GALLERY"])]}
+    script=lambda{|c| [355,655].include?(command_code(c)) ? command_parameters(c)[0].to_s : ""}
+
+    # Restore an intentional sleep cut in the noodle preparation scene using
+    # KUL, after the obsolete native Fade commands were removed.
+    map47=load_data("Data/Map047.rvdata2")
+    prep=map47.instance_variable_get(:@events).fetch(1).instance_variable_get(:@pages).first.instance_variable_get(:@list)
+    unless prep.any?{|c| script.call(c).include?("WCF_NOODLE_SLEEP_CUT")}
+      wake_text=prep.index{|c| command_code(c)==401 && command_parameters(c)[0].to_s.include?("Dậy coi con âm binh")}
+      if wake_text
+        wake_header=(0...wake_text).to_a.reverse.find{|i| command_code(prep[i])==101} || wake_text
+        prep.insert(wake_header,
+          event_command(355,0,["$game_map.shadows.set_opacity(255,30) # WCF_NOODLE_SLEEP_CUT"]),event_command(230,0,[30]),
+          event_command(230,0,[45]),event_command(355,0,["$game_map.shadows.set_opacity(185,30) # WCF_NOODLE_WAKE_REVEAL"]),event_command(230,0,[30]))
+      end
+    end
+    save_data("Data/Map047.rvdata2",map47)
+
+    # Relocate each Leo camera command after its KUL setup. Earlier placement
+    # could be cleared immediately by the map's own initialization command.
+    (56..60).each do |map_id|
+      path=format("Data/Map%03d.rvdata2",map_id); map=load_data(path)
+      list=map.instance_variable_get(:@events).fetch(1).instance_variable_get(:@pages).first.instance_variable_get(:@list)
+      camera=list.find{|c| script.call(c).include?("WCF_LEO_REVIEW_CAMERA") && !script.call(c).include?("RESET")}
+      next unless camera
+      list.delete(camera)
+      first_message = if map_id == 56
+        list.index{|c| script.call(c).include?("GroupChatPreset.leo_shop_choice")} || list.length-1
+      else
+        list.index{|c| command_code(c)==101} || list.length-1
+      end
+      list.insert(first_message,camera)
+      save_data(path,map)
+    end
+
+    # Noodle party entry and exit must remain KUL-only. This fixes both the
+    # black hand-off from the kitchen and the final native Fade Out.
+    map38=load_data("Data/Map038.rvdata2"); events38=map38.instance_variable_get(:@events)
+    intro=events38.fetch(1).instance_variable_get(:@pages).find do |p|
+      c=p.instance_variable_get(:@condition); c.instance_variable_get(:@switch1_valid) && c.instance_variable_get(:@switch1_id)==55
+    end
+    intro_list=intro.instance_variable_get(:@list)
+    unless intro_list.any?{|c| script.call(c).include?("WCF_NOODLE_OFFICE_REVEAL")}
+      layer_at=intro_list.index{|c| script.call(c).include?("refresh_layers")} || 0
+      intro_list.insert(layer_at+1,
+        event_command(355,0,["$game_switches[17]=false; $game_switches[18]=false; $game_map.shadows.set_color(0,0,0); $game_map.shadows.show; $game_map.shadows.set_opacity(255) # WCF_NOODLE_OFFICE_BLACK"]),
+        event_command(355,0,["$game_map.shadows.set_opacity(0,30) # WCF_NOODLE_OFFICE_REVEAL"]),event_command(230,0,[30]))
+    end
+    {55=>58,72=>73,76=>77}.each do |active_switch,free_switch|
+      route_page=events38.fetch(1).instance_variable_get(:@pages).find do |p|
+        c=p.instance_variable_get(:@condition); c.instance_variable_get(:@switch1_valid) && c.instance_variable_get(:@switch1_id)==active_switch
+      end
+      next unless route_page
+      route_list=route_page.instance_variable_get(:@list)
+      marker="WCF_ROUTE_FREE_CAMERA_#{active_switch}"
+      next if route_list.any?{|c| script.call(c).include?(marker)}
+      free_at=route_list.index{|c| command_code(c)==121 && command_parameters(c)[0]==free_switch && command_parameters(c)[2]==0}
+      route_list.insert(free_at,event_command(355,0,["map_effects.set_zoom(100,24,false); ms_pro_cam_ignore_player(false); ms_pro_cam_focus_on(-1) # #{marker}"])) if free_at
+    end
+    noodle_end=events38.fetch(118).instance_variable_get(:@pages).first.instance_variable_get(:@list)
+    noodle_end.reject!{|c| [221,222,223].include?(command_code(c))}
+    transfer_at=noodle_end.index{|c| command_code(c)==201}
+    unless noodle_end.any?{|c| script.call(c).include?("WCF_NOODLE_PARTY_FINAL_BLACK")}
+      noodle_end.insert(transfer_at,event_command(355,0,["$game_map.shadows.set_opacity(255,30) # WCF_NOODLE_PARTY_FINAL_BLACK"]),event_command(230,0,[30]))
+    end
+
+    # Full Shylvie gift route. Every line below is sourced from the compact
+    # route block B1845..B1917; no new story dialogue is introduced.
+    map66=load_data("Data/Map066.rvdata2"); controller=map66.instance_variable_get(:@events).fetch(1)
+    page=controller.instance_variable_get(:@pages).first
+    party=[event_command(355,0,["$game_player.transparent=true"]),
+      event_command(355,0,["layer(66,0,['Map_Wanderer_Office_GiangSinh_Top',0,0,255,200,0,0,0])"]),event_command(655,0,["refresh_layers"]),
+      event_command(355,0,["$game_switches[17]=false; $game_switches[18]=false; map_effects.clear; map_effects.active=true; $game_map.shadows.set_color(0,0,0); $game_map.shadows.show; $game_map.shadows.set_opacity(255)"]),
+      event_command(355,0,["$game_player.transparent=true; (2..6).each{|id| e=$game_map.events[id]; e.transparent=true if e}; ms_pro_cam_ignore_player(true); ms_pro_cam_center_at(15,25,1); map_effects.set_zoom(112,30,false)"]),
+      event_command(355,0,["layer(66,1,['Wanderer_Party_After_',0,0,255,150,0,0,0])"]),event_command(655,0,["refresh_layers"]),
+      event_command(355,0,["$game_map.shadows.set_opacity(0,28)"]),event_command(230,0,[28])]
+    party.concat(narr.call("E hèm! Đã đến lúc cho sự kiện chính ngày hôm nay rồi."))
+    {1=>"JEWEL_PARTY_LEO",2=>"JEWEL_PARTY_KOHI",3=>"JEWEL_PARTY_SHY",4=>"JEWEL_PARTY_HAK"}.each do |branch,label|
+      party << event_command(111,0,[1,57,0,branch,0]); party << event_command(119,1,[label]); party << event_command(412,0,[])
+    end
+    party << event_command(118,0,["JEWEL_PARTY_LEO"])
+    party.concat(narr.call("Tôi lập tức đứng dậy, cầm theo túi quà tiến đến chỗ của Leo.")); party.concat(hqx.call("Giáng sinh an lành Leo! Tui hi vọng ông thích viên đá này!",0))
+    party.concat(gallery.call(75,leo.call("Uầy!! Đá quý?! Purple Garnet à? Lựa chọn không tồi đấy Quỳ!",0)))
+    party.concat(hqx.call("Leo thích món quà này hông?",0)); party.concat(leo.call("Thích chứ! Vừa cầm nó trong tay thôi mà bao nhiêu mệt mỏi tan biến, thần kỳ thật đấy!!",0))
+    party.concat(hqx.call("Trời trời tui mà lị!! Quá là tâm lý!!",0)); party.concat(narr.call("Tôi vỗ ngực tự hào. Dù việc mua viên đá này hoàn toàn ngẫu nhiên. Chắc chắn không phải cố tình chọn cho giống màu ai đấy. Chắc chắn!"))
+    party.concat(narr.call("Leo đặt món quà xuống bàn, đứng dậy tiến đến Hakase với một nụ cười tươi tắn.")); party << event_command(119,0,["JEWEL_PARTY_DONE"])
+    party << event_command(118,0,["JEWEL_PARTY_KOHI"])
+    party.concat(gallery.call(56,kohi.call("TR-TRỜI ĐẤT ƠI?! HẠT CÀ PHÊ KIM CƯƠNG!",3))); party.concat(hqx.call("Đúng rồi! Hạt cà phê kim cương!",0)); party.concat(kohi.call("Trời đất ơi thiệt luôn đó hả?!",3))
+    party.concat(leo.call("À… Thế thì cả hai thua cược rồi.",1)); party.concat(shy.call("Chứ gì nữa…! Tui hông ngờ là bà giàu đến mức này đó?!",3)); party.concat(shy.call("Tui thì nghĩ khác, vốn dĩ bả giàu ngầm nên mỗi tháng bả mới mua vài hộp ‘nhựa’ ấy chứ.",1))
+    party.concat(hak.call("Phú bà…!!",3)); party.concat(leo.call("Tui không ngờ bà giấu tui việc bà là phú bà luôn đó Quỳ! Vậy mà lúc nào bà cũng than không có tiền! BÀ ĐÙA TUI HẢ?!",7)); party.concat(hqx.call("Đ-Đâu!! T-Tôi đỗ khỉ nghèo thật mà!!",3)); party.concat(narr.call("BỌN TUI CÓC TIN!!")); party.concat(kohi.call("Cảm ơn Hải Quỳ nha…!!",0)); party.concat(narr.call("Kohi cài viên kim cương lên tóc rồi lấy một chiếc hộp thiếc dát vàng dúi vào tay Leo.")); party << event_command(119,0,["JEWEL_PARTY_DONE"])
+    party << event_command(118,0,["JEWEL_PARTY_SHY"])
+    party.concat(narr.call("Tôi lập tức đứng dậy, cầm theo gói quà tiến đến chỗ Shylvie.")); party.concat(hqx.call("Giáng sinh an lành Shi-ru-vi! Tui hi vọng ông thích viên đá phong thủy này!",0)); party.concat(gallery.call(53,shy.call("WOW! Congo Tourmaline!!",3)))
+    party.concat(hqx.call("Nhìn phát biết luôn sao?",3)); party.concat(shy.call("Ồ, đương nhiên là nhìn phát biết ngay rồi! Bà lại còn tặng đúng viên mà tui muốn nữa chứ!",0)); party.concat(narr.call("Viên đá phát ra ánh sáng rực rỡ. Một chiếc khiên màu xanh lá dứa trong suốt hiện ra, hớp hồn tất cả mọi người.")); party << event_command(225,0,[4,6,28,false])
+    party.concat(shy.call("GÌ CƠ?! CHIẾC KHIÊN HUYỀN THOẠI Ở CHIỀU KHÔNG GIAN CỦA SHYLVIE Á?!",3)); party.concat(shy.call("NÓ LÀ MÓN QUÀ TUYỆT CÀ LÀ VỜI QUỲ Ạ! ĐỈNH CỦA CHÓP! XUẤT SẮC CÀ CHUA!!",3))
+    party.concat(shy.call("À, tui đang tò mò bà tính tặng gì cho tui!",1)); party.concat(narr.call("Shylvie đưa cho tôi một chiếc hộp giấy bé xinh.")); party.concat(shy.call("Gì? Bà không đoán được à?",1)); party.concat(hqx.call("Nah, không muốn đoán!",1)); party.concat(shy.call("Thế thì không tặng!",5)); party.concat(hqx.call("Gì kỳ cục vậy?! Vậy thì… huy hiệu? Móc khóa? Chuông?",3)); party.concat(shy.call("Sai bét! Mở ra xem thử đi.",0)); party.concat(narr.call("Tôi mở hộp. Bên trong là một viên Sapphire lấp lánh.")); party.concat(hqx.call("Uầy…! Đá Sapphire luôn hả!! Xịn dữ vậy?",3)); party.concat(shy.call("Không xịn mới lạ! Nó được khảm ma thuật dịch chuyển đấy.",0)); party.concat(hqx.call("Hả?! Sao lại khảm ma thuật dịch chuyển?! Tui muốn ma thuật beam cơ!",3)); party.concat(shy.call("Chê thì trả đây!",5)); party.concat(hqx.call("Hông, đã tặng rồi thì không có quyền đòi, lêu lêu. Ngon thì dí tui nè!",0)); party.concat(narr.call("Tôi dùng Sapphire dịch chuyển, Shylvie chạy theo dí. Về sau Shylvie cũng dùng ma thuật dịch chuyển để đuổi theo tôi.")); party.concat(shy.call("Đứng lại!!",3)); party.concat(hqx.call("Còn lâu!! Lêu lêu!",0)); party << event_command(119,0,["JEWEL_PARTY_DONE"])
+    party << event_command(118,0,["JEWEL_PARTY_HAK"])
+    party.concat(narr.call("Tôi lập tức đứng dậy, cầm theo túi quà tiến đến chỗ Hakase.")); party.concat(hqx.call("Đá phong thủy đó Hakase! Đây là Rainbow Fluorite, được mệnh danh là ‘Đá tri thức’ đó!",0)); party.concat(hqx.call("Hakase cầm chắc viên đá trong tay rồi truyền ma lực vào nó đi.",0)); party.concat(gallery.call(76,narr.call("Hakase nhắm mắt, từ từ truyền ma lực. Rainbow Fluorite tỏa sáng, chiếu lên không trung một dãy ký tự dài xoay quanh anh ấy.")))
+    party.concat(hqx.call("Mỗi viên Fluorite giống một cuộn giấy phép thuật; chỉ cần cầm là học được ngay. Vậy viên này có phép thuật gì vậy anh?",1)); party.concat(hak.call("Nó là phép biến nho thành táo, biến báo thành gạch, biến cá trạch thành mèo, biến beo thành chó.",0)); party.concat(hqx.call("Vãi…! Mấy phép thuật đó hiếm lắm đó Hakase!!",3)); party.concat(hak.call("Nó… hiếm vậy luôn á hả?!",3)); party.concat(shy.call("Hiếm lắm!",3)); party.concat(hak.call("Thế để tớ đưa cho Shylvie học cùng nhé!",0)); party.concat(narr.call("Hakase đưa viên Rainbow Fluorite ra trước mặt Shylvie.")); party.concat(shy.call("Dạ thôi, viên Fluorite chỉ truyền đạt kiến thức một lần cho người đầu tiên kích hoạt được nó thôi.",1)); party.concat(hak.call("Ơ, buồn vậy…?",5)); party.concat(shy.call("Buồn gì chứ! Giờ nó là một viên pin ma lực xịn xò, còn có thể ghi chép thông tin Hakase truyền đạt nữa đó!",0)); party.concat(hak.call("Xịn vậy sao! Cảm ơn Hải Quỳ và Shylvie nha! Tớ thích món này lắm!!",0)); party.concat(narr.call("Hakase cất Rainbow Fluorite vào ngăn tủ không gian rồi lôi một chiếc hộp nhỏ ra, tiến đến chỗ Kohi."))
+    party << event_command(118,0,["JEWEL_PARTY_DONE"]); party << event_command(122,0,[58,58,0,0,4]); party << event_command(355,0,["$game_map.shadows.set_opacity(255,30)"]); party << event_command(230,0,[30]); party << event_command(355,0,["map_effects.set_zoom(100,18,false); ms_pro_cam_ignore_player(false); ms_pro_cam_focus_on(-1)"]); party << event_command(201,0,[0,67,14,21,2,2]); party << event_command(0,0,[])
+    page.instance_variable_set(:@list,party); save_data("Data/Map066.rvdata2",map66)
+
+    # Full next-day consequences from compact B1920..B1959.
+    map67=load_data("Data/Map067.rvdata2"); epi_page=map67.instance_variable_get(:@events).fetch(1).instance_variable_get(:@pages).first
+    epi=[event_command(355,0,["$game_player.transparent=true"]),event_command(355,0,["layer(67,0,['Map_Wanderer_Office_top',0,0,255,200,0,0,0])"]),event_command(655,0,["refresh_layers"]),event_command(355,0,["$game_switches[17]=false; $game_switches[18]=false; map_effects.clear; map_effects.active=true; map_effects.set_zoom(108,30,false); ms_pro_cam_ignore_player(true); ms_pro_cam_center_at(14,21,1); $game_map.shadows.set_color(0,0,0); $game_map.shadows.show; $game_map.shadows.set_opacity(255)"]),event_command(355,0,["$game_map.shadows.set_opacity(0,28)"]),event_command(230,0,[28])]
+    {1=>"JEWEL_EPI_LEO",2=>"JEWEL_EPI_KOHI",3=>"JEWEL_EPI_SHY",4=>"JEWEL_EPI_HAK"}.each{|branch,label| epi << event_command(111,0,[1,57,0,branch,0]); epi << event_command(119,1,[label]); epi << event_command(412,0,[])}
+    epi << event_command(118,0,["JEWEL_EPI_LEO"]); epi.concat(narr.call("Vừa mở tủ lạnh, tôi nghe Leo bước vào. Ông ấy hớn hở đặt lên bàn một chiếc chuông gió tự chế.")); epi.concat(leo.call("Thấy sao? Đẹp chứ!",0)); epi.concat(hq.call("Đẹp!! Mấy mảnh đá hồng tím đó ở đâu ra vậy?",0)); epi.concat(leo.call("Là viên đá bà tặng tui đó. Khuya qua lúc đặt lên bàn, nó nổ cái đùng! Tui tiếc quá nên cặm cụi làm suốt đêm.",1)); epi.concat(hq.call("Leo khéo tay thật đó!! Đâu cho tui nghe thử tiếng của nó đi!!",0)); epi.concat(narr.call("Leo đung đưa chiếc chuông gió. Các mảnh đá phát ra tiếng leng keng trong trẻo, êm tai. Sau đó ông mang nó treo trong văn phòng riêng.")); epi.concat(hq.call("Ngon quá…!!",0)); epi << event_command(122,0,[41,41,0,0,25]); epi << event_command(119,0,["JEWEL_EPI_DONE"])
+    epi << event_command(118,0,["JEWEL_EPI_KOHI"]); epi.concat(narr.call("Vừa bước vào bếp, tôi thấy Kohi đứng trước máy pha cà phê với gương mặt mệt mỏi.")); epi.concat(hq.call("C-Chuyện gì xảy ra vậy Kohi?",3)); epi.concat(kohi.call("Không hiểu sao từ tối qua tui cứ ngủ được 30 phút là gặp ác mộng một lần. Uống cà phê cũng không ngủ được, đành ra bếp ngồi rồi gục tới sáng!",5)); epi.concat(hq.call("Bà mới bị như thế hay lâu lâu bị như thế?",3)); epi.concat(kohi.call("Tui chưa bị như thế bao giờ cả.",5)); epi.concat(hq.call("Rồi hiểu, để tui xử lý.",1)); epi.concat(narr.call("Tôi lên phòng Kohi kiểm tra. Shylvie cho biết một số kim cương ở thế giới của bà ấy có khả năng thanh trừng Quỷ; viên tôi mua vô tình thuộc loại này.")); epi.concat(narr.call("Tôi bóp nát viên kim cương trước sự ngỡ ngàng của Shylvie, người vừa nhớ ra mình có phép tái cấu trúc vật thể để ghép nó lại.")); epi.concat(hq.call("Bảo sao tôi cảm thấy mệt mệt. Thôi, xuống múc kem ăn thôi!",1)); epi << event_command(122,0,[41,41,0,0,26]); epi << event_command(119,0,["JEWEL_EPI_DONE"])
+    epi << event_command(118,0,["JEWEL_EPI_SHY"]); epi.concat(narr.call("Ngay khi tôi mở tủ lạnh, Shylvie bước vào, vẫy chiếc khiên gắn trên tay.")); epi.concat(shy.call("Bà về rồi hả!! Nhìn nè, xịn không!!",0)); epi.concat(narr.call("Tôi săm soi chiếc khiên xanh lá dứa trong suốt. Có vẻ Shylvie đã dành cả đêm để ‘độ’ nó.")); epi.concat(hq.call("Chưa xịn, nhìn có khác gì tối qua đâu.",1)); epi.concat(shy.call("Nhìn nè!!",3)); epi.concat(narr.call("Chiếc khiên phát sáng, làm hũ kem biến mất rồi xuất hiện trên tay Shylvie. Bà nhét hũ kem vào khiên, lắc mạnh và đập xuống bàn; hàng chục hũ kem hiện ra.")); epi.concat(hq.call("Chiếc khiên gì xịn đét.",0)); epi.concat(narr.call("Nhưng khi mở ra, tất cả những chiếc hũ đều không còn miếng kem nào.")); epi.concat(hq.call("Chiếc khiên gì tệ đét.",5)); epi << event_command(122,0,[41,41,0,0,27]); epi << event_command(119,0,["JEWEL_EPI_DONE"])
+    epi << event_command(118,0,["JEWEL_EPI_HAK"]); epi.concat(narr.call("Bước vào bếp, tôi thấy Hakase đang pha cà phê.")); epi.concat(hak.call("Mừng Hải Quỳ về nhà, làm miếng cà phê kem socola không?",0)); epi.concat(narr.call("Hakase đưa cốc cà phê nóng hổi. Tôi đón lấy và làm một hơi hết sạch.")); epi.concat(hak.call("Viên đá tối qua tuyệt vời lắm! Tui đã biến hết nho trong tủ thành táo. Còn một trái nè.",0)); epi.concat(narr.call("Hakase ném quả táo cuối cùng cho tôi. Nó giòn và ngọt đúng như lời anh ấy.")); epi.concat(hak.call("Tui có chuyện be bé muốn nói.",1)); epi.concat(hq.call("Sao á?",3)); epi.concat(hak.call("Nếu định tặng đá phong thủy cho Leo hay Kohi thì không nên nha. Đá còn có tác dụng xua đuổi ma quỷ; Leo là ma cà rồng, Kohi là quỷ cà phê…",1)); epi.concat(hq.call("Ồ! Giờ tui mới biết! Cảm ơn Hakase nha! Tui sẽ lưu ý!",0)); epi.concat(narr.call("Sau đó tôi đứng xem Hakase biểu diễn: biến một cục gạch thành chuột lang, thành báo hoa mai, thành khúc gỗ rồi thành quả cam.")); epi.concat(hq.call("Tôi có nên ăn quả cam đó không…?",1)); epi << event_command(122,0,[41,41,0,0,28])
+    epi << event_command(118,0,["JEWEL_EPI_DONE"]); epi << event_command(121,0,[76,76,1]); epi << event_command(121,0,[79,79,0]); epi << event_command(122,0,[58,58,0,0,5]); epi << event_command(355,0,["$game_map.shadows.set_opacity(255,30)"]); epi << event_command(230,0,[30]); epi << event_command(355,0,["map_effects.set_zoom(100,18,false); ms_pro_cam_ignore_player(false); ms_pro_cam_focus_on(-1)"]); epi << event_command(201,0,[0,36,8,7,2,2]); epi << event_command(0,0,[])
+    epi_page.instance_variable_set(:@list,epi); save_data("Data/Map067.rvdata2",map67)
+
+    save_data("Data/Map038.rvdata2",map38)
+    errors=[]
+    [47,56,57,58,59,60,66,67].each do |map_id|
+      map=load_data(format("Data/Map%03d.rvdata2",map_id)); commands=map.instance_variable_get(:@events).values.compact.flat_map{|e| e.instance_variable_get(:@pages).flat_map{|p| p.instance_variable_get(:@list)}}
+      errors << "Map#{map_id} native Fade/Tint" if commands.any?{|c| [221,222,223].include?(command_code(c))}
+    end
+    errors << "Map38 noodle ending native Fade/Tint" if noodle_end.any?{|c| [221,222,223].include?(command_code(c))}
+    party_text=party.select{|c| command_code(c)==401}.map{|c| command_parameters(c)[0].to_s}.join(" ")
+    epi_text=epi.select{|c| command_code(c)==401}.map{|c| command_parameters(c)[0].to_s}.join(" ")
+    errors << "Map66 compact anchors missing" unless ["mệt mỏi","HẠT CÀ PHÊ","Sapphire","pin ma"].all?{|needle| party_text.include?(needle)}
+    errors << "Map67 compact anchors missing" unless ["chuông gió","ác mộng","tệ đét","xua"].all?{|needle| epi_text.include?(needle)}
+    raise "Wanderer route finalization failed: #{errors.join(', ')}" unless errors.empty?
+    puts "WANDERER_ROUTE_FINALIZED|noodle=sleep-cut+Map38-KUL|leo=camera-after-KUL|shylvie=compact-B1845..1959+gallery+free-roam|errors=0"
+  end
+
+  # Stage the four authored jewel epilogues in the Wanderer kitchen.
+  # Map068 is the archived preparation-map group; the active epilogue is
+  # Map067 (V57: 1 Leo, 2 Kohi, 3 Shylvie, 4 Hakase). Object coordinates come
+  # from Map014: coffee (16,4), fridge (18..19,4), table (19..21,6..7), and
+  # entrance (23..24,10). This does not rebuild Map014/068 or the Test Hub.
+  def stage_jewel_epilogue_kitchen
+    map_path = "Data/Map067.rvdata2"
+    map = load_data(map_path)
+    events = map.instance_variable_get(:@events)
+    raise "Map067 controller missing" unless events && events[1]
+    raise "Map067 has unrelated events" unless (events.keys.compact - [1, 2, 3, 4, 5, 6]).empty?
+
+    page = events.fetch(1).instance_variable_get(:@pages).first
+    old_list = page.instance_variable_get(:@list)
+    if old_list.any? { |c| [355, 655].include?(command_code(c)) && command_parameters(c).first.to_s.include?("WCF_JEWEL_EPILOGUE_STAGE") }
+      puts "MAP067_JEWEL_EPILOGUE_STAGED|already=true"
+      return
+    end
+    labels = old_list.select { |c| command_code(c) == 118 }.map { |c| command_parameters(c)[0] }
+    required = %w[JEWEL_EPI_LEO JEWEL_EPI_KOHI JEWEL_EPI_SHY JEWEL_EPI_HAK JEWEL_EPI_DONE]
+    raise "Map067 branch labels missing: #{(required - labels).join(', ')}" unless (required - labels).empty?
+
+    source_events = load_data("Data/Map038.rvdata2").instance_variable_get(:@events)
+    actor_specs = {
+      2 => [2, "NPC-HAI-QUY-EPILOGUE", "$HaiQuyAtHome_Base"],
+      3 => [3, "NPC-SHYLVIE-EPILOGUE", "$Shylvie_giangsinh"],
+      4 => [4, "NPC-KOHI-EPILOGUE", "$Kohi_giangsinh"],
+      5 => [5, "NPC-LEO-EPILOGUE", "$Leo_giangsinh"],
+      6 => [6, "NPC-HAKASE-EPILOGUE", "$Hakasa_GiangSinh"]
+    }
+    actor_specs.each do |id, (source_id, name, charset)|
+      source = source_events.fetch(source_id)
+      event = Marshal.load(Marshal.dump(source))
+      event.instance_variable_set(:@id, id)
+      event.instance_variable_set(:@name, "#{name} [E%03d]" % id)
+      event.instance_variable_set(:@x, 0)
+      event.instance_variable_set(:@y, 0)
+      actor_page = Marshal.load(Marshal.dump(source.instance_variable_get(:@pages).first))
+      reset_page_condition(actor_page.instance_variable_get(:@condition))
+      actor_page.instance_variable_set(:@trigger, 0)
+      actor_page.instance_variable_set(:@priority_type, 1)
+      actor_page.instance_variable_set(:@walk_anime, true)
+      actor_page.instance_variable_set(:@step_anime, false)
+      actor_page.instance_variable_set(:@direction_fix, false)
+      actor_page.instance_variable_set(:@through, true)
+      actor_page.instance_variable_set(:@list, [event_command(0, 0, [])])
+      graphic = actor_page.instance_variable_get(:@graphic)
+      graphic.instance_variable_set(:@character_name, charset)
+      graphic.instance_variable_set(:@character_index, 0)
+      graphic.instance_variable_set(:@direction, 2)
+      graphic.instance_variable_set(:@pattern, 1)
+      event.instance_variable_set(:@pages, [actor_page])
+      events[id] = event
+    end
+
+    move_route = lambda do |event_id, move_codes, wait = true|
+      route = RPG::MoveRoute.allocate
+      route.instance_variable_set(:@repeat, false)
+      route.instance_variable_set(:@skippable, false)
+      route.instance_variable_set(:@wait, wait)
+      commands = move_codes.map do |entry|
+        code, parameters = entry.is_a?(Array) ? entry : [entry, []]
+        move = RPG::MoveCommand.allocate
+        move.instance_variable_set(:@code, code)
+        move.instance_variable_set(:@parameters, parameters)
+        move
+      end
+      finish = RPG::MoveCommand.allocate
+      finish.instance_variable_set(:@code, 0)
+      finish.instance_variable_set(:@parameters, [])
+      route.instance_variable_set(:@list, commands + [finish])
+      event_command(205, 0, [event_id, route])
+    end
+
+    hide_all = "$game_player.transparent=true; (2..6).each{|id| e=$game_map.events[id]; e.transparent=true if e}"
+    lighting = "$game_switches[17]=false; $game_switches[18]=false; map_effects.clear; map_effects.active=true; ms_pro_cam_ignore_player(true); $game_map.shadows.set_color(0,0,0); $game_map.shadows.show; $game_map.shadows.set_opacity(255) # WCF_JEWEL_EPILOGUE_STAGE"
+    list = [
+      event_command(355, 0, [hide_all]),
+      event_command(355, 0, ["layer(67,0,['Map_Wanderer_Office_top',0,0,255,200,0,0,0])"]),
+      event_command(655, 0, ["refresh_layers"]),
+      event_command(355, 0, [lighting])
+    ]
+    # Keep every existing condition, dialogue, outcome, and transfer. Only the
+    # former one-size-fits-all camera reveal (first six commands) is replaced.
+    list.concat(old_list.drop(6))
+
+    label_index = lambda do |label|
+      list.index { |c| command_code(c) == 118 && command_parameters(c)[0] == label } ||
+        (raise "Map067 label not found: #{label}")
+    end
+    message_header = lambda do |needle|
+      text_index = list.index { |c| command_code(c) == 401 && command_parameters(c)[0].to_s.include?(needle) }
+      raise "Map067 dialogue marker not found: #{needle}" unless text_index
+      header = text_index
+      header -= 1 while header.positive? && command_code(list[header]) != 101
+      header
+    end
+    insert_before_message = lambda do |needle, commands|
+      list.insert(message_header.call(needle), *commands)
+    end
+    reveal = lambda do
+      [event_command(355, 0, ["$game_map.shadows.set_opacity(0,24) # WCF_JEWEL_EPILOGUE_REVEAL"]),
+       event_command(230, 0, [24])]
+    end
+
+    # Leo: refrigerator entrance, then the real dining-table area.
+    leo_setup = [
+      event_command(355, 0, ["(2..6).each{|id| $game_map.events[id].transparent=true}; hq=$game_map.events[2]; leo=$game_map.events[5]; hq.moveto(24,10); hq.set_direction(8); hq.transparent=false; leo.moveto(24,10); leo.set_direction(4); leo.transparent=false; ms_pro_cam_center_at(20,7,1); map_effects.set_zoom(125,24,false) # WCF_JEWEL_EPI_LEO_STAGE"]),
+      *reveal.call,
+      move_route.call(2, Array.new(5, 2) + Array.new(5, 4) + [19]),
+      move_route.call(5, Array.new(3, 2) + Array.new(2, 4) + [17]),
+      event_command(213, 0, [2, 1, false]),
+      event_command(213, 0, [5, 3, false])
+    ]
+    list.insert(label_index.call("JEWEL_EPI_LEO") + 1, *leo_setup)
+    insert_before_message.call("Leo đung đưa", [
+      event_command(355, 0, ["ms_pro_cam_center_at(20,7,18); map_effects.set_zoom(140,18,false); ms_pro_cam_wait_for_scrolling # WCF_JEWEL_EPI_LEO_CHIME"]),
+      event_command(213, 0, [5, 3, false]),
+      move_route.call(5, [18, [15, [5]], 17, [15, [5]], 18, [15, [5]], 17])
+    ])
+    insert_before_message.call("Ngon quá", [
+      event_command(355, 0, ["$game_map.shadows.set_opacity(255,24) # WCF_JEWEL_EPI_LEO_OFFICE_CUT"]),
+      event_command(230, 0, [24]),
+      event_command(355, 0, ["$game_map.events[5].transparent=true"])
+    ])
+
+    # Kohi: start at the actual coffee machine. The explicitly authored
+    # upstairs-room transition remains black instead of faking a room here.
+    kohi_setup = [
+      event_command(355, 0, ["(2..6).each{|id| $game_map.events[id].transparent=true}; hq=$game_map.events[2]; kohi=$game_map.events[4]; hq.moveto(24,10); hq.set_direction(8); hq.transparent=false; kohi.moveto(16,5); kohi.set_direction(8); kohi.transparent=false; ms_pro_cam_center_at(18,7,1); map_effects.set_zoom(130,24,false) # WCF_JEWEL_EPI_KOHI_STAGE"]),
+      *reveal.call,
+      event_command(213, 0, [4, 10, false]),
+      move_route.call(2, Array.new(6, 2) + Array.new(4, 4) + [17]),
+      event_command(213, 0, [2, 1, false])
+    ]
+    list.insert(label_index.call("JEWEL_EPI_KOHI") + 1, *kohi_setup)
+    insert_before_message.call("Tôi lên phòng Kohi", [
+      event_command(355, 0, ["$game_map.shadows.set_opacity(255,24) # WCF_JEWEL_EPI_KOHI_ROOM_CUT"]),
+      event_command(230, 0, [24]),
+      event_command(355, 0, ["$game_map.events[2].transparent=true; $game_map.events[4].transparent=true"])
+    ])
+
+    # Shylvie: refrigerator entrance and a close-up around the dining table.
+    shy_setup = [
+      event_command(355, 0, ["(2..6).each{|id| $game_map.events[id].transparent=true}; hq=$game_map.events[2]; shy=$game_map.events[3]; hq.moveto(24,10); hq.set_direction(8); hq.transparent=false; shy.moveto(24,10); shy.set_direction(4); shy.transparent=false; ms_pro_cam_center_at(20,7,1); map_effects.set_zoom(125,24,false) # WCF_JEWEL_EPI_SHY_STAGE"]),
+      *reveal.call,
+      move_route.call(2, Array.new(5, 2) + Array.new(5, 4) + [19]),
+      move_route.call(3, Array.new(3, 2) + Array.new(2, 4) + [17]),
+      event_command(213, 0, [2, 1, false]),
+      event_command(213, 0, [3, 9, false])
+    ]
+    list.insert(label_index.call("JEWEL_EPI_SHY") + 1, *shy_setup)
+    insert_before_message.call("Nhìn nè!!", [
+      move_route.call(2, [1, 1, 1, 2, 18]),
+      event_command(355, 0, ["ms_pro_cam_center_at(20,7,20); map_effects.set_zoom(142,20,false); ms_pro_cam_wait_for_scrolling # WCF_JEWEL_EPI_SHIELD_FOCUS"]),
+      event_command(213, 0, [3, 9, false])
+    ])
+    insert_before_message.call("Chiếc khiên phát sáng", [
+      move_route.call(3, [18, [15, [4]], 17, [15, [4]], 18, [15, [4]], 19]),
+      event_command(225, 0, [2, 4, 18, false]),
+      event_command(230, 0, [12]),
+      event_command(355, 0, ["map_effects.set_zoom(150,12,false)"]),
+      event_command(230, 0, [12]),
+      event_command(355, 0, ["map_effects.set_zoom(135,12,false)"])
+    ])
+    insert_before_message.call("Nhưng khi mở ra", [
+      event_command(213, 0, [2, 6, false]),
+      event_command(213, 0, [3, 6, false])
+    ])
+
+    # Hakase: coffee machine, hand-over, refrigerator/apple, then an open-floor
+    # close-up for the transformation demonstration.
+    hak_setup = [
+      event_command(355, 0, ["(2..6).each{|id| $game_map.events[id].transparent=true}; hq=$game_map.events[2]; hak=$game_map.events[6]; hq.moveto(24,10); hq.set_direction(8); hq.transparent=false; hak.moveto(16,5); hak.set_direction(8); hak.transparent=false; ms_pro_cam_center_at(18,7,1); map_effects.set_zoom(130,24,false) # WCF_JEWEL_EPI_HAK_STAGE"]),
+      *reveal.call,
+      event_command(213, 0, [6, 3, false]),
+      move_route.call(2, Array.new(5, 2) + Array.new(4, 4) + [17])
+    ]
+    list.insert(label_index.call("JEWEL_EPI_HAK") + 1, *hak_setup)
+    insert_before_message.call("Hakase đưa cốc", [
+      move_route.call(6, [1, 3, 3, 18]),
+      move_route.call(2, [17])
+    ])
+    insert_before_message.call("Hakase ném quả táo", [
+      move_route.call(6, [4, 19, [15, [8]], 1, 18]),
+      event_command(213, 0, [2, 1, false])
+    ])
+    insert_before_message.call("Sau đó tôi đứng xem", [
+      event_command(355, 0, ["$game_map.shadows.set_opacity(255,18) # WCF_JEWEL_EPI_HAK_DEMO_CUT"]),
+      event_command(230, 0, [18]),
+      event_command(355, 0, ["hq=$game_map.events[2]; hak=$game_map.events[6]; hq.moveto(18,9); hq.set_direction(6); hak.moveto(20,9); hak.set_direction(4); ms_pro_cam_center_at(19,9,1); map_effects.set_zoom(140,1,false)"]),
+      event_command(355, 0, ["$game_map.shadows.set_opacity(0,18)"]),
+      event_command(230, 0, [18]),
+      event_command(213, 0, [6, 9, false]),
+      event_command(225, 0, [2, 5, 24, false]),
+      event_command(355, 0, ["map_effects.set_zoom(152,16,false)"]),
+      event_command(230, 0, [16]),
+      event_command(355, 0, ["map_effects.set_zoom(138,16,false)"])
+    ])
+    insert_before_message.call("Tôi có nên ăn", [event_command(213, 0, [2, 2, false])])
+
+    page.instance_variable_set(:@list, list)
+    save_data(map_path, map)
+
+    scripts = list.select { |c| [355, 655].include?(command_code(c)) }
+                  .map { |c| command_parameters(c).first.to_s }.join("\n")
+    errors = []
+    %w[LEO KOHI SHY HAK].each do |branch|
+      errors << "#{branch} staging missing" unless scripts.include?("WCF_JEWEL_EPI_#{branch}_STAGE")
+    end
+    errors << "actor cast incomplete" unless (2..6).all? { |id| events[id] }
+    errors << "branch balloons missing" if list.count { |c| command_code(c) == 213 } < 10
+    errors << "branch movement missing" if list.count { |c| command_code(c) == 205 } < 10
+    errors << "camera coverage missing" if scripts.scan("ms_pro_cam_center_at").length < 6
+    errors << "hint outcomes changed" unless [25, 26, 27, 28].all? do |value|
+      list.any? { |c| command_code(c) == 122 && command_parameters(c)[0, 2] == [41, 41] && command_parameters(c)[4] == value }
+    end
+    raise "Map067 jewel staging audit failed: #{errors.join(', ')}" unless errors.empty?
+    puts "MAP067_JEWEL_EPILOGUE_STAGED|actors=5|branches=4|moves=#{list.count { |c| command_code(c) == 205 }}|balloons=#{list.count { |c| command_code(c) == 213 }}|errors=0"
+  end
+
+  # Convert the jewel shop from a recipient-choice cutscene into an authored
+  # exploration map. Existing stone event names and coordinates are preserved;
+  # only E1's controller and the command lists of the four named stones change.
+  def convert_jewel_shop_to_free_roam
+    path = "Data/Map064.rvdata2"
+    map = load_data(path)
+    events = map.instance_variable_get(:@events) || {}
+    controller = events.fetch(1)
+    stones = {
+      "PurpleGarnet" => {branch: 1, gallery: 75, balloon: 9, zoom: 132, shake: nil},
+      "DiamondCoffee" => {branch: 2, gallery: 56, balloon: 1, zoom: 140, shake: [3, 5, 20, false]},
+      "CongoTourmaline" => {branch: 3, gallery: 53, balloon: 3, zoom: 135, shake: nil},
+      "RainbowFluorite" => {branch: 4, gallery: 76, balloon: 2, zoom: 140, shake: [2, 4, 16, false]}
+    }
+    stone_events = stones.each_with_object({}) do |(name, _spec), memo|
+      event = events.values.compact.find { |candidate| candidate.instance_variable_get(:@name).to_s == name }
+      raise "Map064 stone event missing: #{name}" unless event
+      memo[name] = event
+    end
+    positions_before = stone_events.transform_values do |event|
+      [event.instance_variable_get(:@x), event.instance_variable_get(:@y)]
+    end
+    tile_before = map.instance_variable_get(:@data).instance_variable_get(:@marshal_data).dup
+    page = controller.instance_variable_get(:@pages).first
+    old = page.instance_variable_get(:@list) || []
+    if old.any? do |command|
+        [355, 655].include?(command_code(command)) &&
+          command_parameters(command)[0].to_s.include?("WCF_JEWEL_SHOP_FREE_ROAM")
+      end
+      puts "JEWEL_SHOP_FREE_ROAM|already=true"
+      return
+    end
+
+    choice_at = old.index do |command|
+      command_code(command) == 102 && command_parameters(command)[0] == ["Shylvie", "Kohi", "Leo", "Hakase"]
+    end
+    raise "Map064 legacy recipient choice missing" unless choice_at
+    branch_bodies = {}
+    {"Shylvie" => "CongoTourmaline", "Kohi" => "DiamondCoffee",
+     "Leo" => "PurpleGarnet", "Hakase" => "RainbowFluorite"}.each do |label, stone_name|
+      branch_at = old.index do |command|
+        command_code(command) == 402 && command_parameters(command)[1].to_s == label
+      end
+      raise "Map064 legacy branch missing: #{label}" unless branch_at
+      branch_end = ((branch_at + 1)...old.length).find do |index|
+        command_code(old[index]) == 402 || command_code(old[index]) == 404
+      end
+      show_at = (branch_at...branch_end).find do |index|
+        [355, 655].include?(command_code(old[index])) &&
+          command_parameters(old[index])[0].to_s.include?("WCFGalleryScene.show")
+      end
+      hide_at = (show_at...branch_end).find do |index|
+        [355, 655].include?(command_code(old[index])) &&
+          command_parameters(old[index])[0].to_s.include?("WCFGalleryScene.hide")
+      end
+      raise "Map064 gallery dialogue range missing: #{label}" unless show_at && hide_at
+      branch_bodies[stone_name] = Marshal.load(Marshal.dump(old[(show_at + 1)...hide_at]))
+    end
+
+    group_at = old.index do |command|
+      [355, 655].include?(command_code(command)) &&
+        command_parameters(command)[0].to_s.include?("GroupChatPreset.shylvie_jewel_invite")
+    end
+    shelf_text = old.index do |command|
+      command_code(command) == 401 && command_parameters(command)[0].to_s.include?("Tôi dạo một vòng")
+    end
+    raise "Map064 introduction anchors missing" unless group_at && shelf_text
+    shelf_header = shelf_text
+    shelf_header -= 1 while shelf_header.positive? && command_code(old[shelf_header]) != 101
+    intro_messages = Marshal.load(Marshal.dump(old[group_at...shelf_header]))
+    intro_messages.reject! do |command|
+      [355, 655].include?(command_code(command)) &&
+        command_parameters(command)[0].to_s.include?("WCF_SHY_REVIEW_SHELF_PAN")
+    end
+    wow_header = intro_messages.index do |command|
+      command_code(command) == 101 && command_parameters(command)[0].to_s == "HaiQuy_Thuongphuc_Emote"
+    end
+    intro_messages.insert(wow_header, event_command(213, 0, [-1, 1, false])) if wow_header
+
+    move_up = RPG::MoveRoute.allocate
+    move_up.instance_variable_set(:@repeat, false)
+    move_up.instance_variable_set(:@skippable, false)
+    move_up.instance_variable_set(:@wait, true)
+    moves = Array.new(3) do
+      command = RPG::MoveCommand.allocate
+      command.instance_variable_set(:@code, 4)
+      command.instance_variable_set(:@parameters, [])
+      command
+    end
+    turn = RPG::MoveCommand.allocate
+    turn.instance_variable_set(:@code, 19)
+    turn.instance_variable_set(:@parameters, [])
+    finish = RPG::MoveCommand.allocate
+    finish.instance_variable_set(:@code, 0)
+    finish.instance_variable_set(:@parameters, [])
+    move_up.instance_variable_set(:@list, moves + [turn, finish])
+
+    intro = [
+      event_command(355, 0, ["$game_player.moveto(8,23); $game_player.set_graphic('!$Base_HQ_Thuongphuct',0); $game_player.set_direction(8); $game_player.transparent=false; $game_player.instance_variable_set(:@through,false) # WCF_JEWEL_SHOP_FREE_ROAM"]),
+      event_command(355, 0, ["layer(64,0,['Jewel_Shop_Top',0,0,255,200,0,0,0])"]),
+      event_command(655, 0, ["refresh_layers"]),
+      event_command(355, 0, ["$game_switches[17]=false; $game_switches[18]=false; $game_map.screen.clear_fade; map_effects.clear; map_effects.active=true; map_effects.set_zoom(100,1,false); ms_pro_cam_ignore_player(false); ms_pro_cam_focus_on(-1); $game_map.shadows.set_color(0,0,0); $game_map.shadows.show; $game_map.shadows.set_opacity(255) # WCF_JEWEL_SHOP_ENTRY_BLACK"]),
+      event_command(355, 0, ["$game_map.shadows.set_opacity(0,24) # WCF_JEWEL_SHOP_ENTRY_REVEAL"]),
+      event_command(230, 0, [24]),
+      event_command(205, 0, [-1, move_up])
+    ]
+    intro.concat(intro_messages)
+    intro.concat([
+      event_command(355, 0, ["ms_pro_cam_ignore_player(true); ms_pro_cam_center_at(9,15,32); map_effects.set_zoom(84,32,false); ms_pro_cam_wait_for_scrolling # WCF_JEWEL_SHOP_OVERVIEW_PAN"])
+    ])
+    intro.concat(wrapped_message_commands([
+      "Các kệ trưng bày đầy Ruby, Sapphire, Emerald, Topaz, Tourmaline và Amber. Vốn hiểu biết hạn hẹp nên tôi chỉ nhận ra một số viên mà thôi."
+    ], tag: "\\cbm ", width: 30))
+    intro.concat([
+      event_command(355, 0, ["ms_pro_cam_center_at(9,8,28); ms_pro_cam_wait_for_scrolling; map_effects.set_zoom(82,20,false) # WCF_JEWEL_SHOP_OVERVIEW_TOP"]),
+      event_command(230, 0, [24]),
+      event_command(355, 0, ["map_effects.set_zoom(100,20,false); ms_pro_cam_ignore_player(false); ms_pro_cam_focus_on(-1); ms_pro_cam_wait_for_scrolling # WCF_JEWEL_SHOP_FREE_CAMERA"]),
+      event_command(123, 0, ["A", 0]),
+      event_command(0, 0, [])
+    ])
+    intro_page = Marshal.load(Marshal.dump(page))
+    intro_page.instance_variable_set(:@list, intro)
+    intro_page.instance_variable_set(:@trigger, 3)
+    intro_page.instance_variable_set(:@priority_type, 0)
+    done_page = page_from_template(controller, [], trigger: 0, priority: 0, self_switch: "A")
+    controller.instance_variable_set(:@pages, [intro_page, done_page])
+
+    stone_events.each do |name, event|
+      spec = stones.fetch(name)
+      event_id = event.instance_variable_get(:@id)
+      commands = [
+        event_command(355, 0, ["ms_pro_cam_ignore_player(true); ms_pro_cam_center_at_char(#{event_id},18); map_effects.set_zoom(128,18,false); ms_pro_cam_wait_for_scrolling # WCF_JEWEL_STONE_FOCUS_#{name}"]),
+        event_command(213, 0, [-1, 2, false]),
+        event_command(355, 0, ["WCFGalleryScene.show(#{spec[:gallery]}) # WCF_JEWEL_STONE_IMAGE_#{name}"]),
+        event_command(101, 0, ["HaiQuy_Thuongphuc_Emote", 1, 0, 2]),
+        event_command(401, 0, ["\\cbm Mình có muốn mua viên đá này không?"]),
+        event_command(102, 0, [["Mua viên đá này", "Xem tiếp"], 1]),
+        event_command(402, 0, [0, "Mua viên đá này"]),
+        event_command(355, 1, ["WCFGalleryScene.hide # WCF_JEWEL_STONE_IMAGE_HIDE"]),
+        event_command(122, 1, [57, 57, 0, 0, spec[:branch]]),
+        event_command(355, 1, ["map_effects.set_zoom(#{spec[:zoom]},16,false) # WCF_JEWEL_STONE_REACTION_#{name}"]),
+        event_command(213, 1, [-1, spec[:balloon], false])
+      ]
+      commands << event_command(225, 1, spec[:shake]) if spec[:shake]
+      body = branch_bodies.fetch(name)
+      body.each { |command| command.instance_variable_set(:@indent, 1) }
+      commands.concat(body)
+      commands.concat([
+        event_command(122, 1, [58, 58, 0, 0, 2]),
+        event_command(355, 1, ["$game_map.shadows.set_opacity(255,28); map_effects.set_zoom(100,20,false) # WCF_SHY_REVIEW_SHOP_EXIT"]),
+        event_command(230, 1, [28]),
+        event_command(122, 1, [83, 83, 0, 0, 65]),
+        event_command(201, 1, [0, 37, 7, 5, 2, 2]),
+        event_command(402, 0, [1, "Xem tiếp"]),
+        event_command(355, 1, ["WCFGalleryScene.hide # WCF_JEWEL_STONE_IMAGE_CANCEL"]),
+        event_command(355, 1, ["map_effects.set_zoom(100,18,false); ms_pro_cam_ignore_player(false); ms_pro_cam_focus_on(-1); ms_pro_cam_wait_for_scrolling # WCF_JEWEL_STONE_CANCEL_RETURN"]),
+        event_command(404, 0, []),
+        event_command(0, 0, [])
+      ])
+      stone_page = Marshal.load(Marshal.dump(event.instance_variable_get(:@pages).first))
+      reset_page_condition(stone_page.instance_variable_get(:@condition))
+      stone_page.instance_variable_set(:@trigger, 0)
+      stone_page.instance_variable_set(:@priority_type, 0)
+      stone_page.instance_variable_set(:@list, commands)
+      event.instance_variable_set(:@pages, [stone_page])
+    end
+
+    # The normal route now lands at the exact authored doorway tile. Test Hub
+    # coordinates are intentionally not touched; E1 also normalizes the player.
+    map13 = load_data("Data/Map013.rvdata2")
+    transfers = []
+    (map13.instance_variable_get(:@events) || {}).each_value do |event|
+      next unless event
+      (event.instance_variable_get(:@pages) || []).each do |candidate|
+        (candidate.instance_variable_get(:@list) || []).each do |command|
+          next unless command_code(command) == 201 && command_parameters(command)[1].to_i == 64
+          params = command_parameters(command).dup
+          params[2] = 8
+          params[3] = 23
+          command.instance_variable_set(:@parameters, params)
+          transfers << command
+        end
+      end
+    end
+    raise "Map013 -> Map064 transfer missing" if transfers.empty?
+
+    events[1] = controller
+    map.instance_variable_set(:@events, events)
+    save_data(path, map)
+    save_data("Data/Map013.rvdata2", map13)
+
+    verify = load_data(path)
+    verify_events = verify.instance_variable_get(:@events) || {}
+    errors = []
+    errors << "Map064 tile data changed" unless
+      verify.instance_variable_get(:@data).instance_variable_get(:@marshal_data) == tile_before
+    stones.each do |name, spec|
+      event = verify_events.values.compact.find { |candidate| candidate.instance_variable_get(:@name).to_s == name }
+      errors << "#{name} event missing" unless event
+      next unless event
+      errors << "#{name} position changed" unless
+        [event.instance_variable_get(:@x), event.instance_variable_get(:@y)] == positions_before[name]
+      list = event.instance_variable_get(:@pages).first.instance_variable_get(:@list) || []
+      errors << "#{name} purchase choice" unless list.count { |command| command_code(command) == 102 } == 1
+      errors << "#{name} branch V57=#{spec[:branch]}" unless list.any? do |command|
+        command_code(command) == 122 && command_parameters(command)[0, 2] == [57, 57] &&
+          command_parameters(command)[4].to_i == spec[:branch]
+      end
+      errors << "#{name} image" unless list.any? do |command|
+        [355, 655].include?(command_code(command)) &&
+          command_parameters(command)[0].to_s.include?("WCFGalleryScene.show(#{spec[:gallery]})")
+      end
+      errors << "#{name} balloon/camera" unless
+        list.any? { |command| command_code(command) == 213 } &&
+        list.any? { |command| [355, 655].include?(command_code(command)) && command_parameters(command)[0].to_s.include?("WCF_JEWEL_STONE_FOCUS") }
+    end
+    verify_intro = verify_events.fetch(1).instance_variable_get(:@pages).first.instance_variable_get(:@list) || []
+    errors << "legacy recipient choice remains" if verify_intro.any? do |command|
+      command_code(command) == 102 && command_parameters(command)[0] == ["Shylvie", "Kohi", "Leo", "Hakase"]
+    end
+    errors << "free-roam intro movement missing" unless verify_intro.any? { |command| command_code(command) == 205 }
+    errors << "free-roam camera missing" unless verify_intro.any? do |command|
+      [355, 655].include?(command_code(command)) && command_parameters(command)[0].to_s.include?("WCF_JEWEL_SHOP_FREE_CAMERA")
+    end
+    verify_transfers = []
+    (load_data("Data/Map013.rvdata2").instance_variable_get(:@events) || {}).each_value do |event|
+      next unless event
+      (event.instance_variable_get(:@pages) || []).each do |candidate|
+        verify_transfers.concat((candidate.instance_variable_get(:@list) || []).select do |command|
+          command_code(command) == 201 && command_parameters(command)[1].to_i == 64
+        end)
+      end
+    end
+    errors << "Map013 doorway transfer is not (8,23)" unless
+      verify_transfers.all? { |command| command_parameters(command)[2, 2] == [8, 23] }
+    errors.each { |error| puts "JEWEL_SHOP_FREE_ROAM_ERROR|#{error}" }
+    raise "Jewel shop free-roam conversion failed" unless errors.empty?
+    puts "JEWEL_SHOP_FREE_ROAM|entry=8,23|stones=#{stones.keys.join(',')}|" \
+      "positions=preserved|recipient_choice=removed|cancel=free-roam|errors=0"
+  end
+
+  # Map064 deliberately leaves KUL fully opaque while transferring to the
+  # shared preparation room. The jewel route (V83=65) must clear that
+  # inherited overlay while the native screen is still faded out, otherwise
+  # Fade In reveals a permanently black Map037. This patch touches only the
+  # matching Map037 page; authored Map064 event positions/priorities stay intact.
+  def fix_jewel_shop_bedroom_kul
+    path = "Data/Map037.rvdata2"
+    map = load_data(path)
+    event = (map.instance_variable_get(:@events) || {}).fetch(1)
+    page = (event.instance_variable_get(:@pages) || []).find do |candidate|
+      condition = candidate.instance_variable_get(:@condition)
+      condition.instance_variable_get(:@variable_valid) &&
+        condition.instance_variable_get(:@variable_id).to_i == 83 &&
+        condition.instance_variable_get(:@variable_value).to_i == 65
+    end
+    raise "Map037 V83=65 preparation page missing" unless page
+
+    list = page.instance_variable_get(:@list) || []
+    marker = "WCF_JEWEL_PREP_KUL_OFF"
+    unless list.any? do |command|
+        [355, 655].include?(command_code(command)) &&
+          command_parameters(command)[0].to_s.include?(marker)
+      end
+      fadeout = list.index { |command| command_code(command) == 221 }
+      fadein = list.index { |command| command_code(command) == 222 }
+      raise "Map037 V83=65 opening Fade Out/Fade In missing" unless fadeout && fadein && fadeout < fadein
+      list.insert(fadeout + 1, event_command(355, 0, [
+        "$game_map.shadows.set_opacity(0); $game_map.shadows.hide # #{marker}"
+      ]))
+      page.instance_variable_set(:@list, list)
+      save_data(path, map)
+    end
+
+    verify = load_data(path)
+    verify_page = verify.instance_variable_get(:@events).fetch(1).instance_variable_get(:@pages).find do |candidate|
+      condition = candidate.instance_variable_get(:@condition)
+      condition.instance_variable_get(:@variable_valid) &&
+        condition.instance_variable_get(:@variable_id).to_i == 83 &&
+        condition.instance_variable_get(:@variable_value).to_i == 65
+    end
+    verify_list = verify_page.instance_variable_get(:@list) || []
+    fadeout = verify_list.index { |command| command_code(command) == 221 }
+    kul_off = verify_list.index do |command|
+      [355, 655].include?(command_code(command)) &&
+        command_parameters(command)[0].to_s.include?(marker)
+    end
+    fadein = verify_list.index { |command| command_code(command) == 222 }
+    raise "Map037 jewel KUL reset order invalid" unless fadeout && kul_off && fadein && fadeout < kul_off && kul_off < fadein
+    puts "JEWEL_SHOP_BEDROOM_KUL|Map037|V83=65|fadeout<kul_off<fadein|Map064=untouched|errors=0"
+  end
+
+  # Repair the remaining bright-map receivers that can inherit a fully opaque
+  # KUL overlay. Only command lists on the receiving controllers are changed;
+  # event coordinates, graphics, priorities, triggers, and Map064 are untouched.
+  def repair_kul_transfer_handoffs
+    script_text = lambda do |command|
+      [355, 655].include?(command_code(command)) ? command_parameters(command)[0].to_s : ""
+    end
+    reveals_kul = lambda do |command|
+      text = script_text.call(command)
+      value = text[/shadows\.set_opacity\(\s*(\d+)/, 1]
+      text.match?(/shadows\.hide\b/) || (value && value.to_i < 250)
+    end
+
+    repaired = []
+    map19_path = "Data/Map019.rvdata2"
+    map19 = load_data(map19_path)
+    entry19 = (map19.instance_variable_get(:@events) || {}).fetch(2)
+      .instance_variable_get(:@pages).first
+    list19 = entry19.instance_variable_get(:@list) || []
+    marker19 = "WCF_MARKET_ENTRY_KUL_REVEAL"
+    unless list19.any? { |command| script_text.call(command).include?(marker19) }
+      finish = list19.index { |command| command_code(command) == 123 } || list19.length - 1
+      list19.insert(finish,
+        event_command(355, 0, [
+          "$game_map.shadows.set_color(0,0,0); $game_map.shadows.show; " \
+          "$game_map.shadows.set_opacity(0,24) # #{marker19}"
+        ]),
+        event_command(230, 0, [24]))
+      entry19.instance_variable_set(:@list, list19)
+      save_data(map19_path, map19)
+      repaired << "Map019/E002/P1"
+    end
+
+    map37_path = "Data/Map037.rvdata2"
+    map37 = load_data(map37_path)
+    pages37 = (map37.instance_variable_get(:@events) || {}).fetch(1)
+      .instance_variable_get(:@pages) || []
+    raise "Map037 expected six shared preparation pages" unless pages37.length == 6
+    pages37.each_with_index do |page, page_index|
+      list = page.instance_variable_get(:@list) || []
+      next if list.any? { |command| reveals_kul.call(command) }
+      fadein = list.index { |command| command_code(command) == 222 }
+      raise "Map037 page #{page_index + 1} has no opening Fade In" unless fadein
+      marker = "WCF_PREP_ENTRY_KUL_OFF_P#{page_index + 1}"
+      list.insert(fadein, event_command(355, 0, [
+        "$game_map.shadows.set_opacity(0); $game_map.shadows.hide # #{marker}"
+      ]))
+      page.instance_variable_set(:@list, list)
+      repaired << "Map037/E001/P#{page_index + 1}"
+    end
+    save_data(map37_path, map37)
+
+    verify19 = load_data(map19_path).instance_variable_get(:@events).fetch(2)
+      .instance_variable_get(:@pages).first.instance_variable_get(:@list) || []
+    raise "Map019 entry KUL reveal missing" unless
+      verify19.any? { |command| script_text.call(command).include?(marker19) }
+    verify37 = load_data(map37_path).instance_variable_get(:@events).fetch(1)
+      .instance_variable_get(:@pages) || []
+    verify37.each_with_index do |page, page_index|
+      list = page.instance_variable_get(:@list) || []
+      raise "Map037 page #{page_index + 1} still lacks KUL reveal" unless
+        list.any? { |command| reveals_kul.call(command) }
+    end
+    puts "KUL_TRANSFER_HANDOFFS_REPAIRED|#{repaired.join(',')}|Map064=untouched|errors=0"
+  end
+
+  # Audit every event transfer that inherits a fully opaque KUL overlay.  The
+  # older route audit accepted a destination when any autorun page contained a
+  # reveal; that misses condition-specific failures such as Map037 V83=65.
+  # Here each potentially applicable autorun/parallel page is checked for its
+  # own reveal. Some scenes intentionally speak over black before revealing,
+  # so the check covers the whole page rather than requiring an early reveal.
+  def audit_kul_transfer_handoffs
+    maps = Dir.glob("Data/Map[0-9][0-9][0-9].rvdata2").sort.to_h do |path|
+      [File.basename(path)[/\d+/].to_i, load_data(path)]
+    end
+    script_text = lambda do |command|
+      [355, 655].include?(command_code(command)) ? command_parameters(command)[0].to_s : ""
+    end
+    opacity = lambda do |text|
+      matches = text.scan(/shadows\.set_opacity\(\s*(\d+)/).flatten
+      matches.empty? ? nil : matches.last.to_i
+    end
+    page_label = lambda do |page|
+      condition = page.instance_variable_get(:@condition)
+      parts = []
+      if condition.instance_variable_get(:@switch1_valid)
+        parts << "S#{condition.instance_variable_get(:@switch1_id)}"
+      end
+      if condition.instance_variable_get(:@switch2_valid)
+        parts << "S#{condition.instance_variable_get(:@switch2_id)}"
+      end
+      if condition.instance_variable_get(:@variable_valid)
+        parts << "V#{condition.instance_variable_get(:@variable_id)}>=#{condition.instance_variable_get(:@variable_value)}"
+      end
+      if condition.instance_variable_get(:@self_switch_valid)
+        parts << "SELF_#{condition.instance_variable_get(:@self_switch_ch)}"
+      end
+      parts.empty? ? "default" : parts.join("+")
+    end
+
+    black_transfers = []
+    maps.each do |source_id, map|
+      (map.instance_variable_get(:@events) || {}).each do |event_id, event|
+        next unless event
+        (event.instance_variable_get(:@pages) || []).each_with_index do |page, page_index|
+          list = page.instance_variable_get(:@list) || []
+          list.each_with_index do |command, command_index|
+            next unless command_code(command) == 201
+            params = command_parameters(command)
+            next unless params[0].to_i == 0 && maps[params[1].to_i]
+            last_kul = list[0...command_index].reverse.find do |prior|
+              opacity.call(script_text.call(prior))
+            end
+            next unless last_kul && opacity.call(script_text.call(last_kul)).to_i >= 250
+            black_transfers << {
+              source: source_id, event: event_id, page: page_index + 1,
+              command: command_index + 1, destination: params[1].to_i
+            }
+          end
+        end
+      end
+    end
+
+    failures = []
+    reviewed = 0
+    intentional_black = 0
+    black_transfers.each do |transfer|
+      destination = maps.fetch(transfer[:destination])
+      destination_id = transfer[:destination]
+      # Route-aware receivers. These maps contain additional autoruns used
+      # later in the scene, so treating every autorun as an entry controller
+      # produces false positives. Map036 is an ending screen whose black map
+      # background is deliberate; its text/title overlay is the visible scene.
+      if destination_id == 36
+        intentional_black += 1
+        next
+      end
+      receiver_ids = case destination_id
+                     when 6 then [4]
+                     when 19 then [2]
+                     when 37, 38 then [1]
+                     when 14 then [25]
+                     else nil
+                     end
+      entry_pages = []
+      (destination.instance_variable_get(:@events) || {}).each do |event_id, event|
+        next unless event
+        next if receiver_ids && !receiver_ids.include?(event_id)
+        (event.instance_variable_get(:@pages) || []).each_with_index do |page, page_index|
+          next unless [3, 4].include?(page.instance_variable_get(:@trigger).to_i)
+          entry_pages << [event_id, page_index + 1, page]
+        end
+      end
+      source_label = "Map%03d/E%03d/P%d/C%d" % [
+        transfer[:source], transfer[:event], transfer[:page], transfer[:command]
+      ]
+      if entry_pages.empty?
+        failures << "#{source_label} -> Map%03d has no autorun/parallel KUL receiver" % transfer[:destination]
+        next
+      end
+      entry_pages.each do |event_id, page_index, page|
+        reviewed += 1
+        list = page.instance_variable_get(:@list) || []
+        reveal = list.each_with_index.find do |candidate, _index|
+          text = script_text.call(candidate)
+          value = opacity.call(text)
+          text.match?(/shadows\.hide\b/) || (!value.nil? && value < 250)
+        end
+        next if reveal
+        failures << "#{source_label} -> Map%03d/E%03d/P%d[%s] never clears inherited KUL" % [
+          transfer[:destination], event_id, page_index, page_label.call(page)
+        ]
+      end
+    end
+
+    puts "KUL_TRANSFER_AUDIT|black_transfers=#{black_transfers.length}|entry_pages=#{reviewed}|" \
+      "intentional_black=#{intentional_black}|failures=#{failures.uniq.length}"
+    failures.uniq.each { |failure| puts "KUL_TRANSFER_FAILURE|#{failure}" }
+    raise "KUL transfer handoff audit failed" unless failures.empty?
+  end
+
   def inspect_system_id_range(first_id, last_id)
     system = load_data("Data/System.rvdata2")
     switches = system.instance_variable_get(:@switches)
@@ -11808,12 +14160,7327 @@ module RVData2Audit
       puts "SYSTEM_ID|#{id}|switch=#{switches[id].inspect}|variable=#{variables[id].inspect}"
     end
   end
+
+  # Restore the authored exploration phase for Leo's dimensional shops.
+  # Sources:
+  # - Tương tác map Magic Shop.docx
+  # - Tương tác quán cà phê.docx
+  # - GAME_SCRIPT_MERGED_READABLE_V2.md, scene 4.5.1 / scene 5
+  # This pass intentionally does not touch the offline QA web app.
+  def repair_leo_interactive_shop_maps
+    raise "Disabled: this legacy generator rebuilds Map057/Map058 and would " \
+      "overwrite manual event positions. Use a targeted event repair instead."
+
+    active_sw, stage_var, branch_var = 72, 56, 55
+    pancake_sw, karin_sw = 80, 81
+    crow_var, skull_var, karin_var = 80, 81, 82
+
+    say = lambda do |face, index, text, indent = 0|
+      result = wrapped_message_commands([text], tag: "\\cbm ", width: 30, indent: indent)
+      result.each do |command|
+        next unless command_code(command) == 101
+        command.instance_variable_set(:@parameters, [face, face.empty? ? 0 : index, 0, 2])
+      end
+      result
+    end
+    narr = lambda { |text, indent = 0| say.call("", 0, text, indent) }
+    hq = lambda { |text, index = 1, indent = 0| say.call("HaiQuy_Thuongphuc_Emote", index, text, indent) }
+    aira = lambda { |text, index = 1, indent = 0| say.call("BullyQuy_Thuongphuc_Emote", index, text, indent) }
+    erufu = lambda { |text, index = 1, indent = 0| say.call("Erufu_Emote", index, text, indent) }
+    traveller = lambda { |text, index = 1, indent = 0| say.call("Traveller_Emote", index, text, indent) }
+    dialogue = lambda do |lines, indent = 0|
+      lines.flat_map do |speaker, text|
+        case speaker
+        when :hq then hq.call(text, 1, indent)
+        when :aira then aira.call(text, 1, indent)
+        when :erufu then erufu.call(text, 1, indent)
+        when :traveller then traveller.call(text, 1, indent)
+        when :narr then narr.call(text, indent)
+        else narr.call("#{speaker}: #{text}", indent)
+        end
+      end
+    end
+    indent_commands = lambda do |commands, amount|
+      copy = Marshal.load(Marshal.dump(commands))
+      copy.each { |command| command.instance_variable_set(:@indent, command.instance_variable_get(:@indent).to_i + amount) }
+      copy
+    end
+    picture = lambda do |id, commands|
+      [event_command(355, 0, ["WCFGalleryScene.show(#{id}) # WCF_LEO_SHOP_AUTHORED"])] + commands +
+        [event_command(355, 0, ["WCFGalleryScene.hide # WCF_LEO_SHOP_AUTHORED"])]
+    end
+
+    compact = {}
+    File.readlines("docs/kich ban/GAME_SCRIPT_AI_COMPACT_V2.md", encoding: "UTF-8", chomp: true).each do |line|
+      match = /\A(B\d{4}):\s?(.*)\z/.match(line)
+      compact[match[1]] = match[2] if match
+    end
+    block = lambda { |id| compact.fetch(format("B%04d", id)) }
+    sourced = lambda do |first, last|
+      commands = []
+      (first..last).each do |id|
+        text = block.call(id)
+        next if text.empty? || text.start_with?("[")
+        case text
+        when /\A(?:Cô Elf tóc tím|Erufu)[\s\u00A0]*:[\s\u00A0]*(.*)/i
+          commands.concat(erufu.call(Regexp.last_match(1)))
+        when /\A(?:Cô gái tóc nâu|Traveller)[\s\u00A0]*:[\s\u00A0]*(.*)/i
+          commands.concat(traveller.call(Regexp.last_match(1)))
+        when /\AHải Quỳ[\s\u00A0]*:[\s\u00A0]*(.*)/i
+          commands.concat(hq.call(Regexp.last_match(1)))
+        when /\A(?:Bà chủ|Chủ tiệm)[\s\u00A0]*:[\s\u00A0]*(.*)/i
+          commands.concat(narr.call("Chủ tiệm: #{Regexp.last_match(1)}"))
+        else
+          commands.concat(narr.call(text))
+        end
+      end
+      commands
+    end
+    fixed_chat = lambda do |branch|
+      lines = [
+        [:narr, "[Điện thoại — Wanderer Office]"],
+        [:hq, "Mọi người ơi, tui đã quyết định được giáng sinh này sẽ tặng quà cho ai rồi."],
+        ["Shylvie", "Ai thế? Là tôi hả?!"], ["Hakase", "Ai vậy?"], ["Kohi", "Ai rứa?"]
+      ]
+      if branch == 3
+        lines += [[:hq, "Là Hakase đó!"], ["Hakase", "Yatta!! Vui quá!! Hóng quà à nghen!!"],
+          ["Leo", "Bà chắc sẽ tặng Hakase chưa?"], [:hq, "Chắc chắn rồi!! Tớ đi đây, gặp lại mấy cậu sau!!"]]
+      elsif branch == 1
+        lines += [[:hq, "Là Kohi!!"], ["Shylvie", "Ui! Hóng quá!"], ["Leo", "Bà chắc sẽ tặng Kohi chưa?"],
+          [:hq, "Như đinh đóng cột! Mọi người tiếp tục vòng tặng nhé! Tớ sủi đây, hihi!."]]
+      else
+        lines += [[:hq, "Là Shylvie"], ["Shylvie", "Ôi vinh dự thế!!"], [:hq, "Vậy là không muốn được tặng hả?"],
+          ["Shylvie", "Ừ đúng rồi đó~ Không muốn được tặng đó"], [:hq, "Thì thôi~"],
+          ["Leo", "Bà chắc sẽ tặng Shylvie chưa?"], [:hq, "Chắc chắn rồi. Mọi người tiếp tục vòng tặng nhé. Tớ đi đây."]]
+      end
+      dialogue.call(lines)
+    end
+    finish = lambda do |map_id, marker|
+      [event_command(122, 0, [stage_var, stage_var, 0, 0, 3]),
+       event_command(355, 0, ["map_effects.set_wave(0,180,360,12); map_effects.set_pixelize(100,12); map_effects.set_hue(0,12)"]),
+       event_command(355, 0, ["$game_map.shadows.set_opacity(255,28) # #{marker}"]), event_command(230, 0, [28]),
+       event_command(355, 0, ["ms_pro_cam_ignore_player(false); ms_pro_cam_focus_on(-1); map_effects.set_zoom(100,18,false)"]),
+       event_command(201, 0, [0, 60, 7, 5, 2, 2])]
+    end
+
+    # The earlier branch repair landed the player on top of the authored
+    # Magic Shop owner at (006,008). Enter one tile below so the owner remains
+    # interactable and the player starts in the walkable area.
+    map56=load_data("Data/Map056.rvdata2")
+    transfer57=map56.instance_variable_get(:@events).fetch(1).instance_variable_get(:@pages).first.instance_variable_get(:@list).find do |command|
+      command_code(command)==201&&command_parameters(command)[1]==57
+    end
+    raise "Map056 magic-shop transfer missing" unless transfer57
+    transfer57.instance_variable_set(:@parameters,[0,57,6,9,8,2])
+    save_data("Data/Map056.rvdata2",map56)
+
+    room_template = load_data("Data/Map049.rvdata2").instance_variable_get(:@events).fetch(1)
+    set_graphic = lambda do |page, name, direction = 2, pattern = 1|
+      graphic = page.instance_variable_get(:@graphic)
+      graphic.instance_variable_set(:@character_name, name)
+      graphic.instance_variable_set(:@character_index, 0)
+      graphic.instance_variable_set(:@direction, direction)
+      graphic.instance_variable_set(:@pattern, pattern)
+      page
+    end
+    make_event = lambda do |template, id, name, x, y, commands, pages = nil, priority = 1|
+      event_pages = pages || [page_from_template(template, commands, trigger: 0, priority: priority,
+        variable_id: stage_var, variable_value: 2)]
+      event_from_pages(template, id, name, x, y, event_pages)
+    end
+    install_walkable_floor = lambda do |map, x_range, y_range|
+      width=map.instance_variable_get(:@width);height=map.instance_variable_get(:@height)
+      data=blank_table(width,height,4)
+      height.times{|y|width.times{|x|table_set(data,x,y,2,251)}}
+      y_range.each{|y|x_range.each{|x|table_set(data,x,y,2,250)}}
+      map.instance_variable_set(:@data,data)
+      map.instance_variable_set(:@tileset_id,5)
+    end
+
+    # Magic shop: authored arrival first, then player control. Buying the
+    # cloak is exclusively attached to the documented owner at (006,008).
+    map57 = load_data("Data/Map057.rvdata2")
+    install_walkable_floor.call(map57,4..16,8..16)
+    intro57 = [
+      event_command(355, 0, ["$game_variables[55]=3; $game_variables[80]=0; $game_variables[81]=0; $game_player.transparent=false; $game_player.instance_variable_set(:@through,false); $game_player.instance_variable_set(:@move_speed,4)"]),
+      event_command(355, 0, ["layer(57,0,['Magic_Store_Top',0,0,255,200,0,0,0]); refresh_layers"]),
+      event_command(355, 0, ["$game_switches[17]=false; $game_switches[18]=false; map_effects.clear; map_effects.active=false"]),
+      event_command(355, 0, ["$game_map.shadows.set_color(0,0,0); $game_map.shadows.show; $game_map.shadows.set_opacity(255)"]),
+      event_command(355, 0, ["$game_map.shadows.set_opacity(70,28) # WCF_LEO_MAGIC_REVEAL"]), event_command(230, 0, [28])
+    ]
+    [1667, 1669, 1670, 1671, 1672].each { |id| intro57.concat(narr.call(block.call(id))) }
+    intro57.concat([event_command(122, 0, [stage_var, stage_var, 0, 0, 2]),
+      event_command(355, 0, ["ms_pro_cam_ignore_player(false); ms_pro_cam_focus_on(-1) # WCF_LEO_MAGIC_FREE_ROAM"] )])
+    intro_pages57 = [page_from_template(room_template, intro57, trigger: 3, priority: 0,
+      switch_id: active_sw, variable_id: stage_var, variable_value: 1),
+      page_from_template(room_template, [], trigger: 0, priority: 0, variable_id: stage_var, variable_value: 2)]
+    events57 = {1 => event_from_pages(room_template, 1, "SCN-LEO-MAGIC-INTRO-THEN-FREE-ROAM", 0, 0, intro_pages57)}
+    next57 = 2
+    add57 = lambda do |name, x, y, commands, pages = nil, priority = 1|
+      events57[next57] = make_event.call(room_template, next57, name, x, y, commands, pages, priority); next57 += 1
+    end
+
+    purchase57 = []
+    purchase57.concat(narr.call(block.call(1673)))
+    purchase57.concat(hq.call("Chủ tiệm có món nào liên quan đến phép thuật tàng hình không?"))
+    purchase57.concat(narr.call("Chủ tiệm: Phép thuật tàng hình sao…? Ồ! Thật hiếm có làm sao! Tôi có món này vô cùng phù hợp cho em bé nhà cô luôn!"))
+    purchase57.concat(hq.call("Hả? Đồ cho em bé?"))
+    purchase57.concat(narr.call("Chủ tiệm: Vì phép thuật tàng hình là phép thuật dễ nhất, cũng là phép thuật đầu tiên mà các em bé thực hiện được! Hồi xưa, để cho các em bé tập làm quen với việc tàng hình, chúng tôi có sản phẩm này đây!"))
+    purchase57.concat(narr.call(block.call(1678)))
+    purchase57.concat(narr.call("Chủ tiệm: Áo choàng tàng hình! Chiếc áo choàng này cũng là chiếc áo choàng cuối cùng của cửa tiệm chúng tôi rồi!"))
+    purchase57.concat(hq.call("Vì sao vậy?"))
+    purchase57.concat(narr.call("Chủ tiệm: Vì nguy hiểm đó! Lần cuối cùng chiếc áo choàng này được bày bán chắc cũng phải hơn 100 năm trước rồi!"))
+    (1682..1683).each { |id| purchase57.concat(narr.call(block.call(id))) }
+    purchase57.concat(hq.call(block.call(1684)))
+    purchase57.concat(narr.call(block.call(1685)))
+    purchase57.concat(fixed_chat.call(3))
+    purchase57.concat(narr.call("Thế là xong!!"))
+    purchase57.concat(narr.call("Chủ tiệm nể tình tôi là bạn của Leo nên đã giảm giá chiếc áo choàng tàng hình. Cơ mà dù có giảm giá, với số tiền còn lại tôi cũng không thể mua chiếc bát họ thất lạc của tôi. Tạm biệt mày, bát họ, tao sẽ nhớ mày lắm….!"))
+    purchase57.concat(picture.call(43, narr.call("Chủ tiệm gói chiếc áo choàng cẩn thận rồi đưa nó cho tôi.")))
+    purchase57.concat(aira.call("Ngươi tính tặng cho tên ma vương đáng gờm đó à?"))
+    purchase57.concat(hq.call("Ừ đúng rồi, sao thế?"))
+    purchase57.concat(aira.call("Ahahaha, không có gì đâu. Thay vì tặng hắn một quyển sách ma thuật thì ngươi lại tặng hắn món này, hay à nha!"))
+    purchase57.concat(hq.call("Úp úp mở mở thế?"))
+    purchase57.concat(aira.call("Nói ra mất hay. Tự ngươi trải nghiệm mới hay chứ"))
+    purchase57.concat(narr.call("Tôi chả hiểu nửa bên kia của tôi nói gì hết. Thôi, mặc kệ cô ấy thôi."))
+    purchase57.concat(finish.call(57, "WCF_LEO_MAGIC_EXIT"))
+    owner_page = page_from_template(room_template, purchase57, trigger: 0, priority: 1,
+      variable_id: stage_var, variable_value: 2)
+    set_graphic.call(owner_page, "$VapeEden", 2, 0)
+    owner_page.instance_variable_set(:@direction_fix, true)
+    owner_intro_page=page_from_template(room_template,[],trigger:0,priority:1,switch_id:active_sw)
+    set_graphic.call(owner_intro_page,"$VapeEden",2,0);owner_intro_page.instance_variable_set(:@direction_fix,true)
+    add57.call("BUY-CLOAK-OWNER-DOCX-006-008", 6, 8, [], [owner_intro_page,owner_page])
+
+    simple57 = {
+      [5,10]=>"Có hơi lạnh phả ra từ quả cầu phép thuật này. Nếu là Shylvie, chắc chắn cô ấy sẽ đem nó làm đá lạnh vĩnh cửu.",
+      [5,9]=>"Xúc xắc đa mặt làm từ đá quý. Chà, muốn mua nó về để chơi DnD cùng mọi người ghê.",
+      [7,8]=>"Lọ thuốc kỳ lạ màu cam.", [8,8]=>"Lọ thuốc kỳ lạ màu xanh lá.",
+      [9,8]=>"Tấm thảm phép thuật có hoa văn lạ mắt.", [10,8]=>"Thùng đựng dụng cụ phép thuật.",
+      [11,9]=>"Ủa khoan, đây là “ Bát Họ “ mà mình làm mất đây mà?",
+      [7,9]=>"Hmm, bộ hài cốt này có vẻ là đồ thật?", [8,9]=>"Hmm, bộ hài cốt này có vẻ là đồ thật?", [9,9]=>"Hmm, bộ hài cốt này có vẻ là đồ thật?",
+      [6,15]=>"Hmm, bộ hài cốt này có vẻ là đồ giả?", [7,15]=>"Hmm, bộ hài cốt này có vẻ là đồ giả?",
+      [8,14]=>"Ồ, bộ giáp này làm mình nhớ đến Shovel Knight.", [9,14]=>"Chiếc váy Lolita nhiều lớp đính nhiều đá quý.",
+      [10,14]=>"Trang phục pháp sư thường thấy.", [11,14]=>"Áo choàng pháp sư có cài một viên đá quý màu tím ở giữa ngực. Hakase mà mặc nó thì sẽ hợp lắm đây.",
+      [13,11]=>"Một cái vại be bé đựng nhiều loại đũa phép.", [14,10]=>"Quả địa cầu này có 6 đại dương và 7 lục địa.",
+      [14,9]=>"Sao cái gậy phép thuật kia nhìn na ná gậy của Nanoha thế nhỉ? Nhìn mà muốn mua ghê…",
+      [15,9]=>"Trong đây có gậy phép thuật hai đầu có thể tách ra làm hai gậy phép thuật nhỏ. Nó làm mình liên tưởng đến Suit Precure.",
+      [16,9]=>"Hai chiếc gậy phép thuật này trông khá bình thường."
+    }
+    simple57.each { |(x,y), text| add57.call("INTERACT-DOCX-#{x}-#{y}", x, y, narr.call(text)) }
+    directional_58 = [event_command(111,0,[12,"$game_player.direction == 4"])] +
+      indent_commands.call(narr.call("Cuộn giấy cổ có mùi thơm thơm của bưởi."),1) + [event_command(411,0,[])] +
+      indent_commands.call(narr.call("Xấp vải này có mùi hoa hồi."),1) + [event_command(412,0,[])]
+    add57.call("INTERACT-DOCX-005-008-DIRECTIONAL",5,8,directional_58)
+    directional_118 = [event_command(111,0,[12,"$game_player.direction == 8"])] +
+      indent_commands.call(narr.call("Hai cuộn vải này có mùi gỗ sồi."),1) + [event_command(411,0,[])] +
+      indent_commands.call(narr.call("Một cái chum."),1) + [event_command(412,0,[])]
+    add57.call("INTERACT-DOCX-011-008-DIRECTIONAL",11,8,directional_118)
+
+    drink = narr.call("Một cái vại chứa chất lỏng màu vàng cam đang sôi ùng ục. Uống nó chứ?")
+    drink << event_command(102,0,[["Uống","Không uống"],1])
+    drink << event_command(402,0,[0,"Uống"])
+    drink << event_command(355,1,["map_effects.active=true; map_effects.set_wave(12,96,720,20); map_effects.set_pixelize(260,20); map_effects.set_hue(70,20) # WCF_MAGIC_VAT_GLITCH"])
+    drink << event_command(402,0,[1,"Không uống"]); drink << event_command(404,0,[])
+    [[15,15],[16,14],[15,13]].each { |x,y| add57.call("INTERACT-DOCX-VAT-#{x}-#{y}",x,y,drink) }
+
+    crow_rounds = [
+      [["Con Quạ","Ka, mày nhìn cái gì? Chọc cho mù mắt giờ!"],[:hq,"Gì mà hung dữ vậy?!"],["Con Quạ","Ka, cay hả, cay hả?"]],
+      [["Con Quạ","Ka, mẹo mày bé! Mẹo mày bé!"],[:hq,"Con quạ này nó bị làm sao á ta…?"]],
+      [["Con Quạ","Ka, ai sợ thì đi về!"],[:hq,"Con quạ này biết đi theo xu hướng hả!"]],
+      [[:hq,"Mày mà mở mồm nói thêm câu nữa đi, xem tao có vặt lông mày đem nướng không!"],["Con Quạ","Ka!! Đã ai làm gì đâu? Đã chạm vào đâu?"]],
+      [[:hq,"Chủ tiệm, con quạ này…"],["Chủ Tiệm","À! Đây là Con Quạ Blueprint! Một ma vật cấp cao mà tôi được ngài Leo tặng nuôi. Nó ngoan lắm!"],
+       [:hq,"Haha…Nó “ ngoan “ ghê! Từ nãy đến giờ Blueprint toàn “ khen “ tôi không đó!"],["Chủ Tiệm","Ồ, cô nghe hiểu được tiếng của Blueprint sao!"],
+       [:hq,"Hae?"],["Chủ Tiệm","Chuyện này nói ra hơi ngại. Mặc dù bản thân tôi là một người có khả năng giao tiếp với ma vật. duy chỉ Blueprint là ma vật duy nhất mà tới giờ tôi không hiểu nó nói gì."],
+       [:hq,"Ồ…"],["Chủ Tiệm","Nếu được…Nếu được thì cô có thể phiên dịch lời của Blueprint cho tôi được không?"],[:hq,"Được chứ!"],
+       ["Chủ Tiệm","Blueprint! Mày thích ăn thịt Hổ Long hay là ăn thịt Báo Dơi hơn?"],["Con Quạ","Ka! Thịt Hổ! Thịt Hổ!"],
+       [:hq,"Nó thích ăn thịt Báo Dơi hơn."],["Con Qua","Ka! Ka! Im lặng đi gopi!"],[:hq,"Nó bảo là thịt Báo Dơi là ngon nhất. Nhưng vị thịt gần đây hơi nhạt."],
+       ["Chủ Tiệm","Ồ ồ! Hóa ra là như vậy! Cảm ơn cô rất nhiều!"],["Con Quạ","Ka…Ka…."]]
+    ]
+    crow = []
+    crow_rounds.each_with_index do |round,index|
+      crow << event_command(111,0,[1,crow_var,0,index,0])
+      crow.concat(indent_commands.call(dialogue.call(round),1))
+      crow << event_command(122,1,[crow_var,crow_var,1,0,1])
+      crow << event_command(412,0,[])
+    end
+    add57.call("INTERACT-DOCX-BLUEPRINT-012-011",12,11,crow)
+
+    skull_intro = dialogue.call([
+      ["Hộp sọ","Ta không phải cái hộp sọ có sừng!"],[:hq,"Ụ á! Giật cả mình!"],
+      ["Hộp sọ","Ta đây là báu vật ngàn năm!"],["Hộp so","Ngươi nên cảm thấy may mắn đi! Không phải ai ta cũng nói chuyện đâu!"],
+      ["Chủ tiệm","Có chuyện gì vậy?"],[:hq,"Cái…Báu vật này biết nói!"],
+      ["Chủ tiệm","Ồ, có khi cô nghe nhầm tiếng của bé quạ nhà tôi đấy!"],["Hộp sọ","Đấy, thấy chưa."],
+      [:hq,"Rõ là không ai hiểu ông nói gì thì có!"],["Hộp sọ","Hahaha!! Giới thiệu lại, ta là báu vật ngàn năm giúp ngươi tìm được tất cả thông tin mà ngươi muốn."],
+      [:hq,"Ồ, hóa ra ông là “ Thư Viện Ngàn Năm “?"],["Hộp sọ","Đồ ngu. Thư viện có giúp ngươi biết trước tương lai không?"],
+      [:hq,"Uầy! Xịn thế!"],["Hộp sọ","Vậy ngươi muốn biết gì?"]])
+    skull = skull_intro + [event_command(102,0,[["Tương lai của tôi","Quá khứ của tôi","Quà giáng sinh của tôi"],0])]
+
+    futures = [
+      [["Hộp sọ","Tương lai của ngươi là một tờ giấy trắng."],[:hq,"Hả…? Tờ giấy trắng?"],[:hq,"Đừng nói là tôi phải viết bản tường trình nữa nhé…!!"],["Hộp sọ","Đúng rồi đấy."],[:hq,"Ôi thôi nào!!!"]],
+      [["Hộp sọ","Tiệc giáng sinh của ngươi sẽ không được an lành."],[:hq,"Hả gì? Sao lại không an lành?"],["Hộp sọ","Ngươi sẽ phải ra chiến trường."],[:hq,"…"],[:hq,"Tôi hiểu rồi. Cảm ơn ông."]],
+      [["Hộp sọ","Ngươi trở thành tai họa hủy diệt và đánh mất chính mình. Ánh mắt vàng kim của ngươi nhìn về phía chiếc cọc treo xác đồng đội. Đôi tay của ngươi sẽ quét sạch tất cả."],[:hq,"….Tôi bị mất kiểm soát à?"],["Hộp sọ","Ngươi bị tước quyền kiểm soát."],[:hq,"Tương lai xa hay gần đấy?"],["Hộp sọ","Gần."],[:hq,"……"],[:hq,"Chà, thôi kệ, ít nhất được ăn nốt cái giáng sinh này."]],
+      [["Hộp sọ","Ta thấy màu sắc…hai màu sắc…sẽ chọn rời đi."],[:hq,"Hả, cái gì? Màu sắc gì cơ?"],["Hộp sọ","Tím…Cam…Hồng…Đỏ."],[:hq,"Là hai màu dữ chưa?"]]
+    ]
+    skull << event_command(402,0,[0,"Tương lai của tôi"])
+    skull << event_command(355,1,["$game_variables[81]=rand(4)+1 # WCF_MAGIC_SKULL_FUTURE"])
+    futures.each_with_index do |lines,index|
+      skull << event_command(111,1,[1,skull_var,0,index+1,0])
+      skull.concat(indent_commands.call(dialogue.call(lines),2));skull << event_command(412,1,[])
+    end
+
+    secret_rewrite = [
+      [:hq,"Ồ, cái hộp sọ xấu xí này biết được bí mật động trời đó sao? Hư quá, nhỉ?"],["Hộp sọ","Cô là nhân cách thứ hai, nhỉ?"],
+      [:hq,"Giỏi quá ta, đúng là “ Thư viện ngàn năm “!"],[:hq,"Nhưng dặn nè, những chuyện xấu đã qua thì mình nên giấu kín."],
+      [:hq,"Ngươi không nên bép xép nhiều quá đâu, mất vui."],[:hq,"Vì ngoài chúng ta ra còn có một đôi mắt đang nhìn chằm chằm nữa kìa."],
+      [:narr,"* quay lại nhìn vào người chơi *"],["Hộp sọ","Ồ, ta hiểu."],[:narr,"* Âm thanh rewind, Hải Quỳ quay về phía hộp sọ *"]]
+    pasts = [
+      [["Hộp sọ","Ngươi là một thứ tạp chủng lai tạo thất bại. Sức mạnh của ngươi sẽ trở thành cơn ác mộng đối với thế giới-"]] + secret_rewrite +
+        [["Hộp sọ","Bạn thuở nhỏ của ngươi là con gái của Thần Poseidon, người đã bị hộp Pandora cám dỗ và đã mở hộp khiến cho hai cõi lâm nguy bởi sự tấn công của Quái Vật Vực Sâu."],
+         ["Hộp sọ","Ngươi đã nhận hết trách nhiệm về bản thân mình, trở thành cánh tay trái đắc lực cho Poseidon để dẹp trừ hậu họa."],["Hộp sọ","Ngươi bị ngu à."],
+         [:hq,"Hả, nỡ nào chửi tôi thế?"],["Hộp sọ","Ngu là rõ, đồ ngu."],[:hq,"Ơ kìa! Ngu chỗ nào cơ chứ?"],["Hộp sọ","Đồ ngu! Đồ ăn hại!"],[:hq,"Ôi thôi nào!"]],
+      [["Hộp sọ","Trong hàng ngàn bản sao, ngươi là kẻ sống sót nhưng lại là bản sao thất bại, bất ổn định."],
+       ["Hộp sọ","Bù lại, nhờ tình thương của “ Dahria “, ngươi đã sở hữu điều độc nhất mà các bản sao còn lại không có. Ngươi-"]] +
+        secret_rewrite.map{|speaker,text|speaker==:hq && text.include?("nhìn chằm chằm") ? [speaker,"Vì ngoài chúng ta ra còn có một đôi mắt đang đọc từng chữ nữa kìa."] : [speaker,text]} +
+        [["Hộp sọ","Ngươi là người duy nhất cầm được cây đinh ba thánh thần của Poseidon."],["Hộp sọ","Vì thế, ngươi được Poseidon để tâm và ưu ái. Thậm chí còn được làm cánh tay trái đắc lực của Poseidon."],
+         ["Hộp sọ","Mỗi tội ngươi lại báo đời ổng. Ngươi hết phá nát công trình công cộng còn phá hủy gần hết các trang thiết bị sau mỗi chuyến công tác của ngươi."],
+         [:hq,"Aha…ha…T-Thì có trường hợp bất khả kháng mà…Biết sao giờ!"],["Hộp sọ","Đồ ngu. Đồ ăn hại."],[:hq,"Ơ kìa!!"]],
+      [["Hộp sọ","Trước khi trở thành “ Ma pháp thiếu nữ “, ngươi là “ Kẻ Thanh Trừng “."],
+       ["Hộp sọ","Là cánh tay trái đắc lực của Poseidon, đôi bàn tay của ngươi đã không ngần ngại nhuốm biết bao máu của kẻ phản bội, thậm chí còn tước đoạt cả danh phận của chúng."],
+       ["Hộp sọ","Trong số đó, có “ Hải Bình “. Ngươi đã sửa chữa sai lầm cho cậu ta."],[:hq,"Ối chà chà, cái hộp sọ đáng yêu này biết được bí mật động trời đó sao!!"],
+       ["Hộp sọ","Thoạt nhìn ngươi là một bé gái ngây thơ vô tội nhưng hóa ra ngươi lại vô số tội nhỉ."],[:hq,"Biết sao bây giờ. Khả năng ngụy trang của tôi không hoàn hảo nên chỉ còn cách tước đoạt thân phận thôi."],
+       ["Hộp sọ","Và sau khi hoàn thành nhiệm vụ, ngươi sẽ kết liễu thân phận ấy bằng một viên đạn. Ôi, càng xem mà càng thấy ngươi máu lạnh làm sao."],[:hq,"Bản thân tôi cũng là sinh vật máu lạnh rồi mà, haha."],
+       [:hq,"Với cả, nếu không ai đứng ra thanh trừng bè lũ phản bội ấy thì quốc gia lâm nguy mất. Tôi không ngại để đôi tay này nhuốm máu thêm đâu."],
+       ["Hộp sọ","Nói chuyện bình thường thôi, không cần phải đao to búa lớn thế đâu. Nghe rợn tóc gáy quá."],[:hq,"Ông có còn mảng tóc nào đâu…"]]
+    ]
+    skull << event_command(402,0,[1,"Quá khứ của tôi"])
+    skull << event_command(355,1,["$game_variables[81]=rand(3)+1 # WCF_MAGIC_SKULL_PAST"])
+    pasts.each_with_index do |lines,index|
+      skull << event_command(111,1,[1,skull_var,0,index+1,0]);skull.concat(indent_commands.call(dialogue.call(lines),2));skull << event_command(412,1,[])
+    end
+    skull << event_command(402,0,[2,"Quà giáng sinh của tôi"])
+    skull.concat(indent_commands.call(dialogue.call([
+      ["Hộp sọ","Ngươi thật sự hỏi về quà giáng sinh năm nay của ngươi à? Bộ ngươi không muốn bất ngờ sao?"],[:hq,"Ờ ha…! Chưa nghĩ đến!"],
+      ["Hộp sọ","Đồ ngu!"],["Hộp sọ","Thôi để ta ban phước cho ngươi biết. Món quà giáng sinh của ngươi là…"],[:hq,"Là…?"],
+      ["Hộp sọ","Là…."],["Hộp sọ","…z….z….z"],[:hq,"Má…."]]),1))
+    skull << event_command(404,0,[])
+    [[4,12],[5,11]].each{|x,y|add57.call("INTERACT-DOCX-SKULL-#{x}-#{y}",x,y,skull)}
+
+    map57.instance_variable_set(:@events, events57)
+    save_data("Data/Map057.rvdata2", map57)
+
+    # Café: exploration is authored independently of the purchase event.
+    map58 = load_data("Data/Map058.rvdata2")
+    install_walkable_floor.call(map58,2..19,5..16)
+    intro58 = [
+      event_command(355,0,["$game_variables[55]=1; $game_switches[80]=false; $game_switches[81]=false; $game_variables[82]=0; $game_player.transparent=false; $game_player.instance_variable_set(:@through,false); $game_player.instance_variable_set(:@move_speed,4)"]),
+      event_command(355,0,["layer(58,0,['Isekai_Caffe_Top',0,0,255,200,0,0,0]); refresh_layers"]),
+      event_command(355,0,["$game_switches[17]=false; $game_switches[18]=false; map_effects.clear; map_effects.active=false"]),
+      event_command(355,0,["$game_map.shadows.set_color(0,0,0); $game_map.shadows.show; $game_map.shadows.set_opacity(255)"]),
+      event_command(355,0,["$game_map.shadows.set_opacity(0,28) # WCF_LEO_CAFE_REVEAL"]),event_command(230,0,[28])]
+    [1687,1689,1690,1691,1692].each { |id| intro58.concat(narr.call(block.call(id))) }
+    intro58.concat([event_command(122,0,[stage_var,stage_var,0,0,2]),
+      event_command(355,0,["ms_pro_cam_ignore_player(false); ms_pro_cam_focus_on(-1) # WCF_LEO_CAFE_FREE_ROAM"])])
+    intro_pages58=[page_from_template(room_template,intro58,trigger:3,priority:0,switch_id:active_sw,variable_id:stage_var,variable_value:1),
+      page_from_template(room_template,[],trigger:0,priority:0,variable_id:stage_var,variable_value:2)]
+    events58={1=>event_from_pages(room_template,1,"SCN-LEO-CAFE-INTRO-THEN-FREE-ROAM",0,0,intro_pages58)}
+    next58=2
+    add58=lambda do |name,x,y,commands,pages=nil,priority=1|
+      events58[next58]=make_event.call(room_template,next58,name,x,y,commands,pages,priority);next58+=1
+    end
+    purchase58=[]
+    purchase58.concat(fixed_chat.call(1)); purchase58.concat(narr.call("Thế là xong!!"))
+    purchase58.concat(aira.call("Nè con nhãi kia, ta cũng muốn uống!")); purchase58.concat(hq.call("Rồi rồi! Tui sẽ mua thêm vài gói! Mua tặng cả nhà luôn!"))
+    purchase58.concat(aira.call("Phải thế chứ!")); purchase58.concat(hq.call("Tiếc là bọn mình không tặng được cho bà ấy cà phê Atlantis ha! Cà phê Atlantis ngon bỏ xừ luôn!"))
+    purchase58.concat(aira.call("Thôi, dù rằng bà ấy là Quỷ cà phê nhưng Cà phê Atlantis nặng đô lắm. Cho bà ấy uống lỡ gặp chuyện gì thì sao?"))
+    purchase58.concat(hq.call("Ừ ha")); purchase58.concat(picture.call(51,narr.call("Tôi dòm lên kệ trước mặt tôi, với tay lên lấy thêm vài túi cà phê thượng hạng mạ vàng.")))
+    purchase58.concat(finish.call(58,"WCF_LEO_CAFE_EXIT"))
+    add58.call("BUY-COFFEE-DOCX-013-009",13,9,purchase58)
+
+    simple58={
+      [14,5]=>"Hmm, chữ này có nghĩa là…linh hồn?",[15,5]=>"Chữ này…chữ này…tình thương yêu?",[16,5]=>"Trời, quá trời truyện tranh luôn nè!",
+      [18,7]=>"Ủa, chị gái này nhìn quen thế nhỉ? Nhìn giống cháu gái của bà lão chủ cửa tiệm sách cũ mà mình hay ghé hồi bé. Chắc người giống người thôi.",
+      [4,7]=>"Không thể ngờ là ở quán cà phê này lại có những cuốn truyện đã ngưng xuất bản của Samurai Cầu Vồng! Con bé Mây hay thật, thế mà lại tìm ra quán cà phê này!",
+      [8,7]=>"Bé lại đây, chị cho nghe mẹo này hay lắm.\nHải Quỳ: Dạ thôi ạ.",[9,7]=>"Bé lại đây, chị cho nghe mẹo này hay lắm.\nHải Quỳ: Dạ thôi ạ.",[8,9]=>"Bé lại đây, chị cho nghe mẹo này hay lắm.\nHải Quỳ: Dạ thôi ạ.",
+      [3,12]=>"???: Umm! Cái bánh Tiramesshua này ngon thiệt đó! Đáng lẽ Traveller nên gọi món này.\n???: Thôi, tôi không hảo ngọt. Tôi vẫn thích uống cà phê hơn.",
+      [4,15]=>"???: Cốc Cappucianalatta này uống ngon ghê. Đáng lẽ Erufu nên gọi cốc này.\n???: Thôi, tôi thích nước ép trái cây hơn. Cà phê uống ghê bỏ xừ.",
+      [14,13]=>"Không phải nhân viên, xin đừng vào!",[14,14]=>"Không phải nhân viên, xin đừng vào!",[14,15]=>"Không phải nhân viên, xin đừng vào!"
+    }
+    simple58.each do |(x,y),text|
+      commands=text.split("\n").flat_map{|line| line.start_with?("Hải Quỳ:") ? hq.call(line.sub(/\AHải Quỳ:\s*/,"")) : narr.call(line)}
+      add58.call("INTERACT-DOCX-#{x}-#{y}",x,y,commands)
+    end
+    pancake=narr.call("Úi chà, pancake to dữ!")+[event_command(121,0,[pancake_sw,pancake_sw,0])]
+    [[16,7],[17,7]].each{|x,y|add58.call("INTERACT-DOCX-PANCAKE-#{x}-#{y}",x,y,pancake)}
+
+    meo=[]
+    meo.concat(dialogue.call([[:hq,"Hawo Mèo!!"],["Mèo Trắng","Ồ, hello Hải Quỳ! Chà, nhìn phong cách quá ta! Nhuộm tóc vàng luôn!"],[:hq,"Hehe, cảm ơn!"],
+      ["Mèo Trắng","Bà uống gì hông? Cứ gọi đi, tui mời!! Hiếm lắm mới gặp nhau bất ngờ thế này mà!"],[:hq,"Oke luôn!!"]]))
+    meo << event_command(355,0,["$game_map.shadows.set_opacity(255,18)"]);meo << event_command(230,0,[18]);meo << event_command(355,0,["del_layer(58,0); refresh_layers"])
+    meo << event_command(111,0,[0,pancake_sw,0]);meo << event_command(284,1,["Pancake_Coffee",false,false,0,0]);meo << event_command(411,0,[]);meo << event_command(284,1,["Café_MeoTrang",false,false,0,0]);meo << event_command(412,0,[])
+    meo << event_command(355,0,["$game_map.shadows.set_opacity(0,18)"]);meo << event_command(230,0,[18])
+    meo.concat(dialogue.call([[:narr,"Mều Trắng và mình ngồi trò chuyện một hồi lâu."],["Mèo Trắng","Ồ, hóa ra là vậy! Bảo sao khó liên lạc với bà."],
+      [:hq,"Haizz, nhắc tới là lại rầu à!"],["Mèo Trắng","À Quỳ ơi, cậu có muốn nghe chuyện cười không"],[:hq,"Nó phải thực sự buồn cười đó Mèo…!!"],
+      ["Mèo Trắng","Yên tâm, cái này có hài mà!"],["Mèo Trắng","Đố Quỳ một quán bar nhưng chỉ bán chuối được gọi là gì"],[:hq,"...Hả?"],
+      ["Mèo Trắng","Barnana"],[:hq,"Hahaha…HAHAHAHAHA!! BAR-NANA!"]]))
+    meo << event_command(355,0,["$game_map.shadows.set_opacity(255,18)"]);meo << event_command(230,0,[18]);meo << event_command(284,0,["Isekai_Caffe_Base",false,false,0,0]);meo << event_command(355,0,["layer(58,0,['Isekai_Caffe_Top',0,0,255,200,0,0,0]); refresh_layers"]);meo << event_command(355,0,["$game_map.shadows.set_opacity(0,18)"]);meo << event_command(230,0,[18])
+    meo.concat(dialogue.call([[:hq,"Tui xin phép đi trước do có việc. Bye bye Mèo nha!"],["Mèo Trắng","Hehe, bye bye bà nha!"]]))
+    [[7,12],[6,13]].each{|x,y|add58.call("INTERACT-DOCX-MEO-#{x}-#{y}",x,y,meo)}
+
+    karin=narr.call("Ồ, Karin nè! Không ngờ gặp Karin ở đây. Không biết dạo này cuộc sống của Karin sao rồi nhỉ?")+
+      dialogue.call([["Karin","Hi! Đằng ấy có chuyện gì muốn nói với tui hả?"],[:hq,"Không!! Xin lỗi vì đã nhận nhầm người!"],["Karin","Haha, không sao không sao!"],
+      ["Karin","Cơ mà, nhìn đằng ấy quen lắm. Nhất là cái vòng tay la bàn này… Đằng ấy là thành viên của Wanderer hả?"],[:hq,"À…Ừm ừm! Đúng rồi…! Sao cậu biết…!"],
+      ["Karin","Chà, xem ra nhóm vẫn hoạt động tốt. Mình từng là thành viên của Wanderer mà. Xin lỗi vì làm phiền! Đằng ấy cứ tiếp tục việc của mình đi!"],
+      [:hq,"V-Vậy mình đi đây…!"],["Karin","Bye bye!"]])+[event_command(121,0,[karin_sw,karin_sw,0])]
+    karin_pages=[page_from_template(room_template,karin,trigger:0,priority:1,variable_id:stage_var,variable_value:2),
+      page_from_template(room_template,[],trigger:0,priority:1,switch_id:karin_sw,variable_id:stage_var,variable_value:2)]
+    add58.call("INTERACT-DOCX-KARIN-007-007",7,7,[],karin_pages)
+    karin_memory=[]
+    karin_memory << event_command(111,0,[0,karin_sw,0])
+    memories=["Thành viên mới của Wanderer nhìn rụt rè ghê. Nhưng mà cô ấy buộc tóc hai bím. Chắc chắn sẽ được Hải Quỳ ưu ái lắm đây.",
+      "Chà, mình nhớ những chuyến “ phiêu lưu “ hồi ấy.","Không biết Kohi và Hakase bây giờ ra sao rồi?"]
+    memories.each_with_index do |text,index|
+      karin_memory << event_command(111,1,[1,karin_var,0,index,0]);karin_memory.concat(indent_commands.call(narr.call(text),2));karin_memory << event_command(122,2,[karin_var,karin_var,1,0,1]) if index<2;karin_memory << event_command(412,1,[])
+    end
+    karin_memory << event_command(411,0,[]);karin_memory.concat(indent_commands.call(narr.call("Chà, vẫn hương vị xưa cũ."),1));karin_memory << event_command(412,0,[])
+    add58.call("INTERACT-DOCX-KARIN-MEMORY-007-009",7,9,karin_memory)
+
+    cafe_groups={
+      [8,11]=>[["Vân Phượng","Mây à, đây là cái bánh kếp cuốn kem trái cây thứ ba em ăn rồi đấy. Không để bụng ăn phở bò vò viên sao?"],["Huyền Mây","Bụng em còn chỗ cho phở mà anh, đừng có lo! Nomnom, kem trái cây tươi mát, ngọt ngào quá đi mất!"]],
+      [9,12]=>[["Huyền Mây","Giá như mà tụi mình rủ được bà Hoàn Mỹ đi chung ha! Em nghĩ là bả cũng sẽ thích món bánh kếp cuốn kem trái cây này thôi!"],["Vân Phượng","Urg…Nhắc tới cái tên đó anh lại sởn gai ốc, tay với chân cứ run lên, mặt với mũi cảm giác nóng ran!"],["Huyền Mây","Haha, anh ám ảnh đòn roi của Hoàn Mỹ tới vậy luôn á hả?"],["Vân Phượng","Em cười cái gì! Em may mắn lắm đó, biết không! Anh không dám tưởng tượng đến cảnh ba đứa mình ngồi chung đâu! Cơ mà, không biết cuộc sống bây giờ của Hoàn Mỹ ra sao rồi."],["Huyền Mây","Chắc là đang làm mưa làm gió bên bển rồi. Dù sao bả là “ hoàn mỹ “ mà."]],
+      [10,12]=>[["Vân Phượng","Rốt cuộc em rủ Văn Sắc kiểu gì mà cậu ta ngay lập tức chạy xe đến đón anh vậy? Đã thế em lại còn ngồi sẵn trong xe cậu ta nữa chứ!"],["Huyền Mây","Em nói là:” Anh Sắc, chúng ta cần giải cứu thế giới! “ thế là nhoằng một cái ảnh gọi cho anh Sam bàn giao công việc luôn. Anh Sam hét quá trời quá đất."],["Vân Phượng","Tội ông Sam ghê…Thế hóa ra “ giải cứu thế giới “ mà em nói là đọc mấy cuốn truyện tranh Samurai Cầu Vồng đã ngưng xuất bản kia ấy hả?"],["Huyền Mây","Ừm ừm, đúng rồi!"],["Vân Phượng","Thiệt tình…!"],["Huyền Mây","Sao vậy anh?"],["Vân Phượng","À không có gì, anh nhớ lại chuyện cũ thôi ấy mà…!"],["Huyền Mây","Anh giấu cái gì đó! Em thấy hết rồi nha! Quá trời khóa tâm thức luôn!!"],["Vân Phượng","Ê nha, ai cho dùng magatama!"]],
+      [9,10]=>[["Huyền Mây","Quán cà phê này không gian thoải mái ghê! Em ước gì văn phòng mình cũng thư thái như thế này! Hay là mình cải tạo lại văn phòng đi anh!"],["Vân Phượng","Thôi cô nương, tiền đâu mà cải tạo!"],["Huyền Mây","Hmm, hay là tụi mình quay quảng cáo đi! Em có ý tưởng này hay lắm! Tụi mình sẽ thay đổi mô típ văn phòng, anh sẽ là Samurai Thép, còn em là Hường Công Chúa! Kết hợp lại, ta có Samurai Thép đi phá án! Sao nào, thấy em tài tình chưa!"],["Vân Phượng","Em tày đình thì có! Giờ chỉ có nước em nhịn ăn mới đủ tiền cải tạo văn phòng."],["Huyền Mây","Thôi mà anhhhhhhhhh"]],
+      [10,10]=>[["Vân Phượng","Lâu rồi không thấy bé Ngọc ghé văn phòng."],["Huyền Mây","Òm..nòm..Bé Bơ đang tham gia khóa tu á anh. Con bé chăm chỉ luyện tập, không nghỉ một ngày nào hết."],["Vân Phượng","Anh tưởng chăm chỉ như thế là tốt mà, sao giọng em nghe buồn vậy?"],["Huyền Mây","Ừm, nói sao ta…? Cách bé Bơ luyện tập có phần khắc khổ so với tuổi của bé. Em muốn bé Bơ được tự do vui chơi, nghịch ngợm hơn. Mấy lần em cố dụ ngọt mà Bơ nhất quyết cự tuyệt em, buồn chết đi được!"],["Vân Phượng","Hay là xíu về tụi mình mua bánh ngọt cho con bé? Có thực mới vực được đạo chứ."],["Huyền Mây","Ồ được đó anh!! Chúng ta sẽ càn quét hết menu của quán luôn!"],["Vân Phượng","VÌ BÉ BƠ!"],["Huyền Mây","VÌ BÉ BƠ!"],["Văn Sắc","Vì bé Bơ!"],["Huyền Mây + Vân Phượng","HUH?!"]]
+    }
+    cafe_groups.each{|(x,y),lines|add58.call("INTERACT-DOCX-GROUP-#{x}-#{y}",x,y,dialogue.call(lines))}
+    books=[event_command(111,0,[12,"$game_player.direction == 2"])] + indent_commands.call(narr.call("Anh Sắc thực sự đọc Siêu Nhân Dũng Mãnh: Samurai Cầu Vồng!"),1)+[event_command(411,0,[])]+indent_commands.call(narr.call("< Gloaming > Câu chuyện về một chàng trai đã phải lòng với một cương thi, kẻ tỏa ra mùi hương gỗ sồi khi phơi mình dưới ánh mặt trời."),1)+[event_command(412,0,[])]
+    add58.call("INTERACT-DOCX-BOOKS-004-005",4,5,books)
+    add58.call("INTERACT-DOCX-ANIMORPHS-002-005",2,5,narr.call("< Animorphs > Câu chuyện về nhóm thiếu niên có khả năng biến hình thành bất kỳ loài động vật nào họ chạm vào và sử dụng khả năng ấy để chống lại cuộc xâm lược của người ngoài hành tinh."))
+
+    map58.instance_variable_set(:@events,events58)
+    save_data("Data/Map058.rvdata2",map58)
+
+    # The weapon branch has no companion interaction-map document, so it
+    # remains a cutscene. Rebuild only its text from the authored blocks and
+    # remove the previously added summary line.
+    map59=load_data("Data/Map059.rvdata2")
+    event59=map59.instance_variable_get(:@events).fetch(1)
+    page59=event59.instance_variable_get(:@pages).first
+    setup59=(page59.instance_variable_get(:@list) || []).take_while{|command| command_code(command)!=101 && command_code(command)!=0}
+    weapon=setup59
+    weapon.concat(sourced.call(1695,1744))
+    weapon.concat(fixed_chat.call(2)); weapon.concat(narr.call("Đọc tin nhắn xong mắt tôi nổ đom đóm. Cái tên Shylvie chết tiệt khó ưa này!"))
+    weapon.concat(aira.call("Bực mình vậy mà còn chuẩn bị quà tặng nó à?"));weapon.concat(hq.call("Lời đã nói ra sao mà rút được"))
+    weapon.concat(aira.call("Rồi ngươi tính sao với cục đá chùi đít này đây? Tính về đẽo nó đấy à?"));weapon.concat(hq.call("Chứ gì nữa."))
+    weapon.concat(narr.call("Tôi dòm cục đá đen tuyền to đùng trong tay. Vết nứt ngày một lan rộng hơn."));weapon.concat(finish.call(59,"WCF_LEO_WEAPON_EXIT"))
+    page59.instance_variable_set(:@list,weapon+[event_command(0,0,[])])
+    save_data("Data/Map059.rvdata2",map59)
+
+    # Map060 previously contained shortened paraphrases. Restore every
+    # branch-specific preparation line and the shared wake-up sequence.
+    map60=load_data("Data/Map060.rvdata2");page60=map60.instance_variable_get(:@events).fetch(1).instance_variable_get(:@pages).first
+    old60=page60.instance_variable_get(:@list) || []
+    branch_at=old60.index{|command|command_code(command)==111&&command_parameters(command)[0]==1&&command_parameters(command)[1]==branch_var}
+    raise "Map060 branch entry missing" unless branch_at
+    prep60=Marshal.load(Marshal.dump(old60[0...branch_at]))
+    prep_by_branch={
+      3=>[block.call(1760),block.call(1761),"Oáp….Sao buồn ngủ thế nhỉ.",
+        "Tôi dự tính là sẽ đi tuần tra rồi chợt nhớ ra là mình đang được nghỉ phép. Thế là tôi không do dự mà nhảy tọt lên giường và đắp chăn đi ngủ.",
+        "Ba ngày vừa rồi quả là mệt mỏi mà…Kỳ nghỉ phép này….thật…xứng….đáng……",
+        "Nhớ…đánh thức…bọn mình dậy…trước giáng sinh nha…nửa bên kia…"],
+      1=>[block.call(1762),block.call(1763),"Oáp….Sao buồn ngủ thế nhỉ.",
+        "Tôi dự tính là sẽ đi tuần tra rồi chợt nhớ ra là mình đang được nghỉ phép. Thế là tôi không do dự mà nhảy tọt lên giường và đắp chăn đi ngủ.",
+        "Ba ngày vừa rồi quả là mệt mỏi mà…Kỳ nghỉ phép này….thật…xứng….đáng……",
+        "Nhớ…đánh thức…bọn mình dậy…trước giáng sinh nha…nửa bên kia…"],
+      2=>[block.call(1764),block.call(1765),"Nửa bên kia của tôi ơi, còn thức không!","Gì vậy trời? Nửa đêm nửa hôm đánh thức người ta dậy làm gì?",
+        block.call(1766),"Shylvie sẽ thích thôi, lo lắng chi vậy trời. Giờ thì ngủ dùm cái đi!","Thiệt không?!","Phiền quá đừng hỏi nữa!",
+        "Aira không thân thiện tí nào hết!",block.call(1767),"Nhưng…","Không nhưng nhị gì hết! Đi ngủ!",
+        "Aira lấy xúc tu bịt mắt và miệng của tôi lại, cố ép tôi đi ngủ bằng vũ lực.",block.call(1768)]
+    }
+    [3,1,2].each do |branch|
+      prep60 << event_command(111,0,[1,branch_var,0,branch,0])
+      prep_by_branch.fetch(branch).each do |text|
+        target = branch==2 && ["Gì vậy trời? Nửa đêm nửa hôm đánh thức người ta dậy làm gì?","Shylvie sẽ thích thôi, lo lắng chi vậy trời. Giờ thì ngủ dùm cái đi!","Phiền quá đừng hỏi nữa!",block.call(1767),"Không nhưng nhị gì hết! Đi ngủ!"].include?(text) ? aira : (branch==2 && ["Nửa bên kia của tôi ơi, còn thức không!",block.call(1766),"Thiệt không?!","Aira không thân thiện tí nào hết!",block.call(1768)].include?(text) ? hq : narr)
+        prep60.concat(indent_commands.call(target.call(text),1))
+      end
+      prep60 << event_command(412,0,[])
+    end
+    prep60.concat([event_command(355,0,["$game_map.shadows.set_opacity(255,24) # WCF_LEO_AUTHORED_SLEEP"]),event_command(230,0,[24]),
+      event_command(355,0,["$game_map.events[3].set_graphic('$HaiQuy_Sleep_Night',0)"]),event_command(230,0,[60]),
+      event_command(355,0,["$game_map.shadows.set_opacity(185,24) # WCF_LEO_AUTHORED_WAKE"]),event_command(230,0,[24])])
+    ["Tôi mở mắt dậy và quay sang nhìn chiếc đồng hồ điện tử treo trên tường.","Ồ, nay là giáng sinh rồi à…","Tôi đã ngủ một mạch đến ngày giáng sinh….Ngon thật đấy…."].each{|text|prep60.concat(narr.call(text))}
+    prep60.concat(picture.call(28,narr.call("Tôi…ngủ một mạch….đến…GIÁNG SINH?!")))
+    prep60.concat(narr.call("Chết rồi!! Vỡ kế hoạch rồi!! Nửa bên kia của tôi ơi!! SAO KHÔNG GỌI TÔI DẬY?! Còn vài tiếng nữa là đến tiệc giáng sinh trong văn phòng rồi!!"))
+    prep60.concat(narr.call("Giờ này thì làm sao mà kịp bắt xe đến văn phòng được?! Chìa khóa dịch chuyển đâu rồi…!! Nó nằm ở đâu vậy?!"))
+    prep60.concat(picture.call(29,narr.call("Mình còn chưa chuẩn bị trang phục nữa!! Nên mặc bộ nào đây!!")))
+    prep60.concat(narr.call("Không phải bộ này…."));prep60.concat(picture.call(30,narr.call("Cũng không phải bộ này nốt!!")));prep60.concat(picture.call(31,narr.call("Bộ này ổn này!!")))
+    prep60.concat([event_command(355,0,["$game_map.shadows.set_opacity(255,20) # WCF_LEO_AUTHORED_OUTFIT_BLACK"]),event_command(230,0,[20]),
+      event_command(355,0,["$game_map.events[3].set_graphic('!$HaiQuy_GiangSinh',0)"]),event_command(355,0,["$game_map.shadows.set_opacity(185,20)"]),event_command(230,0,[20])])
+    prep60.concat(narr.call("Ý chết! Suýt nữa là quên hộp quà!"))
+    prep60.concat([event_command(122,0,[stage_var,stage_var,0,0,3]),event_command(355,0,["$game_map.shadows.set_opacity(255,30) # WCF_LEO_SHOP_KUL_TO_PARTY"]),event_command(230,0,[30]),
+      event_command(355,0,["map_effects.set_zoom(100,16,false); ms_pro_cam_ignore_player(false); ms_pro_cam_focus_on(-1) # WCF_LEO_REVIEW_CAMERA_RESET"]),
+      event_command(201,0,[0,38,22,34,8,2]),event_command(0,0,[])])
+    page60.instance_variable_set(:@list,prep60);save_data("Data/Map060.rvdata2",map60)
+
+    # Build the remainder of the party directly from the merged source. The
+    # source itself controls branch boundaries; no summary dialogue is used.
+    source_lines=File.readlines("docs/kich ban/GAME_SCRIPT_MERGED_READABLE_V2.md",encoding:"UTF-8",chomp:true).map{|line|line.strip}
+    route_anchor=(0...source_lines.length).find{|index|source_lines[index]=="### Cảnh số 4.5.1"&&source_lines[index,30].any?{|line|line.include?("Cửa tiệm bán dụng cụ ma pháp")}}
+    raise "Merged Leo shop route anchor missing" unless route_anchor
+    find_after=lambda{|needle,start|index=(start...source_lines.length).find{|i|source_lines[i]==needle};raise "Merged section missing: #{needle}" unless index;index}
+    scene8=find_after.call("### CẢNH 8",route_anchor);end8=find_after.call("### Hết cảnh 8",scene8)
+    scene9=find_after.call("### CẢNH 9",end8);end9=find_after.call("### HẾT CẢNH 9",scene9)
+    scene10=find_after.call("### CẢNH 10",end9);end10=find_after.call("### HẾT CẢNH 10",scene10)
+    end11=find_after.call("### HẾT CẢNH 11",end10);scene12=find_after.call("### CẢNH 12",end11);end12=find_after.call("### HẾT CẢNH 12 – KẾT THÚC GAME",scene12)
+    clean_source=lambda do |lines|
+      lines.reject{|line|line.empty?||line.start_with?("###")||line.start_with?("**")||line.start_with?("[")||line=="Ctrl + Click"}
+        .map{|line|line.sub(/\A-\s*/,"")}
+    end
+    raw8=source_lines[(scene8+1)...end8];meal_at=raw8.index{|line|line.include?("Mời mọi người cùng ăn")};raise "Leo scene 8 meal marker missing" unless meal_at
+    meal8=clean_source.call(raw8[meal_at..-1])
+    raw9=source_lines[(scene9+1)...end9];hak9=raw9.index("Hakase");kohi9=raw9.index("Kohi");shy9=raw9.index("Shylvie")
+    raise "Leo scene 9 branches missing" unless hak9&&kohi9&&shy9
+    gifts={3=>clean_source.call(raw9[(hak9+1)...kohi9]),1=>clean_source.call(raw9[(kohi9+1)...shy9]),2=>clean_source.call(raw9[(shy9+1)..-1])}
+    common10=clean_source.call(source_lines[(scene10+1)...end10])
+    raw11=source_lines[(end10+1)...end11];hak11=raw11.index("Hakase");kohi11=raw11.index("Kohi");shy11=raw11.index("Shylvie")
+    raise "Leo scene 11 branches missing" unless hak11&&kohi11&&shy11
+    received={3=>clean_source.call(raw11[(hak11+1)...kohi11]),1=>clean_source.call(raw11[(kohi11+1)...shy11]),2=>clean_source.call(raw11[(shy11+1)..-1])}
+    common12=clean_source.call(source_lines[(scene12+1)...end12])
+    map38=load_data("Data/Map038.rvdata2");events38=map38.instance_variable_get(:@events)
+    intro_event38=events38.fetch(1)
+    leo_intro_page=intro_event38.instance_variable_get(:@pages).find do |page|
+      condition=page.instance_variable_get(:@condition)
+      condition.instance_variable_get(:@switch1_valid)&&condition.instance_variable_get(:@switch1_id)==active_sw
+    end
+    raise "Map038 Leo arrival page missing" unless leo_intro_page
+    old_intro38=leo_intro_page.instance_variable_get(:@list)||[]
+    intro_first_message=old_intro38.index{|command|command_code(command)==101}
+    intro_free_tail=old_intro38.index{|command|[355,655].include?(command_code(command))&&command_parameters(command)[0].to_s.include?("WCF_WANDERER_PARTY_BEFORE")}
+    raise "Map038 Leo arrival/free-roam frame missing" unless intro_first_message&&intro_free_tail
+    premeal8=clean_source.call(raw8[0...meal_at])
+    authored_intro=Marshal.load(Marshal.dump(old_intro38[0...intro_first_message]))
+    premeal8.each{|text|authored_intro.concat(narr.call(text))}
+    authored_intro.concat(Marshal.load(Marshal.dump(old_intro38[intro_free_tail..-1])))
+    leo_intro_page.instance_variable_set(:@list,authored_intro)
+
+    event121=events38.fetch(121);party_page=event121.instance_variable_get(:@pages).first
+    old_party=party_page.instance_variable_get(:@list)||[];first_message=old_party.index{|command|command_code(command)==101};state_at=old_party.index{|command|command_code(command)==121}
+    raise "Map038 Leo party frame missing" unless first_message&&state_at
+    party=Marshal.load(Marshal.dump(old_party[0...first_message]));meal8.each{|text|party.concat(narr.call(text))}
+    [3,1,2].each do |branch|
+      party << event_command(111,0,[1,branch_var,0,branch,0]);gifts.fetch(branch).each{|text|party.concat(indent_commands.call(narr.call(text),1))};party << event_command(412,0,[])
+    end
+    common10.each{|text|party.concat(narr.call(text))}
+    [3,1,2].each do |branch|
+      party << event_command(111,0,[1,branch_var,0,branch,0]);received.fetch(branch).each{|text|party.concat(indent_commands.call(narr.call(text),1))};party << event_command(412,0,[])
+    end
+    common12.each{|text|party.concat(narr.call(text))};party.concat(Marshal.load(Marshal.dump(old_party[state_at..-1])))
+    party_page.instance_variable_set(:@list,party);save_data("Data/Map038.rvdata2",map38)
+
+    system=load_data("Data/System.rvdata2")
+    switches=system.instance_variable_get(:@switches);variables=system.instance_variable_get(:@variables)
+    {pancake_sw=>"LEO_CAFE_PANCAKE_SEEN",karin_sw=>"LEO_CAFE_KARIN_MET"}.each{|id,name|raise "Switch #{id} occupied by #{switches[id]}" unless switches[id].to_s.empty?||switches[id]==name;switches[id]=name}
+    {crow_var=>"LEO_MAGIC_CROW_TALK",skull_var=>"LEO_MAGIC_SKULL_RANDOM",karin_var=>"LEO_CAFE_KARIN_MEMORY"}.each{|id,name|raise "Variable #{id} occupied by #{variables[id]}" unless variables[id].to_s.empty?||variables[id]==name;variables[id]=name}
+    save_data("Data/System.rvdata2",system)
+
+    errors=[]
+    [[57,[6,8],[12,11]], [58,[13,9],[7,12]]].each do |map_id,*coords|
+      map=load_data(format("Data/Map%03d.rvdata2",map_id));events=map.instance_variable_get(:@events).values.compact
+      coords.each{|x,y|errors << "Map#{map_id} missing #{x},#{y}" unless events.any?{|event|event.instance_variable_get(:@x)==x&&event.instance_variable_get(:@y)==y}}
+      intro=events.find{|event|event.instance_variable_get(:@id)==1};pages=intro.instance_variable_get(:@pages)
+      errors << "Map#{map_id} not free-roam staged" unless pages.length>=2 && pages.any?{|page|c=page.instance_variable_get(:@condition);c.instance_variable_get(:@variable_valid)&&c.instance_variable_get(:@variable_id)==stage_var&&c.instance_variable_get(:@variable_value)==2}
+    end
+    all_text=[57,58,59].flat_map do |map_id|
+      load_data(format("Data/Map%03d.rvdata2",map_id)).instance_variable_get(:@events).values.compact.flat_map{|event|event.instance_variable_get(:@pages).flat_map{|page|page.instance_variable_get(:@list).select{|command|command_code(command)==401}.map{|command|command_parameters(command)[0].to_s}}}
+    end.join(" ")
+    errors << "placeholder dialogue remains" if all_text.include?("PLACEHOLDER FACE")
+    errors << "invented weapon summary remains" if all_text.include?("Tôi mua được viên đá đen to đùng")
+    errors << "Magic interactions incomplete" unless load_data("Data/Map057.rvdata2").instance_variable_get(:@events).length==31
+    errors << "Cafe interactions incomplete" unless load_data("Data/Map058.rvdata2").instance_variable_get(:@events).length==28
+    [57,58].each do |map_id|
+      current=load_data(format("Data/Map%03d.rvdata2",map_id))
+      errors << "Map#{map_id} collision tileset" unless current.instance_variable_get(:@tileset_id)==5
+    end
+    map60_text=load_data("Data/Map060.rvdata2").instance_variable_get(:@events).fetch(1).instance_variable_get(:@pages).first.instance_variable_get(:@list).select{|command|command_code(command)==401}.map{|command|command_parameters(command)[0].to_s}.join(" ")
+    errors << "Map060 paraphrase remains" if map60_text.include?("hàng tá trò vặt vãnh")||map60_text.include?("cục đá này. Đá gì đâu")
+    party_text=load_data("Data/Map038.rvdata2").instance_variable_get(:@events).fetch(121).instance_variable_get(:@pages).first.instance_variable_get(:@list).select{|command|command_code(command)==401}.map{|command|command_parameters(command)[0].to_s}.join(" ")
+    errors << "Map038 old summary remains" if party_text.include?("PLACEHOLDER CG")||party_text.include?("Giáng sinh vui vẻ Hakase! Anh thử choàng")
+    errors << "Map038 authored party too short" unless party_text.length>10_000
+    syntax=event_script_syntax_errors([38,57,58,59,60]);errors.concat(syntax)
+    raise "Leo interactive shop repair failed: #{errors.join(', ')}" unless errors.empty?
+    puts "LEO_INTERACTIVE_SHOPS_REPAIRED|Map057=free-roam+docx-events|Map058=free-roam+docx-events|Map059=authored-cutscene|Map060=authored-prep|Map038=authored-party|purchase=action-button|webapp=untouched|errors=0"
+  end
+
+  # Targeted Map058 edit: consolidate baked-in NPC dialogue behind explicit
+  # anchor events and hitboxes without rebuilding the map or unrelated events.
+  def install_cafe_npc_anchor_hitboxes
+    path = "Data/Map058.rvdata2"
+    map = load_data(path)
+    events = map.instance_variable_get(:@events) || {}
+    marker = "WCF_CAFE_FOCUS_E8"
+    already = (events.fetch(8).instance_variable_get(:@pages) || []).any? do |page|
+      (page.instance_variable_get(:@list) || []).any? do |command|
+        [355, 655].include?(command_code(command)) &&
+          command_parameters(command)[0].to_s.include?(marker)
+      end
+    end
+    if already
+      audit_cafe_npc_anchor_hitboxes
+      puts "CAFE_NPC_HITBOX_INSTALL|already_applied=true"
+      return
+    end
+
+    tile_dump = Marshal.dump(map.instance_variable_get(:@data))
+    parallax_names = [:@parallax_name, :@parallax_loop_x, :@parallax_loop_y,
+      :@parallax_sx, :@parallax_sy, :@parallax_show]
+    parallax_state = parallax_names.map { |name| map.instance_variable_get(name) }
+    untouched = [3, 4, 5, 7, 16, 17, 27, 28].to_h do |id|
+      [id, Marshal.dump(events.fetch(id))]
+    end
+
+    strip_end = lambda do |list|
+      Marshal.load(Marshal.dump((list || []).reject do |command|
+        command_code(command) == 0
+      end))
+    end
+    focus = lambda do |anchor_id, label|
+      [event_command(355, 0,
+        ["map_effects.clear; map_effects.active=true; " \
+         "map_effects.set_zoom(130,16,false); ms_pro_cam_ignore_player(true); " \
+         "ms_pro_cam_focus_on(#{anchor_id}); ms_pro_cam_wait_for_scrolling # WCF_CAFE_FOCUS_#{label}"]),
+       event_command(230, 0, [16])]
+    end
+    reset_camera = lambda do |label|
+      [event_command(355, 0,
+        ["map_effects.set_zoom(100,16,false); ms_pro_cam_ignore_player(false); " \
+         "ms_pro_cam_focus_on(-1); ms_pro_cam_wait_for_scrolling # WCF_CAFE_RESET_#{label}"]),
+       event_command(230, 0, [16]),
+       event_command(355, 0, ["map_effects.clear; map_effects.active=false"])]
+    end
+    balloon_commands = lambda do |pairs|
+      pairs.map do |event_id, balloon_id|
+        event_command(213, 0, [event_id, balloon_id, false])
+      end
+    end
+    wrap_page = lambda do |page, anchor_id, pairs, label, reset = true|
+      body = strip_end.call(page.instance_variable_get(:@list))
+      commands = focus.call(anchor_id, label) + balloon_commands.call(pairs) + body
+      commands.concat(reset_camera.call(label)) if reset
+      commands << event_command(0, 0, [])
+      page.instance_variable_set(:@list, commands)
+    end
+    rename = lambda do |id, name|
+      events.fetch(id).instance_variable_set(:@name, "#{name} [E%03d]" % id)
+    end
+    install_caller = lambda do |id, x, y, controller_id, label|
+      template = events[id] || events.fetch(19)
+      event = Marshal.load(Marshal.dump(template))
+      page = page_from_template(event, [event_command(355, 0,
+        ["$game_map.events[#{controller_id}].start # WCF_CAFE_HITBOX_#{label}"])],
+        trigger: 0, priority: 1, variable_id: 56, variable_value: 2)
+      event.instance_variable_set(:@id, id)
+      event.instance_variable_set(:@name, "HITBOX-#{label} [E%03d]" % id)
+      event.instance_variable_set(:@x, x)
+      event.instance_variable_set(:@y, y)
+      event.instance_variable_set(:@pages, [page])
+      events[id] = event
+    end
+
+    karin_intro = strip_end.call(events.fetch(20).instance_variable_get(:@pages).first
+      .instance_variable_get(:@list))
+    karin_memory = events.fetch(21).instance_variable_get(:@pages).first
+      .instance_variable_get(:@list) || []
+    group_topics = [22, 23, 24, 25, 26].map do |id|
+      strip_end.call(events.fetch(id).instance_variable_get(:@pages).first
+        .instance_variable_get(:@list))
+    end
+
+    {8 => [[[8, 2]], "E8"], 6 => [[[6, 2]], "E6"],
+     18 => [[[18, 4]], "E18"], 11 => [[[11, 3]], "E11"],
+     12 => [[[12, 6]], "E12"]}.each do |id, (pairs, label)|
+      wrap_page.call(events.fetch(id).instance_variable_get(:@pages).first,
+        id, pairs, label)
+    end
+    {8 => "NPC-ANCHOR-01", 6 => "NPC-ANCHOR-02",
+     18 => "NPC-ANCHOR-MEO-TRANG", 11 => "NPC-ANCHOR-ERUFU",
+     12 => "NPC-ANCHOR-TRAVELLER"}.each { |id, name| rename.call(id, name) }
+
+    memory_branch = lambda do |value|
+      start_at = karin_memory.index do |command|
+        command_code(command) == 111 &&
+          command_parameters(command)[0, 4] == [1, 82, 0, value]
+      end
+      raise "Map058 Karin memory branch #{value} missing" unless start_at
+      finish_at = ((start_at + 1)...karin_memory.length).find do |index|
+        command_code(karin_memory[index]) == 412 &&
+          karin_memory[index].instance_variable_get(:@indent).to_i == 1
+      end
+      raise "Map058 Karin memory branch #{value} malformed" unless finish_at
+      body = strip_end.call(karin_memory[(start_at + 1)...finish_at])
+      body.each do |command|
+        command.instance_variable_set(:@indent,
+          [command.instance_variable_get(:@indent).to_i - 2, 0].max)
+      end
+      body
+    end
+    fallback_at = karin_memory.index do |command|
+      command_code(command) == 411 &&
+        command.instance_variable_get(:@indent).to_i == 0
+    end
+    fallback_end = fallback_at && ((fallback_at + 1)...karin_memory.length).find do |index|
+      command_code(karin_memory[index]) == 412 &&
+        karin_memory[index].instance_variable_get(:@indent).to_i == 0
+    end
+    raise "Map058 Karin fallback memory missing" unless fallback_at && fallback_end
+    karin_final = strip_end.call(karin_memory[(fallback_at + 1)...fallback_end])
+    karin_final.each do |command|
+      command.instance_variable_set(:@indent,
+        [command.instance_variable_get(:@indent).to_i - 1, 0].max)
+    end
+    karin_bodies = [karin_intro, memory_branch.call(0), memory_branch.call(1),
+      memory_branch.call(2), karin_final]
+    karin_bodies[3] << event_command(122, 0, [82, 82, 0, 0, 3])
+    karin_balloon_ids = [1, 8, 3, 2, 3]
+    karin_pages = karin_bodies.each_with_index.map do |body, index|
+      label = "KARIN_P#{index + 1}"
+      commands = focus.call(20, label) +
+        balloon_commands.call([[20, karin_balloon_ids[index]]]) + body +
+        reset_camera.call(label)
+      if index.zero?
+        page_from_template(events.fetch(20), commands, trigger: 0, priority: 1,
+          variable_id: 56, variable_value: 2)
+      else
+        page_from_template(events.fetch(20), commands, trigger: 0, priority: 1,
+          switch_id: 81, variable_id: 82, variable_value: index - 1)
+      end
+    end
+    events.fetch(20).instance_variable_set(:@pages, karin_pages)
+    rename.call(20, "NPC-ANCHOR-KARIN-CONTROLLER")
+
+    topic_focus = [25, 26, 25, 26, 25]
+    topic_balloons = [[[25, 2], [26, 3]], [[25, 6], [26, 3]],
+      [[25, 2], [26, 9]], [[25, 6], [26, 9]], [[25, 1], [26, 1]]]
+    topic_pages = group_topics.each_with_index.map do |body, index|
+      label = "VAN_MAY_P#{index + 1}"
+      commands = focus.call(topic_focus[index], label) +
+        balloon_commands.call(topic_balloons[index]) + body
+      commands << event_command(122, 0, [84, 84, 0, 0, index + 1]) if index < 4
+      commands.concat(reset_camera.call(label))
+      page_from_template(events.fetch(25), commands, trigger: 0, priority: 1,
+        switch_id: 72, variable_id: 84, variable_value: index)
+    end
+    events.fetch(25).instance_variable_set(:@pages, topic_pages)
+    rename.call(25, "NPC-ANCHOR-VAN-PHUONG-CONTROLLER")
+
+    install_caller.call(10, 5, 6, 8, "NPC01-05-06")
+    install_caller.call(21, 7, 8, 20, "KARIN-07-08")
+    install_caller.call(24, 9, 8, 6, "NPC02-09-08")
+    install_caller.call(19, 7, 13, 18, "MEO-07-13")
+    install_caller.call(29, 3, 13, 11, "ERUFU-03-13")
+    install_caller.call(22, 9, 11, 25, "VAN-MAY-09-11")
+    install_caller.call(23, 10, 11, 25, "VAN-MAY-10-11")
+    install_caller.call(26, 10, 10, 25, "HUYEN-MAY-10-10")
+    rename.call(26, "NPC-ANCHOR-HUYEN-MAY-HITBOX")
+
+    rename.call(9, "NPC-ANCHOR-CHU-QUAN")
+    owner_page = events.fetch(2).instance_variable_get(:@pages).first
+    owner_body = strip_end.call(owner_page.instance_variable_get(:@list))
+    owner_page.instance_variable_set(:@list,
+      focus.call(9, "OWNER_TALK") + balloon_commands.call([[9, 9]]) +
+      owner_body + [event_command(0, 0, [])])
+    rename.call(2, "HITBOX-TALK-CHU-QUAN")
+    [13, 14, 15].each do |id|
+      page = events.fetch(id).instance_variable_get(:@pages).first
+      body = strip_end.call(page.instance_variable_get(:@list))
+      page.instance_variable_set(:@trigger, 1)
+      page.instance_variable_set(:@list,
+        focus.call(9, "OWNER_TOUCH_E#{id}") +
+        balloon_commands.call([[9, 5]]) + body +
+        reset_camera.call("OWNER_TOUCH_E#{id}") + [event_command(0, 0, [])])
+      rename.call(id, "HITBOX-TOUCH-CHU-QUAN")
+    end
+
+    intro_page = events.fetch(1).instance_variable_get(:@pages).first
+    setup = (intro_page.instance_variable_get(:@list) || []).find do |command|
+      [355, 655].include?(command_code(command)) &&
+        command_parameters(command)[0].to_s.include?("$game_variables[82]=0")
+    end
+    raise "Map058 intro state setup missing" unless setup
+    setup.instance_variable_set(:@parameters, [command_parameters(setup)[0].to_s.sub(
+      "$game_variables[82]=0", "$game_variables[82]=0; $game_variables[84]=0")])
+
+    map.instance_variable_set(:@events, events)
+    save_data(path, map)
+    system = load_data("Data/System.rvdata2")
+    variables = system.instance_variable_get(:@variables)
+    raise "Variable 84 occupied by #{variables[84]}" unless
+      variables[84].to_s.empty? || variables[84] == "LEO_CAFE_VAN_MAY_TALK"
+    variables[84] = "LEO_CAFE_VAN_MAY_TALK"
+    save_data("Data/System.rvdata2", system)
+    replace_runtime_script("WCF Test Hub", "Scripts/WCF Test Hub.rb")
+
+    verify = load_data(path)
+    raise "Map058 tile data changed" unless
+      Marshal.dump(verify.instance_variable_get(:@data)) == tile_dump
+    raise "Map058 parallax settings changed" unless
+      parallax_names.map { |name| verify.instance_variable_get(name) } == parallax_state
+    verify_events = verify.instance_variable_get(:@events) || {}
+    untouched.each do |id, dump|
+      raise "Map058 unrelated E#{id} changed" unless
+        Marshal.dump(verify_events.fetch(id)) == dump
+    end
+    audit_cafe_npc_anchor_hitboxes
+    puts "CAFE_NPC_HITBOX_INSTALL|anchors=9|shared_topics=5|" \
+      "camera_zoom=130|manual_positions=preserved|webapp=untouched"
+  end
+
+  def audit_cafe_npc_anchor_hitboxes
+    errors = []
+    map = load_data("Data/Map058.rvdata2")
+    events = map.instance_variable_get(:@events) || {}
+    anchors = {8=>[5,5],20=>[7,7],6=>[9,7],18=>[7,12],11=>[3,12],
+      12=>[5,14],26=>[10,10],25=>[9,10],9=>[15,8]}
+    anchors.each do |id, expected|
+      event = events[id]
+      actual = event && [event.instance_variable_get(:@x), event.instance_variable_get(:@y)]
+      errors << "anchor E#{id} #{actual.inspect}/#{expected.inspect}" unless actual == expected
+    end
+    callers = {10=>[[5,6],8],21=>[[7,8],20],24=>[[9,8],6],
+      19=>[[7,13],18],29=>[[3,13],11],22=>[[9,11],25],
+      23=>[[10,11],25],26=>[[10,10],25]}
+    callers.each do |id, (expected, controller)|
+      event = events[id]
+      actual = event && [event.instance_variable_get(:@x), event.instance_variable_get(:@y)]
+      errors << "hitbox E#{id} #{actual.inspect}/#{expected.inspect}" unless actual == expected
+      list = event && event.instance_variable_get(:@pages).first
+        .instance_variable_get(:@list) || []
+      errors << "hitbox E#{id} does not start E#{controller}" unless list.any? do |command|
+        [355, 655].include?(command_code(command)) &&
+          command_parameters(command)[0].to_s.include?("events[#{controller}].start")
+      end
+    end
+    karin_pages = events.fetch(20).instance_variable_get(:@pages) || []
+    topic_pages = events.fetch(25).instance_variable_get(:@pages) || []
+    errors << "Karin pages #{karin_pages.length}/5" unless karin_pages.length == 5
+    errors << "Vân/Huyền pages #{topic_pages.length}/5" unless topic_pages.length == 5
+    topic_conditions = topic_pages.map do |page|
+      c = page.instance_variable_get(:@condition)
+      [c.instance_variable_get(:@switch1_valid), c.instance_variable_get(:@switch1_id),
+       c.instance_variable_get(:@variable_valid), c.instance_variable_get(:@variable_id),
+       c.instance_variable_get(:@variable_value)]
+    end
+    errors << "Vân/Huyền progression conditions" unless
+      topic_conditions == (0..4).map { |value| [true,72,true,84,value] }
+    [2,6,8,11,12,13,14,15,18,20,25].each do |id|
+      pages = events.fetch(id).instance_variable_get(:@pages) || []
+      errors << "E#{id} focus missing" unless pages.all? do |page|
+        (page.instance_variable_get(:@list) || []).any? do |command|
+          [355,655].include?(command_code(command)) &&
+            command_parameters(command)[0].to_s.include?("WCF_CAFE_FOCUS")
+        end
+      end
+      errors << "E#{id} balloon missing" unless pages.all? do |page|
+        (page.instance_variable_get(:@list) || []).any? { |command| command_code(command) == 213 }
+      end
+    end
+    [13,14,15].each do |id|
+      errors << "owner touch E#{id} trigger" unless events.fetch(id)
+        .instance_variable_get(:@pages).first.instance_variable_get(:@trigger).to_i == 1
+    end
+    intro_scripts = events.fetch(1).instance_variable_get(:@pages).first
+      .instance_variable_get(:@list).select { |command| [355,655].include?(command_code(command)) }
+      .map { |command| command_parameters(command)[0].to_s }
+    errors << "Map058 does not reset V84" unless
+      intro_scripts.any? { |text| text.include?("$game_variables[84]=0") }
+    system = load_data("Data/System.rvdata2")
+    errors << "Variable 84 name" unless
+      system.instance_variable_get(:@variables)[84] == "LEO_CAFE_VAN_MAY_TALK"
+    source = File.binread("Scripts/WCF Test Hub.rb")
+    errors << "Test Hub does not reset V84" unless source.include?("80, 81, 82, 83, 84")
+    runtime = load_data("Data/Scripts.rvdata2").find { |entry| entry[1].to_s.strip == "WCF Test Hub" }
+    errors << "WCF Test Hub runtime mismatch" unless runtime &&
+      Zlib::Inflate.inflate(runtime[2]) == source
+    errors.concat(event_script_syntax_errors([58]))
+    errors.each { |error| puts "CAFE_NPC_HITBOX_ERROR|#{error}" }
+    puts "CAFE_NPC_HITBOX_AUDIT|errors=#{errors.length}|anchors=9|" \
+      "karin_pages=#{karin_pages.length}|van_may_pages=#{topic_pages.length}|owner_touch=3"
+    raise "Cafe NPC anchor/hitbox audit failed" unless errors.empty?
+  end
+
+  # Replace only the existing Map042 TV controller. All other events, event
+  # coordinates and manual map edits are preserved byte-for-byte by Marshal.
+  def update_hq_room_tv_parallax_bad_end
+    path = "Data/Map042.rvdata2"
+    map = load_data(path)
+    events = map.instance_variable_get(:@events) || {}
+    television = events.values.compact.find do |event|
+      event.instance_variable_get(:@name).to_s.start_with?("BAD-END-HQ-OFFICE-TELEVISION")
+    end
+    raise "Map042 TV controller missing" unless television
+
+    pages = television.instance_variable_get(:@pages) || []
+    raise "Map042 TV controller has no page" if pages.empty?
+    page = pages.first
+    page.instance_variable_set(:@list,
+      hq_room_tv_bad_end_commands + [event_command(0, 0, [])])
+
+    graphic = page.instance_variable_get(:@graphic)
+    if graphic
+      graphic.instance_variable_set(:@character_name, "")
+      graphic.instance_variable_set(:@character_index, 0)
+      graphic.instance_variable_set(:@direction, 2)
+      graphic.instance_variable_set(:@pattern, 0)
+    end
+
+    save_data(path, map)
+
+    commands = page.instance_variable_get(:@list)
+    parallax_names = commands.select { |command| command_code(command) == 284 }
+      .map { |command| command_parameters(command)[0] }
+    expected = ["HQ_Room_TV", "HQ_Room_TV_1"] +
+      (2..9).map { |index| "HQ_Room_TV#{index}" }
+    scripts = commands.select { |command| [355, 655].include?(command_code(command)) }
+      .map { |command| command_parameters(command)[0].to_s }.join("\n")
+    errors = []
+    errors << "parallax order" unless parallax_names == expected
+    errors << "seasonal layers" unless
+      scripts.include?("HQ_Room_TV_BeforeChristmas") &&
+        scripts.include?("HQ_Room_TV_Quy_Chrismast")
+    errors << "KUL transitions" unless
+      scripts.scan(/WCF_HQ_TV_KUL_REVEAL_/).length == 10 &&
+        scripts.scan(/WCF_HQ_TV_KUL_BLACK/).length == 10
+    errors << "camera zoom" unless scripts.include?("set_zoom(165,30,true)")
+    errors << "native Fade/Tint" if commands.any? { |command| [221, 222, 223].include?(command_code(command)) }
+    errors << "old TV sprite" if commands.any? { |command| command_parameters(command).join.include?("!$TV_Sprite") }
+    errors << "event graphic" unless graphic && graphic.instance_variable_get(:@character_name).to_s.empty?
+    raise "Map042 TV update failed: #{errors.join(', ')}" unless errors.empty?
+
+    puts "HQ_ROOM_TV_UPDATED|map=42|event=#{television.instance_variable_get(:@id)}|coordinate=#{television.instance_variable_get(:@x)},#{television.instance_variable_get(:@y)}|parallaxes=10|layers=seasonal|camera_zoom=165|KUL=only|errors=0"
+  end
+
+  # Fix malformed layer calls introduced by the Shylvie route review without
+  # rebuilding any map or touching the user's other event/map edits.
+  def fix_map064_shylvie_layer_syntax
+    replacements = {
+      64 => {
+        "layer(64,0,['Jewel_Shop_Top',0,0,255,200,0,0,0]" =>
+          "layer(64,0,['Jewel_Shop_Top',0,0,255,200,0,0,0])"
+      },
+      65 => {
+        "layer(65,0,['HQ_Room_Midnight_Top',0,0,255,200,0,0,0]" =>
+          "layer(65,0,['HQ_Room_Midnight_Top',0,0,255,200,0,0,0])"
+      },
+      66 => {
+        "layer(66,0,['Map_Wanderer_Office_GiangSinh_Top',0,0,255,200,0,0,0]" =>
+          "layer(66,0,['Map_Wanderer_Office_GiangSinh_Top',0,0,255,200,0,0,0])",
+        "layer(66,1,['Wanderer_Party_After_',0,0,255,150,0,0,0]" =>
+          "layer(66,1,['Wanderer_Party_After_',0,0,255,150,0,0,0])"
+      },
+      67 => {
+        "layer(67,0,['Map_Wanderer_Office_top',0,0,255,200,0,0,0]" =>
+          "layer(67,0,['Map_Wanderer_Office_top',0,0,255,200,0,0,0])"
+      }
+    }
+    total_changed = 0
+
+    replacements.each do |map_id, pairs|
+      path = format("Data/Map%03d.rvdata2", map_id)
+      map = load_data(path)
+      events = map.instance_variable_get(:@events) || {}
+      map_changed = 0
+      events.each_value do |event|
+        next unless event
+        (event.instance_variable_get(:@pages) || []).each do |page|
+          (page.instance_variable_get(:@list) || []).each do |command|
+            next unless command_code(command) == 355
+            parameters = command_parameters(command)
+            replacement = pairs[parameters[0]]
+            next unless replacement
+            parameters[0] = replacement
+            map_changed += 1
+          end
+        end
+      end
+      save_data(path, map) if map_changed > 0
+      total_changed += map_changed
+    end
+
+    errors = event_script_syntax_errors(replacements.keys)
+    errors.each { |error| puts "EVENT_SCRIPT_SYNTAX_ERROR|#{error}" }
+    raise "Shylvie route still contains invalid event script syntax" unless errors.empty?
+    puts "SHYLVIE_ROUTE_LAYERS_FIXED|changed=#{total_changed}|maps=#{replacements.keys.join(',')}|script_blocks_valid=true|errors=0"
+  end
+
+  # Repair only the four Shylvie-jewel ending-hint pages in the shared hint
+  # map. The route arrives under KUL black; Bully Quy's event therefore needs
+  # its own key light before the overlay is eased down to the dialogue level.
+  def fix_shylvie_jewel_ending_hint_light
+    path = "Data/Map036.rvdata2"
+    map = load_data(path)
+    router = map.instance_variable_get(:@events).fetch(1)
+    pages = router.instance_variable_get(:@pages) || []
+    hint_ids = (25..28).to_a
+    changed = 0
+
+    pages.each do |page|
+      condition = page.instance_variable_get(:@condition)
+      next unless condition.instance_variable_get(:@variable_valid)
+      next unless condition.instance_variable_get(:@variable_id) == 41
+      next unless hint_ids.include?(condition.instance_variable_get(:@variable_value))
+
+      list = page.instance_variable_get(:@list) || []
+      scripts = list.select { |command| [355, 655].include?(command_code(command)) }
+        .map { |command| command_parameters(command)[0].to_s }
+
+      setup_index = list.index do |command|
+        [355, 655].include?(command_code(command)) &&
+          command_parameters(command)[0].to_s.include?("WCF_SHY_JEWEL_HINT") &&
+          !command_parameters(command)[0].to_s.include?("_END") &&
+          !command_parameters(command)[0].to_s.include?("_REVEAL")
+      end
+      raise "Shylvie jewel hint page is missing its KUL setup" unless setup_index
+
+      setup = command_parameters(list[setup_index])[0].to_s
+      unless setup.include?("set_opacity(255)")
+        command_parameters(list[setup_index])[0] =
+          "$game_map.shadows.set_color(0,0,0); $game_map.shadows.show; $game_map.shadows.set_opacity(255) # WCF_SHY_JEWEL_HINT"
+        changed += 1
+      end
+
+      unless scripts.any? { |text| text.include?("events[2].give_light") }
+        list.insert(setup_index + 1,
+          event_command(355, 0, ["$game_map.events[2].give_light('cutscene_actor')"]),
+          event_command(355, 0, ["$game_map.shadows.set_opacity(185,24) # WCF_SHY_JEWEL_HINT_REVEAL"]),
+          event_command(230, 0, [24]))
+        changed += 3
+      end
+
+      end_index = list.index do |command|
+        [355, 655].include?(command_code(command)) &&
+          command_parameters(command)[0].to_s.include?("set_opacity(255,24)")
+      end
+      raise "Shylvie jewel hint page is missing its KUL ending fade" unless end_index
+      end_text = command_parameters(list[end_index])[0].to_s
+      unless end_text.include?("WCF_SHY_JEWEL_HINT_END")
+        command_parameters(list[end_index])[0] =
+          "$game_map.shadows.set_opacity(255,24) # WCF_SHY_JEWEL_HINT_END"
+        changed += 1
+      end
+
+      scripts = list.select { |command| [355, 655].include?(command_code(command)) }
+        .map { |command| command_parameters(command)[0].to_s }
+      unless scripts.any? { |text| text.include?("events[2].drop_light") }
+        wait_index = end_index + 1
+        wait_index += 1 if wait_index < list.length && command_code(list[wait_index]) == 230
+        list.insert(wait_index, event_command(355, 0, ["$game_map.events[2].drop_light"]))
+        changed += 1
+      end
+    end
+
+    save_data(path, map) if changed > 0
+
+    verify = load_data(path).instance_variable_get(:@events).fetch(1)
+      .instance_variable_get(:@pages).select do |page|
+        condition = page.instance_variable_get(:@condition)
+        condition.instance_variable_get(:@variable_valid) &&
+          condition.instance_variable_get(:@variable_id) == 41 &&
+          hint_ids.include?(condition.instance_variable_get(:@variable_value))
+      end
+    raise "Expected four Shylvie jewel hint pages" unless verify.length == 4
+    verify.each do |page|
+      list = page.instance_variable_get(:@list) || []
+      text = list.select { |command| [355, 655].include?(command_code(command)) }
+        .map { |command| command_parameters(command)[0].to_s }.join("\n")
+      raise "Shylvie jewel hint light setup incomplete" unless
+        text.include?("events[2].give_light('cutscene_actor')") &&
+          text.include?("WCF_SHY_JEWEL_HINT_REVEAL") &&
+          text.include?("events[2].drop_light")
+      raise "Native Fade/Tint remains in Shylvie jewel hint" if
+        list.any? { |command| [221, 222, 223].include?(command_code(command)) }
+    end
+    syntax_errors = event_script_syntax_errors([36])
+    raise "Map036 contains invalid event script syntax" unless syntax_errors.empty?
+    puts "SHYLVIE_JEWEL_HINT_LIGHT_FIXED|map=36|hints=25,26,27,28|light=cutscene_actor|KUL=255>185>255|changed=#{changed}|errors=0"
+  end
+
+  # Parse event Script/continuation blocks exactly as Game_Interpreter joins
+  # command 355 with following command 655 lines. This is a syntax-only audit;
+  # it never evaluates game code or changes data.
+  def event_script_syntax_errors(map_ids)
+    errors = []
+    map_ids.each do |map_id|
+      path = format("Data/Map%03d.rvdata2", map_id)
+      next unless File.exist?(path)
+      map = load_data(path)
+      (map.instance_variable_get(:@events) || {}).each do |event_id, event|
+        next unless event
+        (event.instance_variable_get(:@pages) || []).each_with_index do |page, page_index|
+          list = page.instance_variable_get(:@list) || []
+          list.each_with_index do |command, command_index|
+            next unless command_code(command) == 355
+            lines = [command_parameters(command)[0].to_s]
+            cursor = command_index + 1
+            while cursor < list.length && command_code(list[cursor]) == 655
+              lines << command_parameters(list[cursor])[0].to_s
+              cursor += 1
+            end
+            begin
+              RubyVM::InstructionSequence.compile(lines.join("\n"))
+            rescue SyntaxError => error
+              message = error.message.lines.first.to_s.strip
+              errors << "Map%03d|E%03d|P%02d|C%03d|%s" %
+                [map_id, event_id, page_index + 1, command_index + 1, message]
+            end
+          end
+        end
+      end
+    end
+    errors
+  end
+
+  def audit_reviewed_route_event_script_syntax
+    map_ids = [13, 14, 20, 38, 47, 56, 57, 58, 59, 60, 64, 65, 66, 67]
+    errors = event_script_syntax_errors(map_ids)
+    errors.each { |error| puts "EVENT_SCRIPT_SYNTAX_ERROR|#{error}" }
+    puts "REVIEWED_ROUTE_SCRIPT_AUDIT|maps=#{map_ids.join(',')}|errors=#{errors.length}"
+    raise "Reviewed route event script syntax audit failed" unless errors.empty?
+  end
+
+  WRITER_DIALOGUE_ACCEPTED = %w[
+    SUG-002 SUG-003 SUG-004 SUG-005 SUG-007 SUG-008 SUG-009 SUG-010
+    SUG-011 SUG-012 SUG-015 SUG-016 SUG-017 SUG-022 SUG-023 SUG-024
+    SUG-025 SUG-038 SUG-039 SUG-040 SUG-042 SUG-043 SUG-044 SUG-045
+    SUG-046 SUG-047 SUG-048 SUG-049 SUG-050 SUG-051 SUG-052 SUG-054
+    SUG-055 SUG-057 SUG-058 SUG-059 SUG-060 SUG-061 SUG-062 SUG-063
+    SUG-067 SUG-068 SUG-069 SUG-070 SUG-071 SUG-075 SUG-076 SUG-077
+    SUG-078 SUG-079 SUG-080 SUG-081 SUG-082 SUG-085 SUG-088 SUG-089
+    SUG-090 SUG-091 SUG-092 SUG-093 SUG-094 SUG-098 SUG-099 SUG-100
+    SUG-102 SUG-103 SUG-104 SUG-105 SUG-107
+  ].freeze
+  WRITER_DIALOGUE_DELETE = %w[SUG-050 SUG-058 SUG-060].freeze
+
+  def normalized_writer_text(text)
+    text.to_s.gsub(/\r\n?/, "\n").lines.map(&:rstrip).join("\n")
+  end
+
+  def writer_message_block(list, index)
+    command = list[index]
+    raise "Expected Show Text at command #{index + 1}" unless command_code(command) == 101
+    cursor = index + 1
+    lines = []
+    while cursor < list.length && command_code(list[cursor]) == 401
+      lines << command_parameters(list[cursor])[0].to_s.rstrip
+      cursor += 1
+    end
+    raise "Show Text has no text lines at command #{index + 1}" if lines.empty?
+    [cursor, lines.join("\n")]
+  end
+
+  def writer_frame_text(raw)
+    raw.sub(/\A\\bm\[-?\d+\]\s*/i, "")
+  end
+
+  def writer_message_commands(show_command, raw_text)
+    indent = show_command.instance_variable_get(:@indent).to_i
+    lines = normalized_writer_text(raw_text).lines.map(&:chomp)
+    lines.pop while lines.last == ""
+    raise "Writer proposal produced an empty message" if lines.empty?
+    [show_command] + lines.map { |line| event_command(401, indent, [line]) }
+  end
+
+  # Review data is deliberately allow-listed. Behavioural requests, ambiguous
+  # split-message instructions, duplicate/conflicting submissions and setup
+  # descriptions are not imported by this command.
+  def apply_writer_dialogue_feedback(report_path, write: false)
+    report = JSON.parse(File.read(report_path, encoding: "UTF-8"))
+    proposals = report.fetch("proposals").each_with_object({}) do |proposal, by_id|
+      by_id[proposal.fetch("id")] = proposal
+    end
+    missing = WRITER_DIALOGUE_ACCEPTED.reject { |id| proposals.key?(id) }
+    raise "Writer proposals missing: #{missing.join(',')}" unless missing.empty?
+
+    maps = {}
+    operations = []
+    WRITER_DIALOGUE_ACCEPTED.each do |id|
+      proposal = proposals.fetch(id)
+      match = proposal.fetch("frameId").match(/\Am(\d+)-e(\d+)-p(\d+)-c(\d+)\z/)
+      raise "Unsupported writer frame #{id}: #{proposal['frameId']}" unless match
+      map_id, event_id, page_number, command_number = match.captures.map(&:to_i)
+      map = maps[map_id] ||= load_data(format("Data/Map%03d.rvdata2", map_id))
+      event = (map.instance_variable_get(:@events) || {}).fetch(event_id)
+      page = (event.instance_variable_get(:@pages) || []).fetch(page_number - 1)
+      list = page.instance_variable_get(:@list) || []
+      index = command_number - 1
+      expected = normalized_writer_text(proposal.fetch("original").fetch("text"))
+      candidates = []
+      cursor = 0
+      while cursor < list.length
+        if command_code(list[cursor]) == 101
+          candidate_finish, candidate_raw = writer_message_block(list, cursor)
+          candidate_text = normalized_writer_text(writer_frame_text(candidate_raw))
+          candidates << [cursor, candidate_finish, candidate_raw] if candidate_text == expected
+          cursor = candidate_finish
+        else
+          cursor += 1
+        end
+      end
+      exact = candidates.find { |candidate| candidate[0] == index }
+      selected = exact || (candidates.one? ? candidates.first : nil)
+      unless selected
+        raise "Writer baseline mismatch #{id}: matches=#{candidates.map { |candidate| candidate[0] + 1 }.inspect} expected=#{expected.inspect}"
+      end
+      index, finish, raw = selected
+      puts "WRITER_FRAME_RELOCATED|#{id}|reported=#{command_number}|current=#{index + 1}" if index != command_number - 1
+      operations << {
+        id: id, map_id: map_id, event_id: event_id, page_number: page_number,
+        index: index, finish: finish, proposal: proposal
+      }
+    end
+
+    # BUG-006 has no writer proposal. This is a layout-only reflow of the two
+    # existing E013 messages; it changes neither wording, face nor behaviour.
+    map19 = maps[19] ||= load_data("Data/Map019.rvdata2")
+    page13 = map19.instance_variable_get(:@events).fetch(13)
+      .instance_variable_get(:@pages).first
+    list13 = page13.instance_variable_get(:@list) || []
+    bug006_reflows = {
+      "Xem nào…Phở" => [
+        "\\bm[0]Xem nào… Phở, Bánh Mì Pate,",
+        "Bánh Mì Hai Trứng, Burger Bò",
+        "Đặc Biệt… Chà, quá trời quá đất",
+        "món luôn…!"
+      ],
+      "Mà ông kia" => [
+        "\\bm[0]Mà ông kia sao lại ở đây?",
+        "Chả lẽ lại có chuyên án gì ở",
+        "cái siêu thị này hả?"
+      ]
+    }
+    index = 0
+    while index < list13.length
+      if command_code(list13[index]) == 101
+        finish, raw = writer_message_block(list13, index)
+        needle, lines = bug006_reflows.find { |key, _value| writer_frame_text(raw).include?(key) }
+        if needle
+          operations << {
+            id: "BUG-006-#{needle}", map_id: 19, event_id: 13,
+            page_number: 1, index: index, finish: finish,
+            direct_text: lines.join("\n")
+          }
+          bug006_reflows.delete(needle)
+        end
+        index = finish
+      else
+        index += 1
+      end
+    end
+    raise "BUG-006 dialogue anchors missing: #{bug006_reflows.keys.join(',')}" unless bug006_reflows.empty?
+
+    puts "WRITER_DIALOGUE_AUDIT|operations=#{operations.length}|maps=#{maps.keys.sort.join(',')}|write=#{write}"
+    return unless write
+
+    operations.group_by { |operation| [operation[:map_id], operation[:event_id], operation[:page_number]] }
+      .each do |(map_id, event_id, page_number), page_operations|
+        map = maps.fetch(map_id)
+        event = map.instance_variable_get(:@events).fetch(event_id)
+        page = event.instance_variable_get(:@pages).fetch(page_number - 1)
+        list = page.instance_variable_get(:@list) || []
+        page_operations.sort_by { |operation| -operation[:index] }.each do |operation|
+          finish, raw = writer_message_block(list, operation[:index])
+          if WRITER_DIALOGUE_DELETE.include?(operation[:id])
+            list.slice!(operation[:index]...finish)
+            next
+          end
+          show = list[operation[:index]]
+          proposal = operation[:proposal]
+          if proposal
+            proposed = proposal.fetch("proposed")
+            current_prefix = raw[/\A\\bm\[-?\d+\]\s*/i].to_s
+            text = normalized_writer_text(proposed.fetch("text"))
+            text = current_prefix + text unless current_prefix.empty? || text =~ /\A\\bm\[/i
+            params = command_parameters(show).dup
+            if proposed.key?("face")
+              face = proposed["face"].to_s.sub(/\.(?:png|jpg)\z/i, "")
+              params[0] = face
+              params[1] = face.empty? ? 0 : proposed["faceIndex"].to_i
+              show.instance_variable_set(:@parameters, params)
+            end
+          else
+            text = operation.fetch(:direct_text)
+          end
+          list[operation[:index]...finish] = writer_message_commands(show, text)
+        end
+        page.instance_variable_set(:@list, list)
+      end
+
+    maps.each do |map_id, map|
+      path = format("Data/Map%03d.rvdata2", map_id)
+      save_data(path, map)
+      load_data(path)
+    end
+    puts "WRITER_DIALOGUE_APPLIED|operations=#{operations.length}|maps=#{maps.keys.sort.join(',')}"
+  end
+
+  def frame_map006_cg
+    path = "Data/Map006.rvdata2"
+    map = load_data(path)
+    page = map.instance_variable_get(:@events).fetch(4)
+      .instance_variable_get(:@pages).first
+    list = page.instance_variable_get(:@list) || []
+    show_index = list.index do |command|
+      command_code(command) == 231 && command_parameters(command)[1].to_s == "CG1"
+    end
+    raise "Map006 CG1 Show Picture command missing" unless show_index
+    picture_id = command_parameters(list[show_index])[0].to_i
+    hide_index = ((show_index + 1)...list.length).find do |index|
+      command_code(list[index]) == 235 && command_parameters(list[index])[0].to_i == picture_id
+    end
+    raise "Map006 CG1 Erase Picture command missing" unless hide_index
+    show_indent = list[show_index].instance_variable_get(:@indent).to_i
+    hide_indent = list[hide_index].instance_variable_get(:@indent).to_i
+    list[show_index] = event_command(355, show_indent, ["WCFFramedCG.show(\"CG1\") # WCF_FRAMED_CG"])
+    list[hide_index] = event_command(355, hide_indent, ["WCFFramedCG.hide # WCF_FRAMED_CG"])
+    page.instance_variable_set(:@list, list)
+    save_data(path, map)
+    verify = load_data(path).instance_variable_get(:@events).fetch(4)
+      .instance_variable_get(:@pages).first.instance_variable_get(:@list)
+    scripts = verify.select { |command| [355, 655].include?(command_code(command)) }
+      .map { |command| command_parameters(command)[0].to_s }
+    raise "Map006 framed CG verification failed" unless
+      scripts.any? { |line| line.include?("WCFFramedCG.show") } &&
+      scripts.any? { |line| line.include?("WCFFramedCG.hide") }
+    puts "MAP006_FRAMED_CG|asset=CG1|native=544x416|screen=640x480|offset=48,32|background=black"
+  end
+
+  def fix_writer_sug088_line_length
+    path = "Data/Map019.rvdata2"
+    map = load_data(path)
+    page = map.instance_variable_get(:@events).fetch(33)
+      .instance_variable_get(:@pages).first
+    list = page.instance_variable_get(:@list) || []
+    index = list.each_index.find do |candidate|
+      next false unless command_code(list[candidate]) == 101
+      _finish, raw = writer_message_block(list, candidate)
+      writer_frame_text(raw).start_with?("Tặng cho Kohi là điều đầu tiên mà")
+    end
+    raise "SUG-088 message not found" unless index
+    finish, _raw = writer_message_block(list, index)
+    text = [
+      "Tặng cho Kohi là điều đầu tiên",
+      "mà tôi nghĩ tới vì Kohi là",
+      "Quỷ cà phê"
+    ].join("\n")
+    list[index...finish] = writer_message_commands(list[index], text)
+    page.instance_variable_set(:@list, list)
+    save_data(path, map)
+    puts "WRITER_LINE_LIMIT_FIXED|SUG-088|lines=3|max=32|limit=33"
+  end
+
+  def audit_dialogue_line_limits(map_ids)
+    violations = []
+    map_ids.each do |map_id|
+      map = load_data(format("Data/Map%03d.rvdata2", map_id))
+      (map.instance_variable_get(:@events) || {}).each do |event_id, event|
+        next unless event
+        (event.instance_variable_get(:@pages) || []).each_with_index do |page, page_index|
+          list = page.instance_variable_get(:@list) || []
+          list.each_with_index do |command, command_index|
+            next unless command_code(command) == 101
+            face = command_parameters(command)[0].to_s
+            limit = face.empty? ? 40 : 33
+            cursor = command_index + 1
+            line_number = 0
+            while cursor < list.length && command_code(list[cursor]) == 401
+              line_number += 1
+              raw = command_parameters(list[cursor])[0].to_s.rstrip
+              visible = raw.gsub(/\A\s*\\(?:bm\[-?\d+\]|cbm|cbt\[[^\]]*\])\s*/i, "")
+              length = visible.scan(/\X/).length
+              if length > limit || line_number > 4
+                violations << [map_id, event_id, page_index + 1,
+                  command_index + 1, line_number, length, limit, visible]
+              end
+              cursor += 1
+            end
+          end
+        end
+      end
+    end
+    violations.each do |record|
+      puts "DIALOGUE_LIMIT|Map%03d|E%03d|P%02d|C%04d|line=%d|chars=%d|limit=%d|%s" % record
+    end
+    counts = violations.group_by(&:first).map { |id, rows| "#{id}:#{rows.length}" }.join(",")
+    puts "DIALOGUE_LIMIT_SUMMARY|maps=#{map_ids.join(',')}|violations=#{violations.length}|by_map=#{counts}"
+  end
+
+  def wrap_writer_text(text, limit)
+    words = text.to_s.gsub(/\s+/, " ").strip.split(" ")
+    lines = []
+    current = ""
+    words.each do |word|
+      candidate = current.empty? ? word : "#{current} #{word}"
+      if candidate.scan(/\X/).length <= limit
+        current = candidate
+      else
+        lines << current unless current.empty?
+        current = word
+      end
+    end
+    lines << current unless current.empty?
+    lines
+  end
+
+  # Mechanical formatting pass only: preserve every word, face and event
+  # command while enforcing four lines per box and 33/40 grapheme clusters.
+  def reflow_tested_dialogue(map_ids)
+    totals = {}
+    map_ids.each do |map_id|
+      path = format("Data/Map%03d.rvdata2", map_id)
+      map = load_data(path)
+      changed = 0
+      added_boxes = 0
+      (map.instance_variable_get(:@events) || {}).each_value do |event|
+        next unless event
+        (event.instance_variable_get(:@pages) || []).each do |page|
+          list = page.instance_variable_get(:@list) || []
+          replacements = []
+          index = 0
+          while index < list.length
+            unless command_code(list[index]) == 101
+              index += 1
+              next
+            end
+            finish, raw = writer_message_block(list, index)
+            show = list[index]
+            face = command_parameters(show)[0].to_s
+            limit = face.empty? ? 40 : 33
+            raw_lines = raw.lines.map(&:chomp)
+            visible_lengths = raw_lines.map do |line|
+              line.gsub(/\A\s*\\(?:bm\[-?\d+\]|cbm|cbt\[[^\]]*\])\s*/i, "")
+                .scan(/\X/).length
+            end
+            needs_reflow = raw_lines.length > 4 || visible_lengths.any? { |length| length > limit }
+            if needs_reflow
+              tag = raw[/\A\s*(\\(?:bm\[-?\d+\]|cbm|cbt\[[^\]]*\]))/i, 1].to_s
+              body = raw.sub(/\A\s*\\(?:bm\[-?\d+\]|cbm|cbt\[[^\]]*\])\s*/i, "")
+              wrapped = wrap_writer_text(body, limit)
+              boxes = wrapped.each_slice(4).to_a
+              replacement = []
+              boxes.each do |box|
+                show_copy = Marshal.load(Marshal.dump(show))
+                lines = box.dup
+                lines[0] = "#{tag} #{lines[0]}" unless tag.empty?
+                replacement.concat(writer_message_commands(show_copy, lines.join("\n")))
+              end
+              replacements << [index, finish, replacement]
+              changed += 1
+              added_boxes += boxes.length - 1
+            end
+            index = finish
+          end
+          replacements.reverse_each do |first, finish, replacement|
+            list[first...finish] = replacement
+          end
+          page.instance_variable_set(:@list, list)
+        end
+      end
+      save_data(path, map) if changed > 0
+      totals[map_id] = [changed, added_boxes]
+    end
+    detail = totals.map { |id, values| "#{id}:messages=#{values[0]},boxes=+#{values[1]}" }.join(",")
+    puts "TESTED_DIALOGUE_REFLOW|#{detail}"
+  end
+
+  def audit_prep_map_variants
+    ids = [37, 47, 49, 51, 60, 65]
+    ids.each do |map_id|
+      map = load_data(format("Data/Map%03d.rvdata2", map_id))
+      table = map.instance_variable_get(:@data)
+      events = map.instance_variable_get(:@events) || {}
+      controller = events[1]
+      pages = controller ? (controller.instance_variable_get(:@pages) || []) : []
+      conditions = pages.map do |page|
+        condition = page.instance_variable_get(:@condition)
+        if condition && condition.instance_variable_get(:@switch1_valid)
+          "S#{condition.instance_variable_get(:@switch1_id)}"
+        elsif condition && condition.instance_variable_get(:@variable_valid)
+          "V#{condition.instance_variable_get(:@variable_id)}>=#{condition.instance_variable_get(:@variable_value)}"
+        else
+          "always"
+        end
+      end
+      puts "PREP_MAP|#{map_id}|#{map.instance_variable_get(:@display_name)}|" \
+           "table=#{Digest::SHA256.hexdigest(Marshal.dump(table))}|" \
+           "parallax=#{map.instance_variable_get(:@parallax_name)}|" \
+           "events=#{events.keys.sort.join(',')}|pages=#{pages.length}|conditions=#{conditions.join(',')}"
+    end
+
+    targets = ids.to_h { |id| [id, []] }
+    Dir.glob("Data/Map[0-9][0-9][0-9].rvdata2").sort.each do |path|
+      source_id = File.basename(path)[/\d+/].to_i
+      map = load_data(path)
+      (map.instance_variable_get(:@events) || {}).each do |event_id, event|
+        next unless event
+        (event.instance_variable_get(:@pages) || []).each_with_index do |page, page_index|
+          (page.instance_variable_get(:@list) || []).each_with_index do |command, command_index|
+            next unless command_code(command) == 201
+            parameters = command_parameters(command)
+            next unless parameters[0].to_i == 0 && targets.key?(parameters[1].to_i)
+            targets[parameters[1].to_i] <<
+              "Map%03d/E%03d/P%d/C%d" % [source_id, event_id, page_index + 1, command_index + 1]
+          end
+        end
+      end
+    end
+    targets.each { |id, refs| puts "PREP_INCOMING|#{id}|#{refs.join(',')}" }
+  end
+
+  def dump_map_infos
+    infos = load_data("Data/MapInfos.rvdata2")
+    infos.keys.sort.each do |id|
+      info = infos[id]
+      next unless info
+      puts "MAPINFO|#{id}|name=#{info.instance_variable_get(:@name)}|" \
+           "parent=#{info.instance_variable_get(:@parent_id)}|" \
+           "order=#{info.instance_variable_get(:@order)}|" \
+           "expanded=#{info.instance_variable_get(:@expanded)}"
+    end
+  end
+
+  def dump_bgm_usage
+    Dir.glob("Data/Map[0-9][0-9][0-9].rvdata2").sort.each do |path|
+      map_id = File.basename(path)[/\d+/].to_i
+      map = load_data(path)
+      bgm = map.instance_variable_get(:@bgm)
+      puts "MAP_BGM|%03d|autoplay=%s|name=%s|volume=%s|pitch=%s" % [
+        map_id, map.instance_variable_get(:@autoplay_bgm),
+        bgm && bgm.instance_variable_get(:@name),
+        bgm && bgm.instance_variable_get(:@volume),
+        bgm && bgm.instance_variable_get(:@pitch)
+      ]
+      (map.instance_variable_get(:@events) || {}).each do |event_id, event|
+        next unless event
+        (event.instance_variable_get(:@pages) || []).each_with_index do |page, page_index|
+          (page.instance_variable_get(:@list) || []).each_with_index do |command, command_index|
+            next unless [241, 242, 243].include?(command_code(command))
+            params = command_parameters(command)
+            audio = params[0]
+            detail = if command_code(command) == 241 && audio
+                       "name=#{audio.instance_variable_get(:@name)}|" \
+                         "volume=#{audio.instance_variable_get(:@volume)}|" \
+                         "pitch=#{audio.instance_variable_get(:@pitch)}"
+                     else
+                       params.inspect
+                     end
+            puts "EVENT_BGM|%03d|E%03d|P%d|C%d|code=%d|%s" % [
+              map_id, event_id, page_index + 1, command_index + 1,
+              command_code(command), detail
+            ]
+          end
+        end
+      end
+    end
+    system = load_data("Data/System.rvdata2")
+    title = system.instance_variable_get(:@title_bgm)
+    puts "TITLE_BGM|name=#{title.instance_variable_get(:@name)}|" \
+      "volume=#{title.instance_variable_get(:@volume)}|pitch=#{title.instance_variable_get(:@pitch)}"
+  end
+
+  def bgm_audio(name, volume = 80, pitch = 100)
+    audio = RPG::BGM.allocate
+    audio.instance_variable_set(:@name, name)
+    audio.instance_variable_set(:@volume, volume)
+    audio.instance_variable_set(:@pitch, pitch)
+    audio
+  end
+
+  # Install one explicit BGM policy for every map so a transfer can never
+  # accidentally inherit the previous scene's music. Maps that have no
+  # authored music category deliberately autoplay an empty BGM, which RGSS3
+  # treats as BGM stop. Event positions, graphics, page conditions and move
+  # routes are intentionally left untouched.
+  def install_scene_bgm_plan
+    assigned = {
+      3 => "Silverwing", 17 => "Silverwing",
+      10 => "bus", 56 => "bus",
+      13 => "WandererOffice", 14 => "WandererOffice",
+      15 => "WandererOffice", 42 => "WandererOffice",
+      43 => "WandererOffice", 44 => "WandererOffice",
+      45 => "WandererOffice", 46 => "WandererOffice",
+      61 => "WandererOffice", 62 => "WandererOffice",
+      63 => "WandererOffice",
+      16 => "gag", 20 => "gag", 40 => "gag", 50 => "gag",
+      52 => "gag", 67 => "gag",
+      19 => "smarket",
+      22 => "hqhouse", 26 => "hqhouse",
+      23 => "bookstore",
+      24 => "tragic", 53 => "tragic",
+      25 => "combat", 29 => "combat", 55 => "combat",
+      28 => "pressure",
+      34 => "clones",
+      35 => "bedroom", 37 => "bedroom", 41 => "bedroom",
+      47 => "bedroom", 49 => "bedroom", 51 => "bedroom",
+      60 => "bedroom", 65 => "bedroom",
+      38 => "wochristmas", 39 => "wochristmas",
+      48 => "wochristmas", 66 => "wochristmas",
+      36 => "sad magic",
+      54 => "emotion",
+      57 => "magishop", 58 => "coffeeshop",
+      59 => "armshop", 64 => "rockshop"
+    }.freeze
+
+    available = Dir.glob("Audio/BGM/*").map { |path| File.basename(path, ".*") }
+    required = (assigned.values + ["mainmenu"]).uniq
+    missing = required.reject { |name| available.include?(name) }
+    raise "Missing BGM assets: #{missing.join(', ')}" unless missing.empty?
+
+    map_paths = Dir.glob("Data/Map[0-9][0-9][0-9].rvdata2").sort
+    map_paths.each do |path|
+      map_id = File.basename(path)[/\d+/].to_i
+      map = load_data(path)
+      name = assigned.fetch(map_id, "")
+      map.instance_variable_set(:@autoplay_bgm, true)
+      map.instance_variable_set(:@bgm, bgm_audio(name, name.empty? ? 100 : 80))
+      save_data(path, map)
+    end
+
+    # Map 14 represents both the normal Wanderer kitchen and its Christmas
+    # variant. Keep the parallax selector as the source of truth and make the
+    # music follow the exact same condition on both controller pages.
+    map14_path = "Data/Map014.rvdata2"
+    map14 = load_data(map14_path)
+    season_event = map14.instance_variable_get(:@events).fetch(24)
+    season_pages = season_event.instance_variable_get(:@pages) || []
+    season_pages.each do |page|
+      command = (page.instance_variable_get(:@list) || []).find do |item|
+        command_code(item) == 355 &&
+          command_parameters(item)[0].to_s.include?("WCF_WANDERER_KITCHEN_SEASON")
+      end
+      raise "Map014 E024 seasonal controller missing" unless command
+      script = command_parameters(command)[0].to_s
+      script = script.sub(/; bgm=.*?(?= # WCF_WANDERER_KITCHEN_SEASON)/, "")
+      script = script.sub(
+        " # WCF_WANDERER_KITCHEN_SEASON",
+        "; bgm=xmas ? 'wochristmas' : 'WandererOffice'; " \
+        "RPG::BGM.new(bgm,80,100).play if RPG::BGM.last.name!=bgm " \
+        "# WCF_WANDERER_KITCHEN_SEASON"
+      )
+      command.instance_variable_set(:@parameters, [script])
+    end
+    save_data(map14_path, map14)
+
+    # All six shared preparation variants begin as a quiet bedroom scene and
+    # switch to comedy exactly when the wake-up CG sequence starts.
+    map37_path = "Data/Map037.rvdata2"
+    map37 = load_data(map37_path)
+    prep_pages = map37.instance_variable_get(:@events).fetch(1)
+      .instance_variable_get(:@pages) || []
+    prep_pages.each_with_index do |page, page_index|
+      list = page.instance_variable_get(:@list) || []
+      anchor = list.index do |item|
+        command_code(item) == 355 &&
+          command_parameters(item)[0].to_s.include?("WCFGalleryScene.show(28)")
+      end
+      raise "Map037 E001 P#{page_index + 1} wake-up CG missing" unless anchor
+      previous = list[anchor - 1]
+      unless previous && command_code(previous) == 241 &&
+             command_parameters(previous)[0]&.instance_variable_get(:@name) == "gag"
+        list.insert(anchor, event_command(241, 0, [bgm_audio("gag")]))
+      end
+      page.instance_variable_set(:@list, list)
+    end
+    save_data(map37_path, map37)
+
+    # The Abyss rescue is combat until the monster has vanished. The reveal
+    # of the rescued Hải Quỳ is the emotional release of the scene.
+    map55_path = "Data/Map055.rvdata2"
+    map55 = load_data(map55_path)
+    rescue_list = map55.instance_variable_get(:@events).fetch(1)
+      .instance_variable_get(:@pages).first.instance_variable_get(:@list) || []
+    reveal = rescue_list.index do |item|
+      command_code(item) == 355 &&
+        command_parameters(item)[0].to_s.include?("$game_map.events[8].opacity=255")
+    end
+    raise "Map055 rescued-Hai-Quy reveal missing" unless reveal
+    previous = rescue_list[reveal - 1]
+    unless previous && command_code(previous) == 241 &&
+           command_parameters(previous)[0]&.instance_variable_get(:@name) == "emotion"
+      rescue_list.insert(reveal, event_command(241, 0, [bgm_audio("emotion")]))
+    end
+    save_data(map55_path, map55)
+
+    # Remove the last legacy bus track override; the scene now consistently
+    # uses the authored bus theme before and after the route choice.
+    map10_path = "Data/Map010.rvdata2"
+    map10 = load_data(map10_path)
+    bus_overrides = 0
+    (map10.instance_variable_get(:@events) || {}).each_value do |event|
+      next unless event
+      (event.instance_variable_get(:@pages) || []).each do |page|
+        (page.instance_variable_get(:@list) || []).each do |item|
+          next unless command_code(item) == 241
+          item.instance_variable_set(:@parameters, [bgm_audio("bus")])
+          bus_overrides += 1
+        end
+      end
+    end
+    raise "Map010 legacy bus BGM override missing" if bus_overrides.zero?
+    save_data(map10_path, map10)
+
+    # The record player in Hakase's room is an intentional diegetic override.
+    # Its "do not play" branch used to fade the only music on the map; now it
+    # returns to the room ambience instead of silencing WandererOffice.
+    map45_path = "Data/Map045.rvdata2"
+    map45 = load_data(map45_path)
+    record_list = map45.instance_variable_get(:@events).fetch(12)
+      .instance_variable_get(:@pages).first.instance_variable_get(:@list) || []
+    decline = record_list.index do |item|
+      command_code(item) == 402 && command_parameters(item)[0, 2] == [3, "Không bật"]
+    end
+    raise "Map045 record-player decline branch missing" unless decline
+    restore = record_list[(decline + 1)..].find { |item| [241, 242].include?(command_code(item)) }
+    raise "Map045 record-player restore command missing" unless restore
+    restore.instance_variable_set(:@code, 241)
+    restore.instance_variable_set(:@parameters, [bgm_audio("WandererOffice")])
+    save_data(map45_path, map45)
+
+    system_path = "Data/System.rvdata2"
+    system = load_data(system_path)
+    system.instance_variable_set(:@title_bgm, bgm_audio("mainmenu", 90))
+    save_data(system_path, system)
+
+    puts "SCENE_BGM_INSTALLED|maps=#{map_paths.length}|assigned=#{assigned.length}|" \
+         "silent=#{map_paths.length - assigned.length}|map37_pages=#{prep_pages.length}|" \
+         "map14_pages=#{season_pages.length}|bus_overrides=#{bus_overrides}"
+  end
+
+  def audit_scene_bgm_plan
+    expected = {
+      3 => "Silverwing", 17 => "Silverwing", 10 => "bus", 56 => "bus",
+      13 => "WandererOffice", 14 => "WandererOffice", 15 => "WandererOffice",
+      42 => "WandererOffice", 43 => "WandererOffice", 44 => "WandererOffice",
+      45 => "WandererOffice", 46 => "WandererOffice", 61 => "WandererOffice",
+      62 => "WandererOffice", 63 => "WandererOffice", 16 => "gag",
+      20 => "gag", 40 => "gag", 50 => "gag", 52 => "gag", 67 => "gag",
+      19 => "smarket", 22 => "hqhouse", 26 => "hqhouse",
+      23 => "bookstore", 24 => "tragic", 53 => "tragic",
+      25 => "combat", 29 => "combat", 55 => "combat", 28 => "pressure",
+      34 => "clones", 35 => "bedroom", 37 => "bedroom", 41 => "bedroom",
+      47 => "bedroom", 49 => "bedroom", 51 => "bedroom", 60 => "bedroom",
+      65 => "bedroom", 38 => "wochristmas", 39 => "wochristmas",
+      48 => "wochristmas", 66 => "wochristmas", 36 => "sad magic",
+      54 => "emotion", 57 => "magishop", 58 => "coffeeshop",
+      59 => "armshop", 64 => "rockshop"
+    }
+    failures = []
+    paths = Dir.glob("Data/Map[0-9][0-9][0-9].rvdata2").sort
+    paths.each do |path|
+      id = File.basename(path)[/\d+/].to_i
+      map = load_data(path)
+      name = map.instance_variable_get(:@bgm)&.instance_variable_get(:@name)
+      wanted = expected.fetch(id, "")
+      failures << "Map%03d autoplay" % id unless map.instance_variable_get(:@autoplay_bgm)
+      failures << "Map%03d BGM=#{name.inspect}, expected=#{wanted.inspect}" % id unless name == wanted
+    end
+
+    map14 = load_data("Data/Map014.rvdata2")
+    seasonal = map14.instance_variable_get(:@events).fetch(24)
+      .instance_variable_get(:@pages).count do |page|
+        (page.instance_variable_get(:@list) || []).any? do |item|
+          command_code(item) == 355 &&
+            command_parameters(item)[0].to_s.include?("bgm=xmas ? 'wochristmas' : 'WandererOffice'")
+        end
+      end
+    failures << "Map014 seasonal BGM pages=#{seasonal}" unless seasonal == 2
+
+    map37 = load_data("Data/Map037.rvdata2")
+    wake_tracks = map37.instance_variable_get(:@events).fetch(1)
+      .instance_variable_get(:@pages).count do |page|
+        list = page.instance_variable_get(:@list) || []
+        anchor = list.index { |item| command_code(item) == 355 && command_parameters(item)[0].to_s.include?("WCFGalleryScene.show(28)") }
+        anchor && anchor.positive? && command_code(list[anchor - 1]) == 241 &&
+          command_parameters(list[anchor - 1])[0].instance_variable_get(:@name) == "gag"
+      end
+    failures << "Map037 wake-up gag pages=#{wake_tracks}" unless wake_tracks == 6
+
+    map55 = load_data("Data/Map055.rvdata2")
+    rescue_list = map55.instance_variable_get(:@events).fetch(1)
+      .instance_variable_get(:@pages).first.instance_variable_get(:@list) || []
+    reveal = rescue_list.index { |item| command_code(item) == 355 && command_parameters(item)[0].to_s.include?("$game_map.events[8].opacity=255") }
+    emotional = reveal && reveal.positive? && command_code(rescue_list[reveal - 1]) == 241 &&
+      command_parameters(rescue_list[reveal - 1])[0].instance_variable_get(:@name) == "emotion"
+    failures << "Map055 emotional reveal BGM missing" unless emotional
+
+    map45 = load_data("Data/Map045.rvdata2")
+    record_list = map45.instance_variable_get(:@events).fetch(12)
+      .instance_variable_get(:@pages).first.instance_variable_get(:@list) || []
+    decline = record_list.index { |item| command_code(item) == 402 && command_parameters(item)[0, 2] == [3, "Không bật"] }
+    restore = decline && record_list[(decline + 1)..].find { |item| [241, 242].include?(command_code(item)) }
+    record_restores = restore && command_code(restore) == 241 &&
+      command_parameters(restore)[0].instance_variable_get(:@name) == "WandererOffice"
+    failures << "Map045 record-player decline does not restore room BGM" unless record_restores
+
+    system = load_data("Data/System.rvdata2")
+    title = system.instance_variable_get(:@title_bgm)&.instance_variable_get(:@name)
+    failures << "title BGM=#{title.inspect}" unless title == "mainmenu"
+    raise failures.join("\n") unless failures.empty?
+
+    puts "SCENE_BGM_AUDIT_OK|maps=#{paths.length}|seasonal_pages=#{seasonal}|" \
+         "wake_pages=#{wake_tracks}|title=#{title}"
+  end
+
+  # Map057's parallax already contains its intended dark color grading. KUL's
+  # full-screen shadow was therefore darkening the art a second time. Disable
+  # only that overlay and use the transfer command's native fade at the end;
+  # event coordinates, graphics, conditions and interaction pages stay intact.
+  def disable_map057_kul_dimming
+    path = "Data/Map057.rvdata2"
+    map = load_data(path)
+    note = map.instance_variable_get(:@note).to_s.lines.reject do |line|
+      line.strip.match?(/\A\[(?:lighting|opacity|color)\b/i)
+    end.join
+    note = note.gsub("Leo shop branch 3; KUL only",
+                     "Leo shop branch 3; parallax-lit; KUL dimming disabled")
+    map.instance_variable_set(:@note, note)
+
+    page = map.instance_variable_get(:@events).fetch(1)
+      .instance_variable_get(:@pages).first
+    list = page.instance_variable_get(:@list) || []
+
+    setup = list.find do |command|
+      command_code(command) == 355 &&
+        (command_parameters(command)[0].to_s.include?("$game_map.shadows.set_color") ||
+         command_parameters(command)[0].to_s.include?("WCF_MAGIC_SHOP_KUL_DISABLED"))
+    end
+    raise "Map057 KUL setup command missing" unless setup
+    setup.instance_variable_set(:@parameters, [
+      "$game_map.shadows.set_opacity(0); $game_map.shadows.hide # WCF_MAGIC_SHOP_KUL_DISABLED"
+    ])
+
+    reveal = list.index do |command|
+      command_code(command) == 355 &&
+        command_parameters(command)[0].to_s.include?("WCF_LEO_MAGIC_REVEAL")
+    end
+    if reveal
+      list.delete_at(reveal)
+      list.delete_at(reveal) if list[reveal] && command_code(list[reveal]) == 230
+    end
+
+    all_pages = map.instance_variable_get(:@events).values.compact.flat_map do |event|
+      event.instance_variable_get(:@pages) || []
+    end
+    exit_page = all_pages.find do |candidate|
+      (candidate.instance_variable_get(:@list) || []).any? do |command|
+        (command_code(command) == 355 &&
+          command_parameters(command)[0].to_s.include?("WCF_LEO_MAGIC_EXIT")) ||
+          (command_code(command) == 201 && command_parameters(command)[0, 2] == [0, 37])
+      end
+    end
+    raise "Map057 KUL exit page missing" unless exit_page
+    exit_list = exit_page.instance_variable_get(:@list) || []
+    exit_index = exit_list.index do |command|
+      command_code(command) == 355 &&
+        command_parameters(command)[0].to_s.include?("WCF_LEO_MAGIC_EXIT")
+    end
+    if exit_index
+      exit_list.delete_at(exit_index)
+      exit_list.delete_at(exit_index) if exit_list[exit_index] && command_code(exit_list[exit_index]) == 230
+    end
+
+    transfer = exit_list.reverse.find do |command|
+      command_code(command) == 201 && command_parameters(command)[0, 2] == [0, 37]
+    end
+    raise "Map057 -> Map037 transfer missing" unless transfer
+    params = command_parameters(transfer).dup
+    params[5] = 0
+    transfer.instance_variable_set(:@parameters, params)
+    page.instance_variable_set(:@list, list)
+    exit_page.instance_variable_set(:@list, exit_list)
+    save_data(path, map)
+    audit_map057_kul_dimming_disabled
+    puts "MAP057_KUL_DIMMING_DISABLED|entry=shadow_hidden|exit=native_fade|events_preserved=#{map.instance_variable_get(:@events).length}"
+  end
+
+  def audit_map057_kul_dimming_disabled
+    map = load_data("Data/Map057.rvdata2")
+    errors = []
+    note = map.instance_variable_get(:@note).to_s
+    errors << "lighting notetag remains" if note.match?(/^\[(?:lighting|opacity|color)\b/i)
+    page = map.instance_variable_get(:@events).fetch(1)
+      .instance_variable_get(:@pages).first
+    list = page.instance_variable_get(:@list) || []
+    all_lists = map.instance_variable_get(:@events).values.compact.flat_map do |event|
+      (event.instance_variable_get(:@pages) || []).map do |candidate|
+        candidate.instance_variable_get(:@list) || []
+      end
+    end
+    scripts = all_lists.flatten.select { |command| [355, 655].include?(command_code(command)) }
+                       .map { |command| command_parameters(command)[0].to_s }
+    errors << "KUL is not explicitly hidden on entry" unless
+      scripts.any? { |script| script.include?("WCF_MAGIC_SHOP_KUL_DISABLED") && script.include?("shadows.hide") }
+    errors << "legacy KUL reveal remains" if scripts.any? { |script| script.include?("WCF_LEO_MAGIC_REVEAL") }
+    errors << "legacy KUL exit remains" if scripts.any? { |script| script.include?("WCF_LEO_MAGIC_EXIT") }
+    errors << "nonzero KUL shadow remains" if scripts.any? do |script|
+      script.match?(/shadows\.set_opacity\((?!0(?:\D|$))/)
+    end
+    transfer = all_lists.flatten.find do |command|
+      command_code(command) == 201 && command_parameters(command)[0, 2] == [0, 37]
+    end
+    errors << "Map037 transfer does not use native fade" unless transfer && command_parameters(transfer)[5] == 0
+    errors << "Map057 event count changed" unless map.instance_variable_get(:@events).length == 31
+    raise errors.join("\n") unless errors.empty?
+    puts "MAP057_KUL_AUDIT_OK|lighting_notetag=false|shadow=hidden|transfer_fade=normal|events=31"
+  end
+
+  def requested_writer_route_fixes
+    # BUG-003: the bus must place Hải Quỳ on the walkable entrance tile and
+    # face her upward toward the shop interior.
+    map10 = load_data("Data/Map010.rvdata2")
+    bus_page = map10.instance_variable_get(:@events).fetch(2)
+      .instance_variable_get(:@pages).first
+    bus_transfer = (bus_page.instance_variable_get(:@list) || []).find do |command|
+      command_code(command) == 201 && command_parameters(command)[0, 2] == [0, 20]
+    end
+    raise "BUG-003 Map010 -> Map020 transfer missing" unless bus_transfer
+    bus_transfer.instance_variable_set(:@parameters, [0, 20, 15, 12, 8, 2])
+    save_data("Data/Map010.rvdata2", map10)
+
+    # SUG-001: the generic TV description belongs only to the no-tape page.
+    map26 = load_data("Data/Map026.rvdata2")
+    tv = map26.instance_variable_get(:@events).fetch(12)
+    removed_tv_descriptions = 0
+    (tv.instance_variable_get(:@pages) || [])[2, 3].each do |page|
+      list = page.instance_variable_get(:@list) || []
+      first = list.index { |command| command_code(command) == 101 }
+      raise "SUG-001 tape page has no opening message" unless first
+      finish, raw = writer_message_block(list, first)
+      expected = "Một chiếc TV cũ cùng một đầu\nbăng cát-sét vẫn còn dùng\nđược."
+      raise "SUG-001 TV baseline changed: #{raw.inspect}" unless
+        normalized_writer_text(writer_frame_text(raw)) == expected
+      list.slice!(first...finish)
+      page.instance_variable_set(:@list, list)
+      removed_tv_descriptions += 1
+    end
+    save_data("Data/Map026.rvdata2", map26)
+
+    # SUG-053/SUG-056: stage the noodle preparation beside its present, walk
+    # to the bed, then swap to the authored sleeping parallax while the event
+    # sprite is hidden. Restore the normal room before the wake dialogue.
+    map47 = load_data("Data/Map047.rvdata2")
+    events47 = map47.instance_variable_get(:@events) || {}
+    actor47 = events47.fetch(3)
+    actor47.instance_variable_set(:@x, 11)
+    actor47.instance_variable_set(:@y, 7)
+    actor_graphic = actor47.instance_variable_get(:@pages).first
+      .instance_variable_get(:@graphic)
+    actor_graphic.instance_variable_set(:@character_name, "$HaiQuy_Sleep_Night")
+    actor_graphic.instance_variable_set(:@character_index, 0)
+    actor_graphic.instance_variable_set(:@direction, 2)
+    actor_graphic.instance_variable_set(:@pattern, 1)
+    unless events47.key?(2)
+      present = Marshal.load(Marshal.dump(
+        load_data("Data/Map037.rvdata2").instance_variable_get(:@events).fetch(2)
+      ))
+      present.instance_variable_set(:@id, 2)
+      present.instance_variable_set(:@name, "PROP-NOODLE-GIFT [E002]")
+      events47[2] = present
+    end
+    controller47 = events47.fetch(1).instance_variable_get(:@pages).first
+    list47 = controller47.instance_variable_get(:@list) || []
+    prep_black = list47.index do |command|
+      command_code(command) == 355 && command_parameters(command)[0].to_s.include?("WCF_NOODLE_REVIEW_PREP_BLACK")
+    end
+    raise "Map047 preparation black marker missing" unless prep_black
+    stage_script = "$game_map.events[3].moveto(11,7); $game_map.events[3].set_graphic('$HaiQuy_Sleep_Night',0) # WCF_NOODLE_GIFT_STAGE"
+    list47.insert(prep_black + 1, event_command(355, 0, [stage_script])) unless
+      list47.any? { |command| command_code(command) == 355 && command_parameters(command)[0].to_s.include?("WCF_NOODLE_GIFT_STAGE") }
+
+    old_black = list47.index do |command|
+      command_code(command) == 355 && command_parameters(command)[0].to_s.include?("WCF_NOODLE_SLEEP_CUT")
+    end
+    old_reveal = list47.index do |command|
+      command_code(command) == 355 && command_parameters(command)[0].to_s.include?("WCF_NOODLE_WAKE_REVEAL")
+    end
+    raise "Map047 old sleep transition markers missing" unless old_black && old_reveal
+    sleep_start = old_black - 2
+    raise "Map047 sleep branch baseline changed" unless
+      command_code(list47[sleep_start]) == 230 && command_code(list47[sleep_start + 1]) == 111
+    sleep_finish = old_reveal + 2
+    raise "Map047 wake wait baseline changed" unless command_code(list47[old_reveal + 1]) == 230
+
+    walk = RPG::MoveRoute.allocate
+    walk.instance_variable_set(:@repeat, false)
+    walk.instance_variable_set(:@skippable, false)
+    walk.instance_variable_set(:@wait, true)
+    find_path = RPG::MoveCommand.allocate
+    find_path.instance_variable_set(:@code, 45)
+    find_path.instance_variable_set(:@parameters, ["find_path(8,5)"])
+    route_end = RPG::MoveCommand.allocate
+    route_end.instance_variable_set(:@code, 0)
+    route_end.instance_variable_set(:@parameters, [])
+    walk.instance_variable_set(:@list, [find_path, route_end])
+    sleep_transition = [
+      event_command(205, 0, [3, walk]),
+      event_command(355, 0, ["$game_map.shadows.set_opacity(255,24) # WCF_NOODLE_SLEEP_CUT"]),
+      event_command(230, 0, [24]),
+      event_command(284, 0, ["HQ_Room_Sleep", false, false, 0, 0]),
+      event_command(355, 0, ["del_layer(47,0); $game_map.events[3].set_graphic('',0) # WCF_NOODLE_SLEEP_PARALLAX"]),
+      event_command(355, 0, ["$game_map.shadows.set_opacity(185,24) # WCF_NOODLE_SLEEP_REVEAL"]),
+      event_command(230, 0, [24]),
+      event_command(230, 0, [60]),
+      event_command(355, 0, ["$game_map.shadows.set_opacity(255,24) # WCF_NOODLE_WAKE_CUT"]),
+      event_command(230, 0, [24]),
+      event_command(284, 0, ["HQ_Room_Midnight_Base", false, false, 0, 0]),
+      event_command(355, 0, ["layer(47,0,['HQ_Room_Midnight_Top',0,0,255,200,0,0,0]); refresh_layers; $game_map.events[3].moveto(8,5); $game_map.events[3].set_graphic('$HaiQuy_Sleep_Night',0) # WCF_NOODLE_WAKE_STAGE"]),
+      event_command(355, 0, ["$game_map.shadows.set_opacity(185,24) # WCF_NOODLE_WAKE_REVEAL"]),
+      event_command(230, 0, [24])
+    ]
+    list47[sleep_start...sleep_finish] = sleep_transition
+    controller47.instance_variable_set(:@list, list47)
+    map47.instance_variable_set(:@events, events47)
+    save_data("Data/Map047.rvdata2", map47)
+
+    # SUG-072/SUG-101: checkout is now offered immediately after accepting a
+    # gift. The second choice returns to free roam; Event 42 is removed.
+    map19 = load_data("Data/Map019.rvdata2")
+    events19 = map19.instance_variable_get(:@events) || {}
+    gate = events19.fetch(42)
+    gate_list = gate.instance_variable_get(:@pages).first.instance_variable_get(:@list) || []
+    choice_index = gate_list.index { |command| command_code(command) == 102 }
+    pay_branch = choice_index && ((choice_index + 1)...gate_list.length).find do |index|
+      command_code(gate_list[index]) == 402 && command_parameters(gate_list[index])[0].to_i == 0
+    end
+    keep_branch = pay_branch && ((pay_branch + 1)...gate_list.length).find do |index|
+      command_code(gate_list[index]) == 402 && command_parameters(gate_list[index])[0].to_i == 1
+    end
+    raise "Map019 Event42 checkout branches missing" unless choice_index && pay_branch && keep_branch
+    pay_commands = Marshal.load(Marshal.dump(gate_list[(pay_branch + 1)...keep_branch]))
+    pay_commands.each do |command|
+      indent = command.instance_variable_get(:@indent).to_i
+      command.instance_variable_set(:@indent, [indent - 1, 1].max)
+    end
+    # The non-coffee checkout path enters the shared preparation map.
+    transfer37 = pay_commands.index do |command|
+      command_code(command) == 201 && command_parameters(command)[0, 2] == [0, 37]
+    end
+    raise "Map019 checkout transfer to Map037 missing" unless transfer37
+    transfer37_indent = pay_commands[transfer37].instance_variable_get(:@indent).to_i
+    pay_commands.insert(transfer37,
+      event_command(122, transfer37_indent, [83, 83, 0, 0, 37]))
+
+    common_path = "Data/CommonEvents.rvdata2"
+    common_events = load_data(common_path)
+    template_common = common_events.compact.last
+    checkout = common_events[19] || Marshal.load(Marshal.dump(template_common))
+    checkout.instance_variable_set(:@id, 19)
+    checkout.instance_variable_set(:@name, "MKT — Checkout now or keep shopping [CE19]")
+    checkout.instance_variable_set(:@trigger, 0)
+    checkout.instance_variable_set(:@switch_id, 1)
+    checkout.instance_variable_set(:@list, [
+      event_command(101, 0, ["HaiQuy_Thuongphuc_Emote", 3, 0, 2]),
+      event_command(401, 0, ["Đã chọn quà rồi. Thanh toán luôn chứ?"]),
+      event_command(102, 0, [["Thanh toán luôn", "Đi chọn tiếp"], 1]),
+      event_command(402, 0, [0, "Thanh toán luôn"]),
+      *pay_commands,
+      event_command(402, 0, [1, "Đi chọn tiếp"]),
+      event_command(404, 0, []),
+      event_command(0, 0, [])
+    ])
+    common_events[19] = checkout
+    save_data(common_path, common_events)
+
+    [33, 34, 35, 36].each do |event_id|
+      page = events19.fetch(event_id).instance_variable_get(:@pages).first
+      list = page.instance_variable_get(:@list) || []
+      state_index = list.index do |command|
+        command_code(command) == 122 && command_parameters(command)[0, 5] == [44, 44, 0, 0, 1]
+      end
+      raise "Map019 gift Event#{event_id} state marker missing" unless state_index
+      list.insert(state_index + 1, event_command(117, 1, [19]))
+      page.instance_variable_set(:@list, list)
+    end
+    events19.delete(42)
+    map19.instance_variable_set(:@events, events19)
+    save_data("Data/Map019.rvdata2", map19)
+
+    # BUG-001: make the fax message one-shot, reset the inherited white tone,
+    # and use one KUL black handoff through Map003 -> Map017/Map006.
+    map3 = load_data("Data/Map003.rvdata2")
+    events3 = map3.instance_variable_get(:@events) || {}
+    fax = events3.fetch(25)
+    fax_pages = fax.instance_variable_get(:@pages) || []
+    raise "Map003 fax page baseline changed" unless fax_pages.length == 2
+    fax_second = fax_pages[1].instance_variable_get(:@list) || []
+    fax_end = fax_second.rindex { |command| command_code(command) == 0 } || fax_second.length
+    fax_second.insert(fax_end, event_command(123, 0, ["B", 0]))
+    fax_pages[1].instance_variable_set(:@list, fax_second)
+    fax_done = Marshal.load(Marshal.dump(fax_pages[0]))
+    done_condition = fax_done.instance_variable_get(:@condition)
+    reset_page_condition(done_condition)
+    done_condition.instance_variable_set(:@self_switch_valid, true)
+    done_condition.instance_variable_set(:@self_switch_ch, "B")
+    done_list = fax_done.instance_variable_get(:@list) || []
+    done_list.reject! { |command| command_code(command) == 123 }
+    fax_done.instance_variable_set(:@list, done_list)
+    fax_pages << fax_done
+    fax.instance_variable_set(:@pages, fax_pages)
+
+    [62, 63].each do |event_id|
+      page = events3.fetch(event_id).instance_variable_get(:@pages).first
+      list = page.instance_variable_get(:@list) || []
+      tone_indexes = list.each_index.select { |index| command_code(list[index]) == 223 }
+      raise "Map003 Event#{event_id} white transition baseline changed" unless tone_indexes.length == 2
+      tone_indexes.reverse_each do |index|
+        indent = list[index].instance_variable_get(:@indent).to_i
+        list[index] = event_command(355, indent, ["$game_map.screen.start_tone_change(Tone.new(0,0,0,0),0); map_effects.set_tone(0,0,0,0,0); $game_map.shadows.set_color(0,0,0); $game_map.shadows.show; $game_map.shadows.set_opacity(255,30) # WCF_SW_KUL_EXIT"])
+        list.insert(index + 1, event_command(230, indent, [30]))
+      end
+      list.each do |command|
+        next unless command_code(command) == 201 && [6, 17].include?(command_parameters(command)[1].to_i)
+        parameters = command_parameters(command).dup
+        parameters[5] = 2
+        command.instance_variable_set(:@parameters, parameters)
+      end
+      page.instance_variable_set(:@list, list)
+    end
+    save_data("Data/Map003.rvdata2", map3)
+
+    map17 = load_data("Data/Map017.rvdata2")
+    page17 = map17.instance_variable_get(:@events).fetch(2)
+      .instance_variable_get(:@pages).first
+    list17 = page17.instance_variable_get(:@list) || []
+    list17.unshift(event_command(355, 0, ["$game_map.screen.start_tone_change(Tone.new(0,0,0,0),0); map_effects.set_tone(0,0,0,0,0); $game_map.shadows.set_color(0,0,0); $game_map.shadows.show; $game_map.shadows.set_opacity(255) # WCF_SW_HALL_KUL_ENTRY"]))
+    neutral_tone = list17.index { |command| command_code(command) == 223 }
+    raise "Map017 neutral tone marker missing" unless neutral_tone
+    list17[neutral_tone] = event_command(355, 0, ["$game_map.shadows.set_opacity(0,30) # WCF_SW_HALL_KUL_REVEAL"])
+    list17.insert(neutral_tone + 1, event_command(230, 0, [30]))
+    fadeout17 = list17.rindex { |command| command_code(command) == 221 }
+    raise "Map017 final Fade Out marker missing" unless fadeout17
+    list17[fadeout17] = event_command(355, 0, ["$game_map.shadows.set_opacity(255,30) # WCF_SW_HALL_KUL_EXIT"])
+    list17.insert(fadeout17 + 1, event_command(230, 0, [30]))
+    page17.instance_variable_set(:@list, list17)
+    save_data("Data/Map017.rvdata2", map17)
+
+    map6 = load_data("Data/Map006.rvdata2")
+    page6 = map6.instance_variable_get(:@events).fetch(4)
+      .instance_variable_get(:@pages).first
+    list6 = page6.instance_variable_get(:@list) || []
+    list6.unshift(event_command(355, 0, ["$game_map.screen.start_tone_change(Tone.new(0,0,0,0),0); map_effects.set_tone(0,0,0,0,0); $game_map.shadows.set_color(0,0,0); $game_map.shadows.show; $game_map.shadows.set_opacity(255) # WCF_CITY_KUL_ENTRY"]))
+    fadein6 = list6.index { |command| command_code(command) == 222 }
+    raise "Map006 Fade In marker missing" unless fadein6
+    list6[fadein6] = event_command(355, 0, ["$game_map.shadows.set_opacity(0,30) # WCF_CITY_KUL_REVEAL"])
+    list6.insert(fadein6 + 1, event_command(230, 0, [30]))
+    page6.instance_variable_set(:@list, list6)
+    save_data("Data/Map006.rvdata2", map6)
+
+    # All preparation maps below have an identical tile table and parallax.
+    # Consolidate their runtime controllers as conditional pages on Map037.
+    variant_ids = [47, 49, 51, 60, 65]
+    canonical = load_data("Data/Map037.rvdata2")
+    canonical_events = canonical.instance_variable_get(:@events) || {}
+    canonical_controller = canonical_events.fetch(1)
+    canonical_pages = [canonical_controller.instance_variable_get(:@pages).first]
+    variant_ids.each do |source_id|
+      source = load_data(format("Data/Map%03d.rvdata2", source_id))
+      unless Marshal.dump(source.instance_variable_get(:@data)) == Marshal.dump(canonical.instance_variable_get(:@data)) &&
+             source.instance_variable_get(:@parallax_name) == canonical.instance_variable_get(:@parallax_name)
+        raise "Preparation Map#{source_id} is not layout-compatible with Map037"
+      end
+      page = Marshal.load(Marshal.dump(
+        source.instance_variable_get(:@events).fetch(1).instance_variable_get(:@pages).first
+      ))
+      condition = page.instance_variable_get(:@condition)
+      reset_page_condition(condition)
+      condition.instance_variable_set(:@variable_valid, true)
+      condition.instance_variable_set(:@variable_id, 83)
+      condition.instance_variable_set(:@variable_value, source_id)
+      (page.instance_variable_get(:@list) || []).each do |command|
+        next unless [355, 655].include?(command_code(command))
+        parameters = command_parameters(command).dup
+        parameters[0] = parameters[0].to_s
+          .gsub(/layer\(#{source_id},/, "layer(37,")
+          .gsub(/del_layer\(#{source_id},/, "del_layer(37,")
+        command.instance_variable_set(:@parameters, parameters)
+      end
+      canonical_pages << page
+    end
+    canonical_controller.instance_variable_set(:@name, "SCN-HQ-SHARED-GIFT-PREPARATION [E001]")
+    canonical_controller.instance_variable_set(:@pages, canonical_pages)
+    canonical.instance_variable_set(:@display_name, "Phòng Hải Quỳ — Chuẩn bị quà")
+    canonical.instance_variable_set(:@note,
+      "<full lock parallax>\r\n<tile lock parallax>\r\nShared preparation stage; variant variable 83")
+    save_data("Data/Map037.rvdata2", canonical)
+
+    # Redirect every incoming transfer to the shared stage and set the exact
+    # variant before transfer. Existing Map037 entries select variant 37.
+    transfer_targets = ([37] + variant_ids).to_h { |id| [id, true] }
+    redirected = 0
+    Dir.glob("Data/Map[0-9][0-9][0-9].rvdata2").sort.each do |path|
+      map_id = File.basename(path)[/\d+/].to_i
+      next if map_id == 37
+      map = load_data(path)
+      changed = false
+      (map.instance_variable_get(:@events) || {}).each_value do |event|
+        next unless event
+        (event.instance_variable_get(:@pages) || []).each do |page|
+          list = page.instance_variable_get(:@list) || []
+          indexes = list.each_index.select do |index|
+            command_code(list[index]) == 201 &&
+              command_parameters(list[index])[0].to_i == 0 &&
+              transfer_targets.key?(command_parameters(list[index])[1].to_i)
+          end
+          indexes.reverse_each do |index|
+            target = command_parameters(list[index])[1].to_i
+            indent = list[index].instance_variable_get(:@indent).to_i
+            list.insert(index, event_command(122, indent, [83, 83, 0, 0, target]))
+            parameters = command_parameters(list[index + 1]).dup
+            parameters[1] = 37
+            list[index + 1].instance_variable_set(:@parameters, parameters)
+            redirected += 1
+            changed = true
+          end
+          page.instance_variable_set(:@list, list) if changed
+        end
+      end
+      save_data(path, map) if changed
+    end
+
+    system = load_data("Data/System.rvdata2")
+    variables = system.instance_variable_get(:@variables)
+    variables[83] = "HQ_PREP_SCENE_VARIANT"
+    system.instance_variable_set(:@variables, variables)
+    save_data("Data/System.rvdata2", system)
+
+    puts "REQUESTED_WRITER_ROUTE_FIXES|BUG003=15,12,up|SUG001=pages3-5_removed_#{removed_tv_descriptions}|" \
+         "SUG053_056=gift11,8_actor11,7_sleep8,5|SUG072_101=CE19_event42_removed|" \
+         "BUG001=fax_once_KUL|prep_shared=Map037|redirected=#{redirected}"
+  end
+
+  def fix_checkout_variant_indent
+    path = "Data/CommonEvents.rvdata2"
+    events = load_data(path)
+    list = events.fetch(19).instance_variable_get(:@list) || []
+    transfer = list.index do |command|
+      command_code(command) == 201 && command_parameters(command)[0, 2] == [0, 37]
+    end
+    raise "CE19 transfer to Map037 missing" unless transfer
+    selector = (transfer - 1).downto(0).find do |index|
+      command_code(list[index]) == 122 && command_parameters(list[index])[0, 2] == [83, 83]
+    end
+    raise "CE19 preparation selector missing" unless selector
+    indent = list[transfer].instance_variable_get(:@indent).to_i
+    list[selector].instance_variable_set(:@indent, indent)
+    events[19].instance_variable_set(:@list, list)
+    save_data(path, events)
+    puts "CE19_VARIANT_INDENT|selector=#{indent}|transfer=#{indent}"
+  end
+
+  def audit_requested_writer_route_fixes
+    errors = []
+    map10 = load_data("Data/Map010.rvdata2")
+    transfers10 = map10.instance_variable_get(:@events).fetch(2)
+      .instance_variable_get(:@pages).first.instance_variable_get(:@list)
+      .select { |command| command_code(command) == 201 }
+      .map { |command| command_parameters(command) }
+    errors << "BUG003 transfer" unless transfers10.include?([0, 20, 15, 12, 8, 2])
+
+    map19 = load_data("Data/Map019.rvdata2")
+    events19 = map19.instance_variable_get(:@events) || {}
+    errors << "Map019 Event42 still exists" if events19.key?(42)
+    [33, 34, 35, 36].each do |event_id|
+      calls = events19.fetch(event_id).instance_variable_get(:@pages).first
+        .instance_variable_get(:@list).count do |command|
+          command_code(command) == 117 && command_parameters(command)[0].to_i == 19
+        end
+      errors << "Map019 E#{event_id} CE19 calls=#{calls}" unless calls == 1
+    end
+
+    common = load_data("Data/CommonEvents.rvdata2").fetch(19)
+    common_list = common.instance_variable_get(:@list) || []
+    transfer37 = common_list.index do |command|
+      command_code(command) == 201 && command_parameters(command)[0, 2] == [0, 37]
+    end
+    selector83 = transfer37 && (transfer37 - 1).downto(0).find do |index|
+      command_code(common_list[index]) == 122 && command_parameters(common_list[index])[0, 2] == [83, 83]
+    end
+    errors << "CE19 Map037 selector missing" unless transfer37 && selector83
+    if transfer37 && selector83
+      selector_indent = common_list[selector83].instance_variable_get(:@indent).to_i
+      transfer_indent = common_list[transfer37].instance_variable_get(:@indent).to_i
+      errors << "CE19 selector indent #{selector_indent} != #{transfer_indent}" unless selector_indent == transfer_indent
+    end
+
+    map37 = load_data("Data/Map037.rvdata2")
+    pages37 = map37.instance_variable_get(:@events).fetch(1)
+      .instance_variable_get(:@pages) || []
+    values37 = pages37.drop(1).map do |page|
+      page.instance_variable_get(:@condition).instance_variable_get(:@variable_value).to_i
+    end
+    errors << "Map037 variants #{values37.inspect}" unless values37 == [47, 49, 51, 60, 65]
+    noodle = pages37[1].instance_variable_get(:@list) || []
+    scripts = noodle.select { |command| [355, 655].include?(command_code(command)) }
+      .map { |command| command_parameters(command)[0].to_s }.join("\n")
+    %w[WCF_PREP_GIFT_STAGE_P2 WCF_NOODLE_SLEEP_PARALLAX WCF_PREP_CG_SEQUENCE_END_P2].each do |marker|
+      errors << "Map037 noodle marker #{marker}" unless scripts.include?(marker)
+    end
+    errors << "Map037 sleep parallax" unless noodle.any? do |command|
+      command_code(command) == 284 && command_parameters(command)[0] == "HQ_Room_Sleep"
+    end
+    old_targets = [47, 49, 51, 60, 65]
+    Dir.glob("Data/Map[0-9][0-9][0-9].rvdata2").sort.each do |path|
+      source_id = File.basename(path)[/\d+/].to_i
+      next if source_id == 37
+      map = load_data(path)
+      (map.instance_variable_get(:@events) || {}).each do |event_id, event|
+        next unless event
+        (event.instance_variable_get(:@pages) || []).each_with_index do |page, page_index|
+          list = page.instance_variable_get(:@list) || []
+          list.each_with_index do |command, index|
+            next unless command_code(command) == 201 && command_parameters(command)[0].to_i == 0
+            target = command_parameters(command)[1].to_i
+            errors << "old prep target Map#{target} at Map#{source_id}/E#{event_id}/P#{page_index + 1}" if old_targets.include?(target)
+            next unless target == 37
+            selector = list[index - 1]
+            valid = selector && command_code(selector) == 122 &&
+              command_parameters(selector)[0, 2] == [83, 83]
+            # Test Hub checkpoints assign V83 inside WCFTestHub.prepare rather
+            # than through a separate Control Variables command.  The script
+            # immediately preceding the transfer is the selector in that map.
+            valid ||= source_id == 69 && selector &&
+              command_code(selector) == 355 &&
+              command_parameters(selector)[0].to_s.match?(
+                /WCFTestHub\.prepare\(:(?:market|noodle|shy_book|hak_book|leo|jewel)_prep/)
+            errors << "Map037 transfer lacks V83 at Map#{source_id}/E#{event_id}/P#{page_index + 1}/C#{index + 1}" unless valid
+          end
+        end
+      end
+    end
+
+    map3 = load_data("Data/Map003.rvdata2")
+    fax_pages = map3.instance_variable_get(:@events).fetch(25).instance_variable_get(:@pages) || []
+    errors << "fax pages=#{fax_pages.length}" unless fax_pages.length == 3
+    [62, 63].each do |event_id|
+      list = map3.instance_variable_get(:@events).fetch(event_id)
+        .instance_variable_get(:@pages).first.instance_variable_get(:@list) || []
+      errors << "Map003 E#{event_id} still uses tone" if list.any? { |command| command_code(command) == 223 }
+    end
+    map17_list = load_data("Data/Map017.rvdata2").instance_variable_get(:@events).fetch(2)
+      .instance_variable_get(:@pages).first.instance_variable_get(:@list) || []
+    errors << "Map017 native fade/tone remains" if map17_list.any? { |command| [221, 222, 223].include?(command_code(command)) }
+    map6_list = load_data("Data/Map006.rvdata2").instance_variable_get(:@events).fetch(4)
+      .instance_variable_get(:@pages).first.instance_variable_get(:@list) || []
+    errors << "Map006 native Fade In remains" if map6_list.any? { |command| command_code(command) == 222 }
+
+    syntax_errors = event_script_syntax_errors([3, 6, 10, 17, 19, 20, 26, 37, 47, 49, 51, 60, 65])
+    syntax_errors.each { |error| errors << "syntax #{error}" }
+    errors.each { |error| puts "REQUESTED_FIX_ERROR|#{error}" }
+    puts "REQUESTED_FIX_AUDIT|errors=#{errors.length}|syntax_errors=#{syntax_errors.length}|prep_pages=#{pages37.length}"
+    raise "Requested writer route fix audit failed" unless errors.empty?
+  end
+
+  def archive_legacy_preparation_maps
+    archive_id = 68
+    legacy_ids = [47, 49, 51, 60, 65]
+    infos_path = "Data/MapInfos.rvdata2"
+    infos = load_data(infos_path)
+    raise "MapInfo #{archive_id} already exists" if infos[archive_id]
+    raise "Map%03d already exists" % archive_id if File.exist?(format("Data/Map%03d.rvdata2", archive_id))
+    legacy_ids.each { |id| raise "Legacy MapInfo #{id} missing" unless infos[id] }
+
+    # VX Ace represents folders in the map tree as ordinary parent maps. This
+    # blank map is deliberately unreachable and exists only as a UI group.
+    archive_map = Marshal.load(Marshal.dump(load_data("Data/Map037.rvdata2")))
+    archive_map.instance_variable_set(:@display_name, "")
+    archive_map.instance_variable_set(:@width, 17)
+    archive_map.instance_variable_set(:@height, 13)
+    archive_map.instance_variable_set(:@data, blank_table(17, 13, 4))
+    archive_map.instance_variable_set(:@events, {})
+    archive_map.instance_variable_set(:@parallax_name, "")
+    archive_map.instance_variable_set(:@parallax_show, false)
+    archive_map.instance_variable_set(:@note,
+      "ARCHIVED map-tree group only; no runtime transfer should target this map")
+    archive_map.instance_variable_set(:@autoplay_bgm, false)
+    archive_map.instance_variable_set(:@autoplay_bgs, false)
+    archive_map.instance_variable_set(:@encounter_list, [])
+    archive_map.instance_variable_set(:@encounter_step, 30)
+    save_data(format("Data/Map%03d.rvdata2", archive_id), archive_map)
+
+    max_order = infos.values.compact.map do |info|
+      info.instance_variable_get(:@order).to_i
+    end.max
+    archive_info = Marshal.load(Marshal.dump(infos.fetch(37)))
+    archive_info.instance_variable_set(:@name, "ARCHIVED — Map chuẩn bị cũ")
+    archive_info.instance_variable_set(:@parent_id, 0)
+    archive_info.instance_variable_set(:@order, max_order + 1)
+    archive_info.instance_variable_set(:@expanded, false)
+    infos[archive_id] = archive_info
+    legacy_ids.each_with_index do |id, index|
+      infos[id].instance_variable_set(:@parent_id, archive_id)
+      infos[id].instance_variable_set(:@order, max_order + index + 2)
+      infos[id].instance_variable_set(:@expanded, false)
+    end
+    save_data(infos_path, infos)
+
+    verify_infos = load_data(infos_path)
+    errors = []
+    errors << "archive parent" unless verify_infos.fetch(archive_id)
+      .instance_variable_get(:@parent_id).to_i == 0
+    legacy_ids.each do |id|
+      errors << "Map#{id} parent" unless verify_infos.fetch(id)
+        .instance_variable_get(:@parent_id).to_i == archive_id
+    end
+    archive_verify = load_data(format("Data/Map%03d.rvdata2", archive_id))
+    errors << "archive events" unless (archive_verify.instance_variable_get(:@events) || {}).empty?
+    raise "Archive preparation group verification failed: #{errors.join(', ')}" unless errors.empty?
+    puts "PREP_MAP_ARCHIVE|parent=#{archive_id}|children=#{legacy_ids.join(',')}|runtime_map=37"
+  end
+
+  def center_silverwing_opening_camera
+    path = "Data/Map003.rvdata2"
+    map = load_data(path)
+    page = map.instance_variable_get(:@events).fetch(3)
+      .instance_variable_get(:@pages).first
+    list = page.instance_variable_get(:@list) || []
+
+    old_camera = "ms_pro_cam_center_at(3, 3, 360)"
+    old_zoom = "map_effects.set_zoom(130, 360, false)"
+    camera_index = list.index do |command|
+      command_code(command) == 355 && command_parameters(command)[0] == old_camera
+    end
+
+    if camera_index
+      raise "Map003 opening camera baseline changed" unless
+        command_code(list[camera_index + 1]) == 355 &&
+        command_parameters(list[camera_index + 1])[0] == old_zoom &&
+        command_code(list[camera_index + 2]) == 230 &&
+        command_parameters(list[camera_index + 2]) == [360]
+
+      # Alpha C-61 and Beta M-34 stand close to the map's upper-left edge.
+      # Enhanced Camera clamps there using the unzoomed viewport, so asking it
+      # to center on their midpoint cannot move the frame horizontally.
+      opening = [
+        "ms_pro_cam_lock_camera; sx=$game_map.display_x; sy=$game_map.display_y; tx=-4.5; map_effects.set_zoom(130,360,false); 360.times {|i| r=Math.sin((i+1)*Math::PI/720.0); $game_map.instance_variable_set(:@display_x,sx+(tx-sx)*r); $game_map.instance_variable_set(:@display_y,sy*(1-r)); Fiber.yield }; $game_map.instance_variable_set(:@display_x,tx); $game_map.instance_variable_set(:@display_y,0) # WCF_SW_OPEN_CAMERA"
+      ]
+      list[camera_index, 3] = [event_command(355, 0, opening)]
+    elsif (patched = list.find { |command| command_code(command) == 355 && command_parameters(command)[0].to_s.include?("WCF_SW_OPEN_CAMERA") && !command_parameters(command)[0].to_s.include?("_RESET") })
+      patched.instance_variable_set(:@parameters, [[
+        "ms_pro_cam_lock_camera; sx=$game_map.display_x; sy=$game_map.display_y; tx=-4.5; map_effects.set_zoom(130,360,false); 360.times {|i| r=Math.sin((i+1)*Math::PI/720.0); $game_map.instance_variable_set(:@display_x,sx+(tx-sx)*r); $game_map.instance_variable_set(:@display_y,sy*(1-r)); Fiber.yield }; $game_map.instance_variable_set(:@display_x,tx); $game_map.instance_variable_set(:@display_y,0) # WCF_SW_OPEN_CAMERA"
+      ].join])
+    else
+      raise "Map003 opening camera command missing"
+    end
+
+    focus_index = list.index do |command|
+      command_code(command) == 355 && command_parameters(command)[0] == "ms_pro_cam_focus_on(-1)"
+    end
+    if focus_index
+      raise "Map003 opening camera reset baseline changed" unless
+        command_code(list[focus_index + 1]) == 355 &&
+        command_parameters(list[focus_index + 1])[0] == "map_effects.set_zoom(100,60)"
+      reset = [
+        "sx=$game_map.display_x; map_effects.set_zoom(100,60); 60.times {|i| r=Math.sin((i+1)*Math::PI/120.0); $game_map.instance_variable_set(:@display_x,sx*(1-r)); Fiber.yield }; $game_map.instance_variable_set(:@display_x,0); ms_pro_cam_unlock_camera; ms_pro_cam_focus_on(-1) # WCF_SW_OPEN_CAMERA_RESET"
+      ]
+      list[focus_index, 2] = [event_command(355, 0, reset)]
+    elsif (reset_command = list.find { |command| command_code(command) == 355 && command_parameters(command)[0].to_s.include?("WCF_SW_OPEN_CAMERA_RESET") })
+      reset_command.instance_variable_set(:@parameters, [[
+        "sx=$game_map.display_x; map_effects.set_zoom(100,60); 60.times {|i| r=Math.sin((i+1)*Math::PI/120.0); $game_map.instance_variable_set(:@display_x,sx*(1-r)); Fiber.yield }; $game_map.instance_variable_set(:@display_x,0); ms_pro_cam_unlock_camera; ms_pro_cam_focus_on(-1) # WCF_SW_OPEN_CAMERA_RESET"
+      ].join])
+    else
+      raise "Map003 opening camera reset command missing"
+    end
+
+    page.instance_variable_set(:@list, list)
+    save_data(path, map)
+
+    verify = load_data(path).instance_variable_get(:@events).fetch(3)
+      .instance_variable_get(:@pages).first.instance_variable_get(:@list)
+    scripts = verify.select { |command| command_code(command) == 355 }
+      .map { |command| command_parameters(command)[0].to_s }
+    raise "Map003 opening camera verification failed" unless
+      scripts.count { |script| script.include?("WCF_SW_OPEN_CAMERA") } == 2 &&
+      scripts.any? { |script| script.include?("ms_pro_cam_lock_camera") } &&
+      scripts.any? { |script| script.include?("ms_pro_cam_unlock_camera") } &&
+      scripts.any? { |script| script.include?("tx=-4.5") } &&
+      !scripts.include?(old_camera)
+    puts "MAP003_OPEN_CAMERA|focus=AlphaC61+BetaM34|zoom=130|x=-4.5|reset=player"
+  end
+
+  def repair_all_shared_preparation_sequences
+    path = "Data/Map037.rvdata2"
+    map = load_data(path)
+    events = map.instance_variable_get(:@events) || {}
+    controller = events.fetch(1)
+    pages = controller.instance_variable_get(:@pages) || []
+    raise "Map037 expected 6 preparation pages, got #{pages.length}" unless pages.length == 6
+    already_repaired = pages.each_with_index.all? do |page, page_index|
+      scripts = (page.instance_variable_get(:@list) || []).select do |command|
+        [355, 655].include?(command_code(command))
+      end.map { |command| command_parameters(command)[0].to_s }
+      scripts.any? { |text| text.include?("WCF_PREP_GIFT_STAGE_P#{page_index + 1}") } &&
+        scripts.any? { |text| text.include?("WCF_PREP_CG_SEQUENCE_END_P#{page_index + 1}") }
+    end
+    if already_repaired
+      audit_all_shared_preparation_sequences
+      puts "PREP_SEQUENCE_REPAIR|already_applied=true"
+      return
+    end
+
+    gift = events.fetch(2)
+    gift.instance_variable_set(:@x, 11)
+    gift.instance_variable_set(:@y, 8)
+    actor = events.fetch(3)
+    actor.instance_variable_set(:@x, 11)
+    actor.instance_variable_set(:@y, 7)
+    actor_graphic = actor.instance_variable_get(:@pages).first
+      .instance_variable_get(:@graphic)
+    actor_graphic.instance_variable_set(:@character_name, "$HaiQuy_Sleep_Night")
+    actor_graphic.instance_variable_set(:@character_index, 0)
+    actor_graphic.instance_variable_set(:@direction, 2)
+    actor_graphic.instance_variable_set(:@pattern, 1)
+
+    script_text = lambda do |command|
+      [355, 655].include?(command_code(command)) ? command_parameters(command)[0].to_s : ""
+    end
+    gallery_show = lambda do |list, id|
+      list.index do |command|
+        script_text.call(command) =~ /WCFGalleryScene\.show\(#{id}\)/
+      end
+    end
+    move_to_bed = lambda do
+      route = RPG::MoveRoute.allocate
+      route.instance_variable_set(:@repeat, false)
+      route.instance_variable_set(:@skippable, false)
+      route.instance_variable_set(:@wait, true)
+      move = RPG::MoveCommand.allocate
+      move.instance_variable_set(:@code, 45)
+      move.instance_variable_set(:@parameters, ["find_path(8,5)"])
+      finish = RPG::MoveCommand.allocate
+      finish.instance_variable_set(:@code, 0)
+      finish.instance_variable_set(:@parameters, [])
+      route.instance_variable_set(:@list, [move, finish])
+      event_command(205, 0, [3, route])
+    end
+    sleep_parallax = lambda do |page_number|
+      [
+        event_command(284, 0, ["HQ_Room_Sleep", false, false, 0, 0]),
+        event_command(355, 0, ["del_layer(37,0); $game_map.events[3].set_graphic('',0) # WCF_PREP_SLEEP_PARALLAX_P#{page_number}"])
+      ]
+    end
+
+    # Every route begins with Hải Quỳ one tile above the present. Keep the
+    # command on every page because event coordinates can persist after page
+    # refreshes even though the database event also uses the same position.
+    pages.each_with_index do |page, page_index|
+      list = page.instance_variable_get(:@list) || []
+      list.reject! do |command|
+        text = script_text.call(command)
+        text.include?("WCF_PREP_GIFT_STAGE_P") || text.include?("WCF_NOODLE_GIFT_STAGE")
+      end
+      stage = event_command(355, 0, [
+        "$game_map.events[3].moveto(11,7); $game_map.events[3].set_graphic('$HaiQuy_Sleep_Night',0) # WCF_PREP_GIFT_STAGE_P#{page_index + 1}"
+      ])
+      reveal = list.index do |command|
+        command_code(command) == 222 || script_text.call(command).include?("set_opacity(185")
+      end
+      raise "Map037 page #{page_index + 1} has no opening reveal" unless reveal
+      list.insert(reveal, stage)
+      page.instance_variable_set(:@list, list)
+    end
+
+    # Page 1: preserve the authored market dialogue and phone timeline, but
+    # stage the actual walk and sleeping parallax inside its fade transition.
+    list = pages[0].instance_variable_get(:@list)
+    first_cg = gallery_show.call(list, 28)
+    sleep_cut = (0...first_cg).to_a.reverse.find { |index| command_code(list[index]) == 221 }
+    raise "Map037 page 1 sleep cut missing" unless first_cg && sleep_cut
+    list.insert(sleep_cut, move_to_bed.call)
+    sleep_cut += 1
+    first_cg = gallery_show.call(list, 28)
+    between = list[(sleep_cut + 1)...first_cg]
+    phone_timeline = between.find do |command|
+      command_code(command) == 117 && command_parameters(command)[0].to_i == 18
+    end
+    fade_in = between.find { |command| command_code(command) == 222 }
+    raise "Map037 page 1 wake handoff changed" unless phone_timeline && fade_in
+    list[(sleep_cut + 1)...first_cg] = [
+      *sleep_parallax.call(1),
+      event_command(230, 0, [60]),
+      phone_timeline,
+      fade_in
+    ]
+
+    # Page 2 already owns the correct sleep sequence. Do not restore the room
+    # for its wake dialogue; put CG11 on screen as soon as the wake cut ends.
+    list = pages[1].instance_variable_get(:@list)
+    original_cg = gallery_show.call(list, 28)
+    raise "Map037 page 2 CG11 missing" unless original_cg
+    cg_command = list.delete_at(original_cg)
+    wake_cut = list.index { |command| script_text.call(command).include?("WCF_NOODLE_WAKE_CUT") }
+    raise "Map037 page 2 wake cut missing" unless wake_cut && command_code(list[wake_cut + 1]) == 230
+    first_wake_message = ((wake_cut + 2)...list.length).find { |index| command_code(list[index]) == 101 }
+    raise "Map037 page 2 wake dialogue missing" unless first_wake_message
+    list[(wake_cut + 2)...first_wake_message] = [cg_command, event_command(222, 0, [])]
+
+    # Pages 3 and 4 formerly started with Hải Quỳ already asleep. Give each a
+    # visible gift stage, walk to the bed, then swap the parallax under black.
+    [2, 3].each do |page_index|
+      list = pages[page_index].instance_variable_get(:@list)
+      first_cg = gallery_show.call(list, 28)
+      sleep_black = (0...first_cg).to_a.reverse.find do |index|
+        script_text.call(list[index]).include?("set_opacity(255")
+      end
+      raise "Map037 page #{page_index + 1} sleep black missing" unless sleep_black
+      list.insert(sleep_black, move_to_bed.call)
+      sleep_black += 1
+      wait_index = sleep_black + 1
+      raise "Map037 page #{page_index + 1} sleep wait missing" unless command_code(list[wait_index]) == 230
+      list.insert(wait_index + 1, *sleep_parallax.call(page_index + 1))
+    end
+
+    # Page 5: replace its sprite-only sleep with the same authored room
+    # transition and start CG11 before any wake-up narration.
+    list = pages[4].instance_variable_get(:@list)
+    sleep_start = list.index { |command| script_text.call(command).include?("WCF_LEO_AUTHORED_SLEEP") }
+    old_cg = gallery_show.call(list, 28)
+    first_wake_message = sleep_start && ((sleep_start + 1)...old_cg).find do |index|
+      command_code(list[index]) == 101
+    end
+    raise "Map037 page 5 sleep/wake baseline changed" unless sleep_start && old_cg && first_wake_message
+    cg_command = list[old_cg]
+    replacement = [
+      move_to_bed.call,
+      event_command(355, 0, ["$game_map.shadows.set_opacity(255,24) # WCF_PREP_SLEEP_CUT_P5"]),
+      event_command(230, 0, [24]),
+      *sleep_parallax.call(5),
+      event_command(355, 0, ["$game_map.shadows.set_opacity(185,24) # WCF_PREP_SLEEP_REVEAL_P5"]),
+      event_command(230, 0, [24]),
+      event_command(230, 0, [60]),
+      event_command(355, 0, ["$game_map.shadows.set_opacity(255,24) # WCF_PREP_WAKE_CUT_P5"]),
+      event_command(230, 0, [24]),
+      cg_command,
+      event_command(222, 0, [])
+    ]
+    list[sleep_start...first_wake_message] = replacement
+    duplicate_cg = gallery_show.call(list[(sleep_start + replacement.length)..-1] || [], 28)
+    if duplicate_cg
+      duplicate_cg += sleep_start + replacement.length
+      list.delete_at(duplicate_cg)
+    end
+
+    # Keep CG11 visible until CG12 replaces it, then CG12 -> CG13 -> CG14
+    # without returning to the room. CG14 remains through the final reminder.
+    make_cgs_continuous = lambda do |page, page_number|
+      list = page.instance_variable_get(:@list)
+      first = gallery_show.call(list, 28)
+      last = gallery_show.call(list, 31)
+      transfer = list.rindex { |command| command_code(command) == 201 }
+      raise "Map037 page #{page_number} CG/transfer sequence missing" unless first && last && transfer
+
+      outfit_black = (first...transfer).find do |index|
+        script_text.call(list[index]).include?("OUTFIT_BLACK")
+      end
+      if outfit_black
+        next_message = ((outfit_black + 1)...transfer).find { |index| command_code(list[index]) == 101 }
+        raise "Map037 page #{page_number} post-CG14 dialogue missing" unless next_message
+        list.slice!(outfit_black...next_message)
+      end
+
+      first = gallery_show.call(list, 28)
+      transfer = list.rindex { |command| command_code(command) == 201 }
+      (transfer - 1).downto(first) do |index|
+        text = script_text.call(list[index])
+        list.delete_at(index) if text.include?("WCFGalleryScene.hide") ||
+          (text.include?("set_graphic") && text.include?("HaiQuy_GiangSinh"))
+      end
+
+      transfer = list.rindex { |command| command_code(command) == 201 }
+      exit_black = (0...transfer).to_a.reverse.find do |index|
+        command_code(list[index]) == 221 ||
+          (script_text.call(list[index]).include?("set_opacity(255") &&
+           !script_text.call(list[index]).include?("SLEEP") &&
+           !script_text.call(list[index]).include?("WAKE"))
+      end
+      raise "Map037 page #{page_number} final black handoff missing" unless exit_black
+      insert_at = exit_black + 1
+      insert_at += 1 if command_code(list[insert_at]) == 230
+      list.insert(insert_at, event_command(355, 0,
+        ["WCFGalleryScene.hide # WCF_PREP_CG_SEQUENCE_END_P#{page_number}"]))
+      page.instance_variable_set(:@list, list)
+    end
+
+    [0, 1, 2, 3, 4].each do |page_index|
+      make_cgs_continuous.call(pages[page_index], page_index + 1)
+    end
+
+    # Page 6 (Shylvie's stone suggestion) had no sleep or wake sequence at all.
+    # Reuse the established CG11-CG14 wake dialogue, while retaining this
+    # route's own gift preparation and progress/transfer commands.
+    source = pages[2].instance_variable_get(:@list)
+    source_first = gallery_show.call(source, 28)
+    source_progress = source.index do |command|
+      command_code(command) == 122 && command_parameters(command)[0, 2] == [52, 52]
+    end
+    raise "Map037 wake CG template missing" unless source_first && source_progress
+    wake_block = Marshal.load(Marshal.dump(source[source_first...source_progress]))
+
+    list = pages[5].instance_variable_get(:@list)
+    progress = list.index do |command|
+      command_code(command) == 122 && command_parameters(command)[0, 2] == [58, 58]
+    end
+    raise "Map037 page 6 progress marker missing" unless progress
+    page6_sequence = [
+      move_to_bed.call,
+      event_command(355, 0, ["$game_map.shadows.set_opacity(255,24) # WCF_PREP_SLEEP_CUT_P6"]),
+      event_command(230, 0, [24]),
+      *sleep_parallax.call(6),
+      event_command(355, 0, ["$game_map.shadows.set_opacity(185,24) # WCF_PREP_SLEEP_REVEAL_P6"]),
+      event_command(230, 0, [24]),
+      event_command(230, 0, [60]),
+      event_command(355, 0, ["$game_map.shadows.set_opacity(255,24) # WCF_PREP_WAKE_CUT_P6"]),
+      event_command(230, 0, [24]),
+      wake_block.first,
+      event_command(222, 0, []),
+      *wake_block.drop(1)
+    ]
+    list.insert(progress, *page6_sequence)
+    pages[5].instance_variable_set(:@list, list)
+    make_cgs_continuous.call(pages[5], 6)
+
+    # The night artwork is already color-graded. Remove KUL shadows and event
+    # lights from this room entirely. Native fades only cover the actual asset
+    # swaps, and do not add a persistent dark layer over the parallax.
+    pages.each do |page|
+      list = page.instance_variable_get(:@list) || []
+      normalized = []
+      index = 0
+      while index < list.length
+        command = list[index]
+        text = script_text.call(command)
+        if text.include?("$game_map.shadows")
+          fade_code = text.include?("set_opacity(255") ? 221 : 222
+          normalized << event_command(fade_code,
+            command.instance_variable_get(:@indent).to_i, [])
+          index += 1 if list[index + 1] && command_code(list[index + 1]) == 230
+        elsif text.include?("give_light") || text.include?("del_light")
+          # The per-event light is unnecessary against the authored parallax.
+        else
+          normalized << command
+        end
+        index += 1
+      end
+      page.instance_variable_set(:@list, normalized)
+    end
+
+    controller.instance_variable_set(:@pages, pages)
+    events[1] = controller
+    events[2] = gift
+    events[3] = actor
+    map.instance_variable_set(:@events, events)
+    save_data(path, map)
+    audit_all_shared_preparation_sequences
+  end
+
+  # The supermarket preparation page contains sixteen gift/recipient branches.
+  # Gifts 1-3 already end with their own Aira reminder, while gift 4 relies on
+  # the old shared reminder after all branches. Keep that shared block only for
+  # gift 4 so the other twelve routes do not play the same line twice.
+  def fix_market_prep_duplicate_sleep_reminder
+    path = "Data/Map037.rvdata2"
+    map = load_data(path)
+    controller = (map.instance_variable_get(:@events) || {}).fetch(1)
+    page = (controller.instance_variable_get(:@pages) || []).fetch(0)
+    list = page.instance_variable_get(:@list) || []
+    marker = "WCF:MKT:GIFT4_ONLY_SLEEP_REMINDER"
+
+    unless list.any? do |command|
+        command_code(command) == 108 && command_parameters(command)[0].to_s == marker
+      end
+      reminder_at = list.index do |command|
+        command_code(command) == 401 &&
+          command.instance_variable_get(:@indent).to_i == 0 &&
+          command_parameters(command)[0].to_s.start_with?("Nhớ…đánh thức…bọn mình")
+      end
+      raise "Map037 market shared sleep reminder missing" unless reminder_at
+
+      block_start = (0..reminder_at).to_a.reverse.find do |index|
+        command_code(list[index]) == 225 &&
+          list[index].instance_variable_get(:@indent).to_i == 0
+      end
+      raise "Map037 market shared Aira block start missing" unless block_start
+      block_end = reminder_at
+      block_end += 1 while list[block_end + 1] &&
+        command_code(list[block_end + 1]) == 401 &&
+        list[block_end + 1].instance_variable_get(:@indent).to_i == 0
+
+      list[block_start..block_end].each do |command|
+        command.instance_variable_set(:@indent,
+          command.instance_variable_get(:@indent).to_i + 1)
+      end
+      list.insert(block_start,
+        event_command(111, 0, [1, 42, 0, 4, 0]),
+        event_command(108, 1, [marker]))
+      list.insert(block_end + 3, event_command(412, 0, []))
+      page.instance_variable_set(:@list, list)
+      save_data(path, map)
+    end
+
+    audit_market_prep_sleep_reminders
+    puts "MARKET_PREP_REMINDER_FIXED|map=37|event=1|page=1|" \
+      "gift_1_3=branch_only|gift_4=shared_only"
+  end
+
+  def audit_market_prep_sleep_reminders
+    errors = []
+    map = load_data("Data/Map037.rvdata2")
+    pages = map.instance_variable_get(:@events).fetch(1)
+      .instance_variable_get(:@pages) || []
+    list = pages.fetch(0).instance_variable_get(:@list) || []
+    marker = "WCF:MKT:GIFT4_ONLY_SLEEP_REMINDER"
+    marker_at = list.index do |command|
+      command_code(command) == 108 && command_parameters(command)[0].to_s == marker
+    end
+    condition_at = marker_at && marker_at - 1
+    errors << "gift-4 reminder marker missing" unless marker_at
+    errors << "gift-4 condition missing" unless condition_at &&
+      command_code(list[condition_at]) == 111 &&
+      command_parameters(list[condition_at]) == [1, 42, 0, 4, 0] &&
+      list[condition_at].instance_variable_get(:@indent).to_i == 0
+
+    close_at = marker_at && (marker_at...list.length).find do |index|
+      command_code(list[index]) == 412 &&
+        list[index].instance_variable_get(:@indent).to_i == 0
+    end
+    reminder_indices = list.each_index.select do |index|
+      command = list[index]
+      command_code(command) == 401 &&
+        command_parameters(command)[0].to_s.sub(/\A\\cbm\s*/, "")
+          .start_with?("Nhớ…đánh thức…bọn mình")
+    end
+    branch_reminders = reminder_indices.count do |index|
+      list[index].instance_variable_get(:@indent).to_i == 2
+    end
+    shared_reminders = reminder_indices.select do |index|
+      list[index].instance_variable_get(:@indent).to_i == 1
+    end
+    top_level = reminder_indices.select do |index|
+      list[index].instance_variable_get(:@indent).to_i == 0
+    end
+    errors << "market branch reminder count #{branch_reminders}/12" unless
+      branch_reminders == 12
+    errors << "gift-4 shared reminder count #{shared_reminders.length}/1" unless
+      shared_reminders.length == 1
+    errors << "top-level shared reminder still executes for every gift" unless
+      top_level.empty?
+    errors << "gift-4 shared reminder is outside condition" unless
+      marker_at && close_at && shared_reminders.length == 1 &&
+      marker_at < shared_reminders.first && shared_reminders.first < close_at
+
+    # Other active shared-preparation pages may have route-specific reminders,
+    # but none may expose a reminder at top level after its branch closes.
+    pages.drop(1).each_with_index do |other_page, offset|
+      (other_page.instance_variable_get(:@list) || []).each do |command|
+        next unless command_code(command) == 401
+        text = command_parameters(command)[0].to_s.sub(/\A\\cbm\s*/, "")
+        next unless text.start_with?("Nhớ…đánh thức…bọn mình")
+        errors << "Map037 page #{offset + 2} has an unconditional reminder" if
+          command.instance_variable_get(:@indent).to_i == 0
+      end
+    end
+
+    errors.each { |error| puts "PREP_REMINDER_ERROR|#{error}" }
+    puts "PREP_REMINDER_AUDIT|errors=#{errors.length}|" \
+      "market_branch=#{branch_reminders}|gift4_shared=#{shared_reminders.length}|" \
+      "unconditional=#{top_level.length}"
+    raise "Preparation reminder audit failed" unless errors.empty?
+  end
+
+  # Repair the two scarf-preparation paragraphs whose mistakes are present in
+  # both AI Compact and the original DOCX files.  Only Event 1 / Page 1's
+  # command list is edited; map/event coordinates and every other page remain
+  # untouched.
+  def repair_supermarket_route_dialogue_matrix
+    path = "Data/Map037.rvdata2"
+    map = load_data(path)
+    page = map.instance_variable_get(:@events).fetch(1)
+      .instance_variable_get(:@pages).fetch(0)
+    list = page.instance_variable_get(:@list) || []
+
+    branch_range = lambda do |commands, variable_id, value, within = nil|
+      first = within ? within[0] : 0
+      last = within ? within[1] : commands.length - 1
+      candidates = (first..last).select do |index|
+        command_code(commands[index]) == 111 &&
+          command_parameters(commands[index])[0, 4] == [1, variable_id, 0, value]
+      end
+      candidates.each do |start|
+        indent = commands[start].instance_variable_get(:@indent).to_i
+        finish = ((start + 1)..last).find do |index|
+          command_code(commands[index]) == 412 &&
+            commands[index].instance_variable_get(:@indent).to_i == indent
+        end
+        next unless finish
+        return [start, finish]
+      end
+      nil
+    end
+    matrix_gift_range = lambda do |commands, gift|
+      starts = commands.each_index.select do |index|
+        command_code(commands[index]) == 111 &&
+          command_parameters(commands[index])[0, 4] == [1, 42, 0, gift] &&
+          commands[index].instance_variable_get(:@indent).to_i == 0
+      end
+      starts.each do |start|
+        finish = ((start + 1)...commands.length).find do |index|
+          command_code(commands[index]) == 412 &&
+            commands[index].instance_variable_get(:@indent).to_i == 0
+        end
+        next unless finish
+        range = [start, finish]
+        return range if (1..4).all? do |target|
+          branch_range.call(commands, 43, target, range)
+        end
+      end
+      nil
+    end
+    replace_paragraph = lambda do |gift, target, start_text, replacement|
+      gift_range = matrix_gift_range.call(list, gift)
+      raise "Map037 gift #{gift} matrix branch missing" unless gift_range
+      target_range = branch_range.call(list, 43, target, gift_range)
+      raise "Map037 gift #{gift}/target #{target} branch missing" unless target_range
+      text_at = (target_range[0]..target_range[1]).find do |index|
+        command_code(list[index]) == 401 &&
+          command_parameters(list[index])[0].to_s.include?(start_text)
+      end
+      raise "Map037 paragraph missing: #{start_text}" unless text_at
+      start = text_at.downto(target_range[0]).find do |index|
+        command_code(list[index]) == 101
+      end
+      raise "Map037 paragraph header missing: #{start_text}" unless start
+      next_header = ((text_at + 1)..target_range[1]).find do |index|
+        next false unless command_code(list[index]) == 101
+        following = list[index + 1]
+        following && command_code(following) == 401 &&
+          command_parameters(following)[0].to_s.start_with?("Nửa bên kia")
+      end
+      raise "Map037 paragraph boundary missing: #{start_text}" unless next_header
+      face = command_parameters(list[start]).dup
+      indent = list[start].instance_variable_get(:@indent).to_i
+      replacement_commands = wrapped_message_commands(
+        [replacement], width: 30, indent: indent)
+      replacement_commands.each do |command|
+        command.instance_variable_set(:@parameters, face.dup) if
+          command_code(command) == 101
+      end
+      list[start...next_header] = replacement_commands
+    end
+
+    target_text = lambda do |gift, target|
+      gift_range = matrix_gift_range.call(list, gift)
+      target_range = gift_range && branch_range.call(list, 43, target, gift_range)
+      next "" unless target_range
+      list[target_range[0]..target_range[1]].select do |command|
+        command_code(command) == 401
+      end.map { |command| command_parameters(command)[0].to_s }
+        .join(" ").gsub(/\s+/, " ")
+    end
+    unless target_text.call(3, 3).include?("màu xanh là màu của Shylvie")
+      replace_paragraph.call(3, 3, "Cơ mà…chiếc khăn màu xanh",
+        "Cơ mà…chiếc khăn màu xanh này…không biết có bị nhàm quá không? " \
+        "Đúng là màu xanh là màu của Shylvie đó nhưng mà…chiếc khăn này " \
+        "vẫn chưa có chất của Shylvie lắm…Hừm…Nó bị thiếu gì đó…A đúng " \
+        "rồi! Ký hiệu hình chiếc khiên!!")
+    end
+    unless target_text.call(3, 4).include?("màu tím xám là màu của Hakase")
+      replace_paragraph.call(3, 4, "Cơ mà…chiếc khăn màu đỏ",
+        "Cơ mà…chiếc khăn màu tím xám này…không biết có bị nhàm quá không? " \
+        "Đúng là màu tím xám là màu của Hakase đó nhưng mà…chiếc khăn này " \
+        "vẫn chưa có chất của Hakase lắm…Hừm…Nó bị thiếu gì đó…A đúng " \
+        "rồi! Ký hiệu chìa khóa!!")
+    end
+
+    page.instance_variable_set(:@list, list)
+    save_data(path, map)
+
+    # Coffee/Kohi Scene 9 has the same copy/paste error in Compact and both
+    # DOCX copies: the narration says the machine is for Leo immediately
+    # before Kohi receives it.  Change only that command in the 1/2 branch.
+    party_path = "Data/Map038.rvdata2"
+    party_map = load_data(party_path)
+    party_page = party_map.instance_variable_get(:@events).fetch(7)
+      .instance_variable_get(:@pages).fetch(0)
+    party_list = party_page.instance_variable_get(:@list) || []
+    coffee_range = matrix_gift_range.call(party_list, 1)
+    kohi_range = coffee_range &&
+      branch_range.call(party_list, 43, 2, coffee_range)
+    raise "Map038 coffee/Kohi branch missing" unless kohi_range
+    wrong_party_lines = (kohi_range[0]..kohi_range[1]).select do |index|
+      command_code(party_list[index]) == 401 &&
+        command_parameters(party_list[index])[0].to_s.include?(
+          "pha cà phê cho Leo")
+    end
+    wrong_party_lines.each do |wrong_party_line|
+      params = command_parameters(party_list[wrong_party_line]).dup
+      params[0] = params[0].sub("pha cà phê cho Leo", "pha cà phê cho Kohi")
+      party_list[wrong_party_line].instance_variable_set(:@parameters, params)
+    end
+    unless wrong_party_lines.empty?
+      party_page.instance_variable_set(:@list, party_list)
+      save_data(party_path, party_map)
+    end
+
+    audit_supermarket_route_dialogue_matrix
+    puts "SUPERMARKET_DIALOGUE_FIXED|maps=37,38|" \
+      "branches=knitting/Shylvie,knitting/Hakase,coffee/Kohi|" \
+      "map_geometry=preserved"
+  end
+
+  def audit_supermarket_route_dialogue_matrix
+    errors = []
+    branch_range = lambda do |commands, variable_id, value, within = nil|
+      first = within ? within[0] : 0
+      last = within ? within[1] : commands.length - 1
+      (first..last).each do |start|
+        next unless command_code(commands[start]) == 111
+        next unless command_parameters(commands[start])[0, 4] ==
+          [1, variable_id, 0, value]
+        indent = commands[start].instance_variable_get(:@indent).to_i
+        finish = ((start + 1)..last).find do |index|
+          command_code(commands[index]) == 412 &&
+            commands[index].instance_variable_get(:@indent).to_i == indent
+        end
+        return [start, finish] if finish
+      end
+      nil
+    end
+    matrix_gift_range = lambda do |commands, gift|
+      commands.each_index do |start|
+        next unless command_code(commands[start]) == 111
+        next unless command_parameters(commands[start])[0, 4] == [1, 42, 0, gift]
+        next unless commands[start].instance_variable_get(:@indent).to_i == 0
+        finish = ((start + 1)...commands.length).find do |index|
+          command_code(commands[index]) == 412 &&
+            commands[index].instance_variable_get(:@indent).to_i == 0
+        end
+        next unless finish
+        range = [start, finish]
+        return range if (1..4).all? do |target|
+          branch_range.call(commands, 43, target, range)
+        end
+      end
+      nil
+    end
+    branch_text = lambda do |commands, range|
+      next "" unless range
+      commands[range[0]..range[1]].select do |command|
+        command_code(command) == 401
+      end.map do |command|
+        command_parameters(command)[0].to_s
+          .sub(/\A\\(?:c)?bm(?:\[\d+\])?\s*/, "")
+      end.join(" ").gsub(/\s+/, " ")
+    end
+
+    matrices = {
+      37 => [1, 0],
+      38 => [7, 0],
+      39 => [1, 0]
+    }
+    matrix_lists = {}
+    matrices.each do |map_id, (event_id, page_index)|
+      map = load_data("Data/Map%03d.rvdata2" % map_id)
+      event = (map.instance_variable_get(:@events) || {})[event_id]
+      unless event
+        errors << "Map#{map_id} E#{event_id} missing"
+        next
+      end
+      page = (event.instance_variable_get(:@pages) || [])[page_index]
+      unless page
+        errors << "Map#{map_id} E#{event_id} P#{page_index + 1} missing"
+        next
+      end
+      commands = page.instance_variable_get(:@list) || []
+      matrix_lists[map_id] = commands
+      (1..4).each do |gift|
+        gift_range = matrix_gift_range.call(commands, gift)
+        errors << "Map#{map_id} gift #{gift} matrix missing" unless gift_range
+        next unless gift_range
+        (1..4).each do |target|
+          errors << "Map#{map_id} gift #{gift}/target #{target} missing" unless
+            branch_range.call(commands, 43, target, gift_range)
+        end
+      end
+    end
+
+    prep = matrix_lists[37]
+    if prep
+      anchors = {
+        1 => {1 => "Không biết Leo", 2 => "Không biết Kohi",
+              3 => "Không biết Shylvie", 4 => "Không biết Hakase"},
+        2 => {1 => "Leo sẽ vui lắm", 2 => "Kohi sẽ vui lắm",
+              3 => "Shylvie sẽ vui lắm", 4 => "Hakase đang tập nấu"},
+        3 => {1 => "màu đỏ", 2 => "tặng cho Kohi",
+              3 => "màu xanh là màu của Shylvie",
+              4 => "màu tím xám là màu của Hakase"},
+        4 => {1 => "cho Leo hay không", 2 => "cho Kohi hay không",
+              3 => "cho Shylvie hay không", 4 => "cho Hakase hay không"}
+      }
+      anchors.each do |gift, targets|
+        gift_range = matrix_gift_range.call(prep, gift)
+        targets.each do |target, anchor|
+          range = gift_range && branch_range.call(prep, 43, target, gift_range)
+          text = branch_text.call(prep, range)
+          errors << "Map37 gift #{gift}/target #{target} lacks #{anchor.inspect}" unless
+            text.include?(anchor)
+        end
+      end
+      scarf_shylvie = branch_text.call(prep,
+        branch_range.call(prep, 43, 3, matrix_gift_range.call(prep, 3)))
+      scarf_hakase = branch_text.call(prep,
+        branch_range.call(prep, 43, 4, matrix_gift_range.call(prep, 3)))
+      errors << "Map37 Shylvie scarf still says red" if
+        scarf_shylvie.include?("màu đỏ là màu của Shylvie")
+      errors << "Map37 Hakase scarf still refers to Leo" if
+        scarf_hakase.include?("màu của Leo") ||
+        scarf_hakase.include?("chất của Leo")
+    end
+
+    party = matrix_lists[38]
+    if party
+      target_names = {1 => "Leo", 2 => "Kohi", 3 => "Shylvie", 4 => "Hakase"}
+      (1..4).each do |gift|
+        gift_range = matrix_gift_range.call(party, gift)
+        target_names.each do |target, name|
+          range = gift_range && branch_range.call(party, 43, target, gift_range)
+          text = branch_text.call(party, range)
+          anchor = gift == 1 ?
+            "tặng chiếc máy pha cà phê cho #{name}" :
+            "tiến đến chỗ của #{name}"
+          errors << "Map38 gift #{gift}/target #{target} lacks #{anchor.inspect}" unless
+            text.include?(anchor)
+        end
+      end
+      coffee_kohi = branch_text.call(party,
+        branch_range.call(party, 43, 2, matrix_gift_range.call(party, 1)))
+      errors << "Map38 coffee/Kohi still says the machine is for Leo" if
+        coffee_kohi.include?("tặng chiếc máy pha cà phê cho Leo")
+    end
+
+    # The Test Hub scripts must encode the same 4x4 gift/recipient matrix.
+    hub = load_data("Data/Map069.rvdata2")
+    hub_events = hub.instance_variable_get(:@events) || {}
+    (1..4).each do |gift|
+      event_id = 15 + gift
+      event = hub_events[event_id]
+      unless event
+        errors << "Map69 E#{event_id} missing"
+        next
+      end
+      scripts = event.instance_variable_get(:@pages).fetch(0)
+        .instance_variable_get(:@list).select do |command|
+          command_code(command) == 355
+        end.map { |command| command_parameters(command)[0].to_s }
+      (1..4).each do |target|
+        signature = "42=>#{gift},43=>#{target}"
+        errors << "Map69 E#{event_id} lacks #{signature}" unless
+          scripts.any? { |script| script.include?(signature) }
+      end
+    end
+
+    runtime_scripts = load_data("Data/Scripts.rvdata2")
+    chat_entry = runtime_scripts.find do |entry|
+      entry[1].to_s.strip == "Cutscene Group Chat"
+    end
+    if chat_entry
+      live_chat = Zlib::Inflate.inflate(chat_entry[2]).force_encoding("UTF-8")
+      source_chat = File.binread("Scripts/Cutscene Group Chat.rb")
+        .force_encoding("UTF-8")
+      errors << "Cutscene Group Chat runtime is stale" unless
+        live_chat == source_chat
+      [
+        'chat.add_choice("Leo", 1, :variable => [43, 1])',
+        'chat.add_choice("Kohi", 2, :variable => [43, 2])',
+        'chat.add_choice("Shylvie", 3, :variable => [43, 3])',
+        'chat.add_choice("Hakase", 4, :variable => [43, 4])',
+        'gift == 2 || gift == 4',
+        'Phải vinh dự chứ! Tui cá chắc chưa ai tặng ông món này luôn!'
+      ].each do |marker|
+        errors << "market recipient chat lacks #{marker.inspect}" unless
+          live_chat.include?(marker)
+      end
+    else
+      errors << "Cutscene Group Chat runtime missing"
+    end
+    hub_entry = runtime_scripts.find do |entry|
+      entry[1].to_s.strip == "WCF Test Hub"
+    end
+    if hub_entry
+      live_hub = Zlib::Inflate.inflate(hub_entry[2]).force_encoding("UTF-8")
+      source_hub = File.binread("Scripts/WCF Test Hub.rb")
+        .force_encoding("UTF-8")
+      errors << "WCF Test Hub runtime is stale" unless live_hub == source_hub
+      errors << "WCF Test Hub does not reapply route state after phone seed" unless
+        live_hub.scan("apply_route_state.call").length >= 2
+    else
+      errors << "WCF Test Hub runtime missing"
+    end
+
+    # Ending hint IDs must remain a complete, collision-free 16-result grid.
+    hints = load_data("Data/Map036.rvdata2").instance_variable_get(:@events)
+      .fetch(1).instance_variable_get(:@pages).select do |page|
+        condition = page.instance_variable_get(:@condition)
+        condition.instance_variable_get(:@variable_valid) &&
+          condition.instance_variable_get(:@variable_id).to_i == 41
+      end.map do |page|
+        page.instance_variable_get(:@condition)
+          .instance_variable_get(:@variable_value).to_i
+      end
+    errors << "Map36 ending hint grid #{hints.sort.inspect}" unless
+      (2..17).all? { |value| hints.include?(value) }
+
+    errors.each { |error| puts "SUPERMARKET_DIALOGUE_ERROR|#{error}" }
+    puts "SUPERMARKET_DIALOGUE_AUDIT|errors=#{errors.length}|" \
+      "prep=16|party=16|epilogue=16|hub=16|hints=16"
+    raise "Supermarket route dialogue audit failed" unless errors.empty?
+  end
+
+  def gate_home_storage_key_with_form_change
+    path = "Data/Map022.rvdata2"
+    map = load_data(path)
+    events = map.instance_variable_get(:@events) || {}
+    album = events.fetch(16)
+    key_event = events.fetch(21)
+
+    album_list = album.instance_variable_get(:@pages).first
+      .instance_variable_get(:@list) || []
+    form_change = album_list.index do |command|
+      command_code(command) == 322 && command_parameters(command)[0, 2] == [3, "$HaiQuyAtHome_Base"]
+    end
+    form_switch = album_list.index do |command|
+      command_code(command) == 121 && command_parameters(command)[0, 3] == [40, 40, 0]
+    end
+    raise "Map022 E016 form-change baseline missing" unless
+      form_change && form_switch && form_change < form_switch
+
+    pages = key_event.instance_variable_get(:@pages) || []
+    raise "Map022 E021 expected 3 pages, got #{pages.length}" unless pages.length == 3
+    acquire_page = pages[1]
+    acquire_list = acquire_page.instance_variable_get(:@list) || []
+    raises_key = acquire_list.any? do |command|
+      command_code(command) == 121 && command_parameters(command)[0, 3] == [38, 38, 0]
+    end
+    raise "Map022 E021 key-acquisition page no longer sets Switch 38" unless raises_key
+    condition = acquire_page.instance_variable_get(:@condition)
+    unless condition.instance_variable_get(:@switch1_valid) &&
+           condition.instance_variable_get(:@switch1_id).to_i == 37
+      raise "Map022 E021 key-hint condition changed"
+    end
+    condition.instance_variable_set(:@switch2_valid, true)
+    condition.instance_variable_set(:@switch2_id, 40)
+
+    key_event.instance_variable_set(:@pages, pages)
+    events[21] = key_event
+    map.instance_variable_set(:@events, events)
+    save_data(path, map)
+    audit_home_storage_key_gate
+  end
+
+  def enhance_atlantis_parallax_chase
+    chase_path = "Data/Map029.rvdata2"
+    surround_path = "Data/Map034.rvdata2"
+    chase = load_data(chase_path)
+    surround = load_data(surround_path)
+    chase_events = chase.instance_variable_get(:@events) || {}
+    surround_events = surround.instance_variable_get(:@events) || {}
+    parallax = chase.instance_variable_get(:@parallax_name).to_s
+    raise "Map029 chase parallax is missing" if parallax.empty?
+
+    configure_note = lambda do |map, description|
+      map.instance_variable_set(:@note,
+        "[lighting on]\r\n[opacity 185]\r\n[color 000000000]\r\n" \
+        "<full lock parallax>\r\n<tile lock parallax>\r\n#{description}")
+    end
+    configure_note.call(chase,
+      "Vertical Atlantis clone chase; painted broken-mirror corridor; KUL eerie pools")
+    surround.instance_variable_set(:@parallax_name, parallax)
+    surround.instance_variable_set(:@parallax_show, true)
+    surround.instance_variable_set(:@parallax_loop_x, false)
+    surround.instance_variable_set(:@parallax_loop_y, false)
+    surround.instance_variable_set(:@parallax_sx, 0)
+    surround.instance_variable_set(:@parallax_sy, 0)
+    # Map034 is a cutscene. Clear the legacy corridor tiles so the newly
+    # assigned painted parallax is actually visible; no walkable collision is
+    # needed before the transfer to the chase.
+    surround.instance_variable_set(:@data,
+      blank_table(surround.instance_variable_get(:@width),
+        surround.instance_variable_get(:@height), 4))
+    configure_note.call(surround,
+      "Atlantis clone encirclement; painted broken-mirror corridor; KUL eerie pools")
+
+    add_anchors = lambda do |events, template, placements|
+      events.delete_if do |_id, event|
+        event && event.instance_variable_get(:@name).to_s.start_with?("FX-ATL-EERIE-LIGHT")
+      end
+      placements.each do |id, x, y, colour|
+        if events[id]
+          raise "E#{id} is occupied while creating Atlantis eerie-light anchors"
+        end
+        page = page_from_template(template, [], trigger: 0, priority: 0)
+        page.instance_variable_set(:@through, true)
+        graphic = page.instance_variable_get(:@graphic)
+        graphic.instance_variable_set(:@character_name, "") if graphic
+        events[id] = event_from_pages(template, id,
+          "FX-ATL-EERIE-LIGHT-#{colour.upcase}", x, y, [page])
+      end
+    end
+
+    chase_placements = [
+      [14, 5, 5, "violet"], [15, 15, 8, "blue"],
+      [16, 4, 12, "blue"], [17, 16, 16, "violet"],
+      [18, 5, 20, "violet"], [19, 15, 24, "blue"],
+      [20, 4, 28, "blue"], [21, 16, 32, "violet"],
+      [22, 8, 36, "violet"]
+    ]
+    surround_placements = [
+      [14, 4, 6, "violet"], [15, 16, 7, "blue"],
+      [16, 5, 14, "blue"], [17, 15, 14, "violet"]
+    ]
+    add_anchors.call(chase_events, chase_events.fetch(1), chase_placements)
+    add_anchors.call(surround_events, surround_events.fetch(1), surround_placements)
+
+    install_lights = lambda do |list, placements, marker|
+      list.reject! do |command|
+        [355, 655].include?(command_code(command)) &&
+          command_parameters(command)[0].to_s.include?(marker)
+      end
+      insertion = list.index do |command|
+        command_code(command) == 355 &&
+          command_parameters(command)[0].to_s.include?("$game_player.give_light")
+      end
+      raise "Atlantis player-light setup missing for #{marker}" unless insertion
+      script = placements.map do |id, _x, _y, colour|
+        preset = colour == "blue" ? "atlantis_eerie_blue" : "atlantis_eerie_violet"
+        "$game_map.events[#{id}].give_light(#{preset.inspect})"
+      end.join("; ") + " # #{marker}"
+      list.insert(insertion + 1, event_command(355, 0, [script]))
+    end
+
+    chase_page = chase_events.fetch(1).instance_variable_get(:@pages).first
+    chase_list = chase_page.instance_variable_get(:@list) || []
+    install_lights.call(chase_list, chase_placements, "WCF_ATL_CHASE_EERIE_LIGHTS")
+    chase_page.instance_variable_set(:@list, chase_list)
+
+    surround_page = surround_events.fetch(1).instance_variable_get(:@pages).first
+    surround_list = surround_page.instance_variable_get(:@list) || []
+    install_lights.call(surround_list, surround_placements,
+      "WCF_ATL_SURROUND_EERIE_LIGHTS")
+
+    monster_enter = surround_list.index do |command|
+      command_code(command) == 355 &&
+        command_parameters(command)[0].to_s == "atlantis_monster_enter(2)"
+    end
+    unless monster_enter
+      already = surround_list.any? do |command|
+        command_code(command) == 355 &&
+          command_parameters(command)[0].to_s.include?("WCF_ATL_CLONE_JUMPSCARE")
+      end
+      raise "Map034 monster-entry baseline missing" unless already
+    end
+    if monster_enter
+      fadeout = (monster_enter...surround_list.length).find do |index|
+        command_code(surround_list[index]) == 221
+      end
+      raise "Map034 post-surround fadeout missing" unless fadeout
+      replacement = [
+        event_command(355, 0,
+          ["atlantis_clone_jumpscare_approach(3) # WCF_ATL_CLONE_JUMPSCARE"]),
+        event_command(117, 0, [6]),
+        event_command(225, 0, [7, 7, 20, false]),
+        event_command(355, 0, ["atlantis_play_jumpscare(\"Jumpscare\")"]),
+        event_command(221, 0, [])
+      ]
+      surround_list[monster_enter..fadeout] = replacement
+    end
+    surround_page.instance_variable_set(:@list, surround_list)
+
+    chase.instance_variable_set(:@events, chase_events)
+    surround.instance_variable_set(:@events, surround_events)
+    save_data(chase_path, chase)
+    save_data(surround_path, surround)
+    replace_runtime_script("KUL Graphics", "Scripts/KUL Graphics.rb")
+    replace_runtime_script("Atlantis Mirror Maze Chase",
+      "Scripts/Atlantis Mirror Maze Chase.rb")
+    audit_atlantis_parallax_chase
+  end
+
+  def install_wanderer_christmas_scene_layers
+    layer_dir = File.join("Graphics", "Layers")
+    required_layers = [
+      "Wanderer_Party_prepare",
+      "Wanderer_Party_snowbuild_1", "Wanderer_Party_snowbuild_2",
+      *(1..5).map { |id| "Wanderer_Party_snowkitchen_#{id}" },
+      *(1..5).map { |id| "Wanderer_Party_snowmeet#{id}" },
+      "Wanderer_Party_phuchoi",
+      *(1..6).map { |id| "Wanderer_Party_phuchoi_#{id}" }
+    ]
+    required_layers.each do |name|
+      path = File.join(layer_dir, "#{name}.png")
+      raise "Missing Wanderer scene layer #{path}" unless File.file?(path)
+      png = File.binread(path, 24)
+      width, height = png.byteslice(16, 8).unpack("N2")
+      raise "Unexpected layer size #{name}: #{width}x#{height}" unless
+        [width, height] == [1440, 1344]
+    end
+    christmas_parallax = "Map_Wanderer_Office_Kitchen__Chrismast_base"
+    christmas_path = File.join("Graphics", "Parallaxes", "#{christmas_parallax}.png")
+    raise "Missing Christmas kitchen parallax" unless File.file?(christmas_path)
+    png = File.binread(christmas_path, 24)
+    width, height = png.byteslice(16, 8).unpack("N2")
+    raise "Unexpected Christmas kitchen size #{width}x#{height}" unless
+      [width, height] == [1440, 1344]
+
+    map38_path = "Data/Map038.rvdata2"
+    map38 = load_data(map38_path)
+    events38 = map38.instance_variable_get(:@events) || {}
+    marker = "WCF_WANDERER_LAYER_SCENE"
+    calls = Hash.new(0)
+    events38.each_value do |event|
+      next unless event
+      (event.instance_variable_get(:@pages) || []).each do |page|
+        list = page.instance_variable_get(:@list) || []
+        list.reject! do |command|
+          [355, 655].include?(command_code(command)) &&
+            command_parameters(command)[0].to_s.include?(marker)
+        end
+        texts = list.map do |command|
+          command_code(command) == 401 ? command_parameters(command)[0].to_s : ""
+        end
+        scripts = list.map do |command|
+          [355, 655].include?(command_code(command)) ?
+            command_parameters(command)[0].to_s : ""
+        end
+        noodle = scripts.any? { |text| text.include?("WCF_NOODLE_OFFICE_BLACK") }
+        targets = []
+        message_end = lambda do |index|
+          finish = index
+          finish += 1 while list[finish + 1] && command_code(list[finish + 1]) == 401
+          while list[finish + 1] && [355, 655].include?(command_code(list[finish + 1])) &&
+                command_parameters(list[finish + 1])[0].to_s =~ /WCF_(?:FRAMED_CG|GALLERY_SCENE)/
+            finish += 1
+          end
+          finish
+        end
+        add_target = lambda do |kind, index|
+          return unless index
+          targets << [message_end.call(index) + 1, kind]
+        end
+
+        if noodle
+          add_target.call(:snowkitchen, texts.index { |text| text.include?("Kohi và Shylvie kéo tôi ra") })
+          stage_index = scripts.index { |text| text.include?("hq=$game_map.events[2]") }
+          targets << [stage_index, :prepare] if stage_index
+        else
+          rescue_index = texts.index { |text| text.include?("Cả bọn cùng hợp sức để kéo tôi") }
+          if !rescue_index && texts.any? { |text| text.include?("Kohi hợp sức cùng Shylvie") }
+            rescue_index = texts.index { |text| text.include?("kéo tôi ra khỏi đống tuyết") }
+          end
+          add_target.call(:snowmeet, rescue_index)
+        end
+        add_target.call(:phuchoi,
+          texts.index { |text| text.include?("Shylvie sử dụng phép phục hồi") })
+        add_target.call(:prepare,
+          texts.index { |text| text.include?("đồ ăn lên bàn") })
+        add_target.call(:snowbuild,
+          texts.index { |text| text.include?("nặn ra mấy con người tuyết") })
+
+        targets.sort_by(&:first).reverse_each do |insert_at, kind|
+          list.insert(insert_at, event_command(355, 0,
+            ["wcf_wanderer_layer_scene(:#{kind}) # #{marker}_#{kind.to_s.upcase}"]))
+          calls[kind] += 1
+        end
+        page.instance_variable_set(:@list, list)
+      end
+    end
+    raise "Noodle snow rescue layer not placed" if calls[:snowkitchen] == 0
+    raise "Office snow rescue layer not placed" if calls[:snowmeet] == 0
+    raise "Plate recovery layer not placed" if calls[:phuchoi] == 0
+    raise "Party preparation layer not placed" if calls[:prepare] == 0
+    raise "Snow-building layer not placed" if calls[:snowbuild] == 0
+    map38.instance_variable_set(:@events, events38)
+    save_data(map38_path, map38)
+
+    map14_path = "Data/Map014.rvdata2"
+    map14 = load_data(map14_path)
+    kitchen_events = map14.instance_variable_get(:@events) || {}
+    setup = kitchen_events.fetch(24)
+    pages = setup.instance_variable_get(:@pages) || []
+    raise "Map014 E024 expected two pages" unless pages.length >= 2
+    season_marker = "WCF_WANDERER_KITCHEN_SEASON"
+    season_script =
+      "xmas=([38,39].include?($game_variables[49]) || ($game_switches[55] && $game_variables[51]==3)); " \
+      "name=xmas ? '#{christmas_parallax}' : 'Map_Wanderer_Office_Kitchen_base'; " \
+      "$game_map.change_parallax(name,false,false,0,0) if $game_map.parallax_name!=name # #{season_marker}"
+    first_list = pages[0].instance_variable_get(:@list) || []
+    first_list.reject! do |command|
+      [355, 655].include?(command_code(command)) &&
+        command_parameters(command)[0].to_s.include?(season_marker)
+    end
+    first_list.insert(0, event_command(355, 0, [season_script]))
+    pages[0].instance_variable_set(:@list, first_list)
+    pages[1].instance_variable_set(:@trigger, 4)
+    pages[1].instance_variable_set(:@priority_type, 0)
+    pages[1].instance_variable_set(:@list, [
+      event_command(355, 0, [season_script]),
+      event_command(230, 0, [10]),
+      event_command(0, 0, [])
+    ])
+    setup.instance_variable_set(:@pages, pages)
+    kitchen_events[24] = setup
+    map14.instance_variable_set(:@events, kitchen_events)
+    save_data(map14_path, map14)
+
+    replace_runtime_script("WCF Snowball Rhythm", "Scripts/WCF Snowball Rhythm.rb")
+    audit_wanderer_christmas_scene_layers
+  end
+
+  # Keep the live Wanderer sprites hidden behind KUL black between the framed
+  # snow CG, each painted layer vignette, and the final free-roam reveal.
+  def repair_wanderer_snow_rescue_sequence
+    path = "Data/Map038.rvdata2"
+    map = load_data(path)
+    event = (map.instance_variable_get(:@events) || {}).fetch(1)
+    pages = event.instance_variable_get(:@pages) || []
+    repaired = []
+    script_text = lambda do |command|
+      [355, 655].include?(command_code(command)) ? command_parameters(command)[0].to_s : ""
+    end
+    remove_script_and_wait = lambda do |list, pattern|
+      list.each_index.to_a.reverse_each do |index|
+        next unless script_text.call(list[index]).match?(pattern)
+        list.delete_at(index + 1) if list[index + 1] && command_code(list[index + 1]) == 230
+        list.delete_at(index)
+      end
+    end
+    message_header = lambda do |list, text_index|
+      index = text_index
+      index -= 1 while index.positive? && command_code(list[index]) != 101
+      index
+    end
+
+    pages.each_with_index do |page, page_index|
+      list = page.instance_variable_get(:@list) || []
+      rescue_at = list.index do |command|
+        script_text.call(command).match?(/wcf_wanderer_layer_scene\(:(?:snowmeet|snowkitchen)\)/)
+      end
+      next unless rescue_at
+
+      # Do not reveal the live map on arrival. Native brightness and tone are
+      # restored while KUL remains opaque so Pictures/messages stay visible.
+      black_at = list.index do |command|
+        script_text.call(command).include?("WCF_CHRISTMAS_BLACK")
+      end
+      if black_at
+        list[black_at].instance_variable_set(:@parameters, [
+          "$game_map.screen.start_tone_change(Tone.new(0,0,0,0),0); " \
+          "map_effects.set_tone(0,0,0,0,0); " \
+          "$game_map.shadows.set_color(0,0,0); $game_map.shadows.show; " \
+          "$game_map.shadows.set_opacity(255) # WCF_SNOW_RESCUE_BLACK"
+        ])
+      end
+      remove_script_and_wait.call(list,
+        /WCF_(?:NOODLE_OFFICE_REVEAL|LEO_SHOP_KUL_OFFICE_REVEAL|SHY_JEWEL_SHARED_KUL_OFFICE_REVEAL)/)
+
+      rescue_at = list.index do |command|
+        script_text.call(command).match?(/wcf_wanderer_layer_scene\(:(?:snowmeet|snowkitchen)\)/)
+      end
+
+      # The Leo-shop branch lacked the same laughing-at-Hai-Quy CG used by
+      # the other branches. Select CG7 for Bully Quy, otherwise CG6.
+      has_cg = list[0...rescue_at].any? do |command|
+        script_text.call(command).match?(/(?:WCFFramedCG|WCFGalleryScene)\.show/)
+      end
+      unless has_cg
+        text_at = list.index do |command|
+          command_code(command) == 401 &&
+            command_parameters(command)[0].to_s.include?("mắt ra thì tôi nhìn thấy")
+        end
+        raise "Map038 page #{page_index + 1} snow CG anchor missing" unless text_at
+        show_at = text_at
+        show_at -= 1 while show_at.positive? && command_code(list[show_at]) != 101
+        cg_commands = [
+          event_command(111, 0, [0, 51, 0]),
+          event_command(355, 1, ["GlobalGallery.unlock(7) # WCF_SNOW_RESCUE_CG"]),
+          event_command(355, 1, ["WCFFramedCG.show('CG7') # WCF_SNOW_RESCUE_CG"]),
+          event_command(411, 0, []),
+          event_command(355, 1, ["GlobalGallery.unlock(6) # WCF_SNOW_RESCUE_CG"]),
+          event_command(355, 1, ["WCFFramedCG.show('CG6') # WCF_SNOW_RESCUE_CG"]),
+          event_command(412, 0, [])
+        ]
+        list.insert(show_at, *cg_commands)
+      end
+
+      # First show the actual map composition: Hải Quỳ is buried in the snow.
+      # $HaiQuy_Snowman uses three columns and two painted rows in the first
+      # half of a padded canvas, so a dedicated overlay animates only logical
+      # row 1 while Kohi and Shylvie stand in front. The
+      # laughing CG belongs to the next beat, before the pulling layer scene.
+      remove_script_and_wait.call(list,
+        /WCF_SNOW_RESCUE_LIVE_(?:STAGE|CAMERA|REVEAL)/)
+      rescue_at = list.index do |command|
+        script_text.call(command).match?(/wcf_wanderer_layer_scene\(:(?:snowmeet|snowkitchen)\)/)
+      end
+      buried_text = list[0...rescue_at].index do |command|
+        command_code(command) == 401 &&
+          (command_parameters(command)[0].to_s.include?("bị chôn vùi") ||
+           command_parameters(command)[0].to_s.include?("đống tuyết đổ ầm xuống, chôn"))
+      end
+      raise "Map038 page #{page_index + 1} buried-in-snow anchor missing" unless buried_text
+      buried_header = message_header.call(list, buried_text)
+
+      cg_show = list[0...rescue_at].index do |command|
+        script_text.call(command).match?(/(?:WCFFramedCG|WCFGalleryScene)\.show/)
+      end
+      raise "Map038 page #{page_index + 1} laughing CG missing" unless cg_show
+      if cg_show < buried_header
+        block_start = (0..cg_show).to_a.reverse.find do |index|
+          command_code(list[index]) == 111 && list[index].instance_variable_get(:@indent).to_i == 0
+        end
+        block_finish = (cg_show...rescue_at).find do |index|
+          command_code(list[index]) == 412 && list[index].instance_variable_get(:@indent).to_i == 0
+        end
+        raise "Map038 page #{page_index + 1} laughing CG branch malformed" unless block_start && block_finish
+        cg_block = list.slice!(block_start..block_finish)
+        rescue_at = list.index do |command|
+          script_text.call(command).match?(/wcf_wanderer_layer_scene\(:(?:snowmeet|snowkitchen)\)/)
+        end
+        laugh_text = list[0...rescue_at].index do |command|
+          next false unless command_code(command) == 401
+          text = command_parameters(command)[0].to_s
+          text.include?("Vừa mở mắt ra") || text.include?("mắt ra thì tôi nhìn thấy")
+        end
+        raise "Map038 page #{page_index + 1} laughing dialogue anchor missing" unless laugh_text
+        list.insert(message_header.call(list, laugh_text), *cg_block)
+      end
+
+      rescue_at = list.index do |command|
+        script_text.call(command).match?(/wcf_wanderer_layer_scene\(:(?:snowmeet|snowkitchen)\)/)
+      end
+      buried_text = list[0...rescue_at].index do |command|
+        command_code(command) == 401 &&
+          (command_parameters(command)[0].to_s.include?("bị chôn vùi") ||
+           command_parameters(command)[0].to_s.include?("đống tuyết đổ ầm xuống, chôn"))
+      end
+      buried_header = message_header.call(list, buried_text)
+      rescue_kind = script_text.call(list[rescue_at])[/wcf_wanderer_layer_scene\(:(snowmeet|snowkitchen)\)/, 1]
+      center_x, center_y = rescue_kind == "snowkitchen" ? [30, 16] : [21, 34]
+      stage_script =
+        "hq=$game_map.events[2]; shy=$game_map.events[3]; kohi=$game_map.events[4]; " \
+        "$game_player.set_graphic('',0); $game_player.transparent=true; " \
+        "(2..6).each{|id| e=$game_map.events[id]; e.transparent=true if e}; " \
+        "hq.moveto(#{center_x},#{center_y}); hq.set_graphic('',0); hq.set_direction(2); " \
+        "hq.instance_variable_set(:@pattern,1); hq.instance_variable_set(:@original_pattern,1); " \
+        "hq.instance_variable_set(:@walk_anime,false); hq.instance_variable_set(:@step_anime,false); " \
+        "hq.instance_variable_set(:@direction_fix,true); hq.opacity=255; hq.transparent=true; " \
+        "shy.moveto(#{center_x - 1},#{center_y + 1}); shy.set_graphic('$Shylvie_giangsinh',0); shy.set_direction(8); " \
+        "shy.instance_variable_set(:@pattern,1); shy.instance_variable_set(:@original_pattern,1); " \
+        "shy.instance_variable_set(:@walk_anime,false); shy.instance_variable_set(:@step_anime,false); " \
+        "shy.instance_variable_set(:@direction_fix,true); shy.opacity=255; shy.transparent=false; " \
+        "kohi.moveto(#{center_x + 1},#{center_y + 1}); kohi.set_graphic('$Kohi_giangsinh',0); kohi.set_direction(8); " \
+        "kohi.instance_variable_set(:@pattern,1); kohi.instance_variable_set(:@original_pattern,1); " \
+        "kohi.instance_variable_set(:@walk_anime,false); kohi.instance_variable_set(:@step_anime,false); " \
+        "kohi.instance_variable_set(:@direction_fix,true); kohi.opacity=255; kohi.transparent=false # WCF_SNOW_RESCUE_LIVE_STAGE"
+      list.insert(buried_header,
+        event_command(355, 0, [stage_script]),
+        event_command(355, 0,
+          ["map_effects.set_zoom(125,20,false); ms_pro_cam_ignore_player(true); " \
+           "ms_pro_cam_center_at(#{center_x},#{center_y},20); ms_pro_cam_wait_for_scrolling # WCF_SNOW_RESCUE_LIVE_CAMERA"]),
+        event_command(355, 0,
+          ["wcf_snowman_buried_begin(2) # WCF_SNOWMAN_BURIED_BEGIN"]),
+        event_command(355, 0,
+          ["$game_map.shadows.set_opacity(0,24) # WCF_SNOW_RESCUE_LIVE_REVEAL"]),
+        event_command(230, 0, [24]),
+        event_command(355, 0,
+          ["wcf_snowman_buried_animate # WCF_SNOWMAN_BURIED_ANIMATE"]))
+
+      rescue_at = list.index do |command|
+        script_text.call(command).match?(/wcf_wanderer_layer_scene\(:(?:snowmeet|snowkitchen)\)/)
+      end
+      framed_show = list[0...rescue_at].rindex do |command|
+        script_text.call(command).include?("WCFFramedCG.show")
+      end
+      if framed_show && !list[framed_show...rescue_at].any? do |command|
+          script_text.call(command).include?("WCFFramedCG.hide")
+        end
+        list.insert(rescue_at,
+          event_command(355, 0, ["WCFFramedCG.hide # WCF_SNOW_RESCUE_CG_HIDE"]))
+      end
+
+      # All four routes show the preparation vignette and install the finished
+      # table layer while black before handing control back to the player.
+      stage_at = list.index do |command|
+        script_text.call(command).include?("hq=$game_map.events[2]") &&
+          script_text.call(command).include?("$game_player.moveto")
+      end
+      raise "Map038 page #{page_index + 1} free-roam stage missing" unless stage_at
+      unless list.any? { |command| script_text.call(command).include?("WCF_WANDERER_LAYER_SCENE_PREPARE") }
+        list.insert(stage_at, event_command(355, 0,
+          ["wcf_wanderer_layer_scene(:prepare) # WCF_WANDERER_LAYER_SCENE_PREPARE"]))
+      end
+      # Preparation is the last temporary vignette. On the long Leo route the
+      # snow-building animation used to run after it, causing an extra bright
+      # interval before free roam. Move prepare to the final table-ready line.
+      table_text_at = list.index do |command|
+        command_code(command) == 401 &&
+          command_parameters(command)[0].to_s.include?("Bàn tiệc giáng sinh đã chuẩn")
+      end
+      if table_text_at
+        table_show_at = table_text_at
+        table_show_at -= 1 while table_show_at.positive? && command_code(list[table_show_at]) != 101
+        prepare_at = list.index do |command|
+          script_text.call(command).include?("WCF_WANDERER_LAYER_SCENE_PREPARE")
+        end
+        if prepare_at != table_show_at - 1
+          prepare_command = list.delete_at(prepare_at)
+          table_show_at -= 1 if prepare_at < table_show_at
+          list.insert(table_show_at, prepare_command)
+        end
+      end
+      stage_at = list.index do |command|
+        script_text.call(command).include?("hq=$game_map.events[2]") &&
+          script_text.call(command).include?("$game_player.moveto")
+      end
+      unless list.any? { |command| script_text.call(command).include?("WCF_WANDERER_PARTY_BEFORE") }
+        list.insert(stage_at,
+          event_command(355, 0, ["layer(38,1,['Wanderer_Party_Before',0,0,255,150,0,0,0]) # WCF_WANDERER_PARTY_BEFORE"]),
+          event_command(655, 0, ["refresh_layers # WCF_WANDERER_PARTY_BEFORE"]))
+      end
+
+      # Remove the old reveal/camera commands, finish every sprite/layer/state
+      # change under black, then reveal the completed free-roam composition.
+      remove_script_and_wait.call(list,
+        /WCF_(?:CHRISTMAS_REVEAL|LEO_SHOP_KUL_FREE_REVEAL|SHY_JEWEL_SHARED_KUL_FREE_REVEAL|SNOW_RESCUE_FREE_CAMERA|SNOW_RESCUE_FREE_REVEAL)/)
+      list.reject! do |command|
+        script_text.call(command).match?(/WCF_ROUTE_FREE_CAMERA_/)
+      end
+      finish_at = list.rindex do |command|
+        command_code(command) == 123 && command_parameters(command)[0].to_s == "A"
+      end
+      raise "Map038 page #{page_index + 1} finish self-switch missing" unless finish_at
+      list.insert(finish_at,
+        event_command(355, 0,
+          ["map_effects.set_zoom(100,16,false); ms_pro_cam_ignore_player(false); " \
+           "ms_pro_cam_focus_on(-1); ms_pro_cam_wait_for_scrolling # WCF_SNOW_RESCUE_FREE_CAMERA"]),
+        event_command(230, 0, [16]),
+        event_command(355, 0,
+          ["$game_map.shadows.set_opacity(0,30) # WCF_SNOW_RESCUE_FREE_REVEAL"]),
+        event_command(230, 0, [30]))
+
+      page.instance_variable_set(:@list, list)
+      repaired << page_index + 1
+    end
+    raise "Expected four Map038 snow-rescue pages, found #{repaired.length}" unless repaired.length == 4
+    event.instance_variable_set(:@pages, pages)
+    map.instance_variable_get(:@events)[1] = event
+    save_data(path, map)
+    replace_runtime_script("WCF Snowball Rhythm", "Scripts/WCF Snowball Rhythm.rb")
+    puts "WANDERER_SNOW_RESCUE_REPAIRED|pages=#{repaired.join(',')}|live_snowman_before_cg=true|laughing_cg_after_burial=true|prepare=all|free_reveal=after_stage"
+  end
+
+  # Targeted upgrade for the padded $HaiQuy_Snowman sheet. Do not run
+  # the broader rescue-sequence repair here: the map may contain later edits
+  # to dialogue, faces, and staging that must remain untouched.
+  def install_snowman_buried_animation
+    path = "Data/Map038.rvdata2"
+    map = load_data(path)
+    event = (map.instance_variable_get(:@events) || {}).fetch(1)
+    pages = event.instance_variable_get(:@pages) || []
+    changed = []
+    script_text = lambda do |command|
+      [355, 655].include?(command_code(command)) ? command_parameters(command)[0].to_s : ""
+    end
+
+    pages.each_with_index do |page, page_index|
+      list = page.instance_variable_get(:@list) || []
+      rescue_at = list.index do |command|
+        script_text.call(command).match?(/wcf_wanderer_layer_scene\(:(?:snowmeet|snowkitchen)\)/)
+      end
+      next unless rescue_at
+
+      # Remove only this feature's commands so rerunning the installer is safe.
+      list.reject! do |command|
+        text = script_text.call(command)
+        text.include?("WCF_SNOWMAN_BURIED_BEGIN") ||
+          text.include?("WCF_SNOWMAN_BURIED_ANIMATE")
+      end
+
+      stage_at = list.index do |command|
+        script_text.call(command).include?("WCF_SNOW_RESCUE_LIVE_STAGE")
+      end
+      camera_at = list.index do |command|
+        script_text.call(command).include?("WCF_SNOW_RESCUE_LIVE_CAMERA")
+      end
+      reveal_at = list.index do |command|
+        script_text.call(command).include?("WCF_SNOW_RESCUE_LIVE_REVEAL")
+      end
+      raise "Map038 page #{page_index + 1} snow staging markers missing" unless
+        stage_at && camera_at && reveal_at && stage_at < camera_at && camera_at < reveal_at
+
+      stage = script_text.call(list[stage_at])
+      stage = stage.gsub("hq.set_graphic('$HaiQuy_Snowman',0)", "hq.set_graphic('',0)")
+      stage = stage.gsub("hq.transparent=false", "hq.transparent=true")
+      unless stage.include?("$game_player.set_graphic('',0)")
+        stage = stage.sub("$game_player.transparent=true;",
+          "$game_player.set_graphic('',0); $game_player.transparent=true;")
+      end
+      list[stage_at].instance_variable_set(:@parameters, [stage])
+
+      reveal_at = list.index do |command|
+        script_text.call(command).include?("WCF_SNOW_RESCUE_LIVE_REVEAL")
+      end
+      list.insert(reveal_at,
+        event_command(355, 0,
+          ["wcf_snowman_buried_begin(2) # WCF_SNOWMAN_BURIED_BEGIN"]))
+      reveal_at += 1
+      wait_at = reveal_at + 1
+      raise "Map038 page #{page_index + 1} snow reveal wait missing" unless
+        list[wait_at] && command_code(list[wait_at]) == 230
+      list.insert(wait_at + 1,
+        event_command(355, 0,
+          ["wcf_snowman_buried_animate # WCF_SNOWMAN_BURIED_ANIMATE"]))
+
+      page.instance_variable_set(:@list, list)
+      changed << page_index + 1
+    end
+
+    raise "Expected four Map038 snow-rescue pages, found #{changed.length}" unless
+      changed.length == 4
+    event.instance_variable_set(:@pages, pages)
+    map.instance_variable_get(:@events)[1] = event
+    save_data(path, map)
+    replace_runtime_script("WCF Snowball Rhythm", "Scripts/WCF Snowball Rhythm.rb")
+    puts "SNOWMAN_BURIED_ANIMATION_INSTALLED|pages=#{changed.join(',')}|" \
+      "sheet=padded-3-column|logical_row=1|frames=3|normal_hai_quy_hidden=true"
+  end
+
+  # Repair the actor-state handoff after every Map038 snow rescue without
+  # rebuilding the map. E1 cutscene commands and E2 pages are the only map
+  # data changed; current editor-authored coordinates remain authoritative.
+  def repair_wanderer_free_roam_actor_state
+    path = "Data/Map038.rvdata2"
+    map = load_data(path)
+    events = map.instance_variable_get(:@events) || {}
+    controller = events.fetch(1)
+    hq_anchor = events.fetch(2)
+    raise "Map038 Wanderer cast missing" unless (3..6).all? { |id| events[id] }
+
+    tile_before = map.instance_variable_get(:@data).instance_variable_get(:@marshal_data).dup
+    untouched = events.each_with_object({}) do |(id, event), memo|
+      memo[id] = Marshal.dump(event) unless [1, 2].include?(id)
+    end
+    free_switches = [48, 58, 62, 67, 73, 77]
+    script_text = lambda do |command|
+      [355, 655].include?(command_code(command)) ? command_parameters(command)[0].to_s : ""
+    end
+
+    # A blank high-priority page prevents the NPC Hải Quỳ anchor from being
+    # recreated when Map038 is loaded again after visiting Map014.
+    anchor_pages = hq_anchor.instance_variable_get(:@pages) || []
+    free_switches.each do |switch_id|
+      marker = "WCF_FREE_ROAM_HQ_ANCHOR_HIDDEN S#{switch_id}"
+      existing = anchor_pages.find do |candidate|
+        condition = candidate.instance_variable_get(:@condition)
+        condition.instance_variable_get(:@switch1_valid) == true &&
+          condition.instance_variable_get(:@switch1_id).to_i == switch_id &&
+          (candidate.instance_variable_get(:@list) || []).any? do |command|
+            command_code(command) == 108 && command_parameters(command)[0].to_s.include?(marker)
+          end
+      end
+      next if existing
+      hidden = page_from_template(hq_anchor,
+        [event_command(108, 0, [marker])], trigger: 0, priority: 0,
+        switch_id: switch_id)
+      graphic = hidden.instance_variable_get(:@graphic)
+      graphic.instance_variable_set(:@character_name, "")
+      graphic.instance_variable_set(:@character_index, 0)
+      hidden.instance_variable_set(:@through, true)
+      hidden.instance_variable_set(:@walk_anime, false)
+      hidden.instance_variable_set(:@step_anime, false)
+      anchor_pages << hidden
+    end
+    hq_anchor.instance_variable_set(:@pages, anchor_pages)
+
+    repaired = []
+    expected_free = {0 => 48, 55 => 58, 72 => 73, 76 => 77}
+    (controller.instance_variable_get(:@pages) || []).each_with_index do |page, page_index|
+      list = page.instance_variable_get(:@list) || []
+      next unless list.any? do |command|
+        script_text.call(command).match?(/wcf_wanderer_layer_scene\(:(?:snowmeet|snowkitchen)\)/)
+      end
+      condition = page.instance_variable_get(:@condition)
+      active_switch = condition.instance_variable_get(:@switch1_valid) ?
+        condition.instance_variable_get(:@switch1_id).to_i : 0
+      free_switch = expected_free.fetch(active_switch) do
+        raise "Map038 E1 P#{page_index + 1} unexpected rescue switch #{active_switch}"
+      end
+      party_at = list.index do |command|
+        script_text.call(command).include?("WCF_WANDERER_PARTY_BEFORE")
+      end
+      finish_at = list.rindex do |command|
+        command_code(command) == 123 && command_parameters(command)[0].to_s == "A"
+      end
+      raise "Map038 E1 P#{page_index + 1} free-roam boundaries missing" unless party_at && finish_at
+
+      # Remove the obsolete partial handoff. It restored only the player/E2,
+      # leaving Shylvie/Kohi at the rescue point and Leo/Hakase hidden.
+      ((party_at + 1)...finish_at).to_a.reverse_each do |index|
+        text = script_text.call(list[index])
+        remove =
+          text.match?(/hq=\$game_map\.events\[2\]; \$game_player\.moveto\(hq\.x,hq\.y\)/) ||
+          text.match?(/\$game_player\.set_graphic\(["']!\$HaiQuy_GiangSinh["'],0\)/) ||
+          text.include?("$game_player.transparent=false; hq.transparent=true") ||
+          text.include?("hq.instance_variable_set(:@through,true)")
+        list.delete_at(index) if remove
+      end
+      list.reject! do |command|
+        script_text.call(command).include?("WCF_WANDERER_FREE_ROAM_CAST_RESTORE")
+      end
+
+      free_on = list.rindex do |command|
+        command_code(command) == 121 &&
+          command_parameters(command)[0, 2] == [free_switch, free_switch] &&
+          command_parameters(command)[2].to_i == 0
+      end
+      camera_at = list.index do |command|
+        script_text.call(command).include?("WCF_SNOW_RESCUE_FREE_CAMERA")
+      end
+      raise "Map038 E1 P#{page_index + 1} free switch/camera missing" unless
+        free_on && camera_at && free_on < camera_at
+      list.insert(free_on + 1, event_command(355, 0, [
+        "wcf_wanderer_restore_free_roam # WCF_WANDERER_FREE_ROAM_CAST_RESTORE"
+      ]))
+      page.instance_variable_set(:@list, list)
+      repaired << [page_index + 1, free_switch]
+    end
+    raise "Expected four Map038 rescue pages, found #{repaired.length}" unless repaired.length == 4
+
+    events[1] = controller
+    events[2] = hq_anchor
+    map.instance_variable_set(:@events, events)
+    save_data(path, map)
+    replace_runtime_script("WCF Snowball Rhythm", "Scripts/WCF Snowball Rhythm.rb")
+
+    verify = load_data(path)
+    verify_events = verify.instance_variable_get(:@events) || {}
+    errors = []
+    errors << "Map038 tile data changed" unless
+      verify.instance_variable_get(:@data).instance_variable_get(:@marshal_data) == tile_before
+    untouched.each do |id, dump|
+      errors << "Map038 E%03d changed" % id unless
+        verify_events[id] && Marshal.dump(verify_events[id]) == dump
+    end
+    verify_anchor_pages = verify_events.fetch(2).instance_variable_get(:@pages) || []
+    free_switches.each do |switch_id|
+      hidden = verify_anchor_pages.any? do |candidate|
+        condition = candidate.instance_variable_get(:@condition)
+        graphic = candidate.instance_variable_get(:@graphic)
+        condition.instance_variable_get(:@switch1_valid) == true &&
+          condition.instance_variable_get(:@switch1_id).to_i == switch_id &&
+          graphic.instance_variable_get(:@character_name).to_s.empty?
+      end
+      errors << "E2 blank free page S#{switch_id} missing" unless hidden
+    end
+    repaired.each do |page_number, free_switch|
+      verify_list = verify_events.fetch(1).instance_variable_get(:@pages)[page_number - 1]
+        .instance_variable_get(:@list) || []
+      scripts = verify_list.map { |command| script_text.call(command) }
+      restore_at = scripts.index { |text| text.include?("WCF_WANDERER_FREE_ROAM_CAST_RESTORE") }
+      switch_at = verify_list.rindex do |command|
+        command_code(command) == 121 && command_parameters(command)[0, 2] == [free_switch, free_switch] &&
+          command_parameters(command)[2].to_i == 0
+      end
+      camera_at = scripts.index { |text| text.include?("WCF_SNOW_RESCUE_FREE_CAMERA") }
+      reveal_at = scripts.index { |text| text.include?("WCF_SNOW_RESCUE_FREE_REVEAL") }
+      errors << "P#{page_number} restore ordering" unless
+        switch_at && restore_at && camera_at && reveal_at &&
+        switch_at < restore_at && restore_at < camera_at && camera_at < reveal_at
+    end
+    source = File.binread("Scripts/WCF Snowball Rhythm.rb")
+    errors << "snowman renderer guard missing" unless
+      source.include?("wcf_snowman_guard_update") &&
+      source.include?("@wcf_snowman_buried_event_id")
+    errors << "free-roam restore helper missing" unless source.include?("def wcf_wanderer_restore_free_roam")
+    errors << "free-roam restore still depends on nil $data_map" if source.include?("$data_map.events")
+    errors << "free-roam restore does not use live Game_Event sources" unless
+      source.include?("instance_variable_get(:@event)")
+    errors << "snowman follower guard missing" unless
+      source.include?("@wcf_snowman_followers_visible") &&
+      source.include?("followers.visible = false")
+    runtime = load_data("Data/Scripts.rvdata2")
+    entry = runtime.find { |candidate| candidate[1].to_s.strip == "WCF Snowball Rhythm" }
+    errors << "runtime snowball script differs" unless entry && Zlib::Inflate.inflate(entry[2]) == source
+    errors.each { |error| puts "WANDERER_FREE_ROAM_ERROR|#{error}" }
+    raise "Wanderer free-roam actor repair failed" unless errors.empty?
+    puts "WANDERER_FREE_ROAM_ACTORS_REPAIRED|pages=#{repaired.map(&:first).join(',')}|" \
+      "free_switches=#{free_switches.join(',')}|E2_hidden_on_reload=true|" \
+      "NPC_positions=data_map_authoritative|snowman_guard=true|errors=0"
+  end
+
+  # Add the shared Leo/Hai Quy snow-building vignette after party preparation
+  # on every live Wanderer route, then lengthen the visible sleeping-parallax
+  # hold on every shared preparation variant. Event placement/page properties
+  # are deliberately preserved; only command lists and the runtime helper are
+  # updated.
+  def extend_wanderer_prepare_snowbuild_and_sleep
+    map38_path = "Data/Map038.rvdata2"
+    map38 = load_data(map38_path)
+    tile38 = map38.instance_variable_get(:@data).instance_variable_get(:@marshal_data).dup
+    events38 = map38.instance_variable_get(:@events) || {}
+    non_controller38 = events38.each_with_object({}) do |(id, event), memo|
+      memo[id] = Marshal.dump(event) if event && id != 1
+    end
+    controller = events38.fetch(1)
+    pages = controller.instance_variable_get(:@pages) || []
+    changed_pages = []
+    script_text = lambda do |command|
+      [355, 655].include?(command_code(command)) ? command_parameters(command)[0].to_s : ""
+    end
+    pages.each_with_index do |page, page_index|
+      list = page.instance_variable_get(:@list) || []
+      prepare = list.index do |command|
+        script_text.call(command).include?("WCF_WANDERER_LAYER_SCENE_PREPARE")
+      end
+      next unless prepare
+      list.reject! do |command|
+        script_text.call(command).match?(/wcf_wanderer_layer_scene\(:snowbuild\)/)
+      end
+      prepare = list.index do |command|
+        script_text.call(command).include?("WCF_WANDERER_LAYER_SCENE_PREPARE")
+      end
+      list.insert(prepare + 1, event_command(355, 0, [
+        "wcf_wanderer_layer_scene(:snowbuild) # WCF_WANDERER_LAYER_SCENE_SNOWBUILD_AFTER_PREPARE"
+      ]))
+      page.instance_variable_set(:@list, list)
+      changed_pages << page_index + 1
+    end
+    raise "Expected four live Wanderer preparation pages" unless changed_pages.length == 4
+    save_data(map38_path, map38)
+
+    map37_path = "Data/Map037.rvdata2"
+    map37 = load_data(map37_path)
+    pages37 = (map37.instance_variable_get(:@events) || {}).fetch(1)
+      .instance_variable_get(:@pages) || []
+    sleep_holds = []
+    pages37.each_with_index do |page, page_index|
+      list = page.instance_variable_get(:@list) || []
+      hold_marker = "WCF_PREP_SLEEP_VISIBLE_HOLD_P#{page_index + 1}"
+      list.each_index.to_a.reverse_each do |index|
+        next unless script_text.call(list[index]).include?(hold_marker)
+        list.delete_at(index + 1) if list[index + 1] && command_code(list[index + 1]) == 230
+        list.delete_at(index)
+      end
+      sleep = list.index do |command|
+        command_code(command) == 284 && command_parameters(command)[0].to_s == "HQ_Room_Sleep"
+      end
+      raise "Map037 page #{page_index + 1} sleep parallax missing" unless sleep
+      fadein = (sleep...list.length).find { |index| command_code(list[index]) == 222 }
+      raise "Map037 page #{page_index + 1} sleep Fade In missing" unless fadein
+      # Some legacy variants already had a short post-Fade-In wait while
+      # others did not. Remove those adjacent waits so every route receives
+      # one identical visible hold instead of stacking 180 + 60 frames.
+      list.delete_at(fadein + 1) while
+        list[fadein + 1] && command_code(list[fadein + 1]) == 230
+      list.insert(fadein + 1,
+        event_command(355, 0, ["# #{hold_marker}"]),
+        event_command(230, 0, [180]))
+      page.instance_variable_set(:@list, list)
+      sleep_holds << page_index + 1
+    end
+    raise "Expected six shared sleep pages" unless sleep_holds.length == 6
+    save_data(map37_path, map37)
+
+    replace_runtime_script("WCF Snowball Rhythm", "Scripts/WCF Snowball Rhythm.rb")
+
+    verify38 = load_data(map38_path)
+    verify_events38 = verify38.instance_variable_get(:@events) || {}
+    errors = []
+    errors << "Map038 tile data changed" unless
+      verify38.instance_variable_get(:@data).instance_variable_get(:@marshal_data) == tile38
+    non_controller38.each do |id, dump|
+      errors << "Map038 E%03d changed" % id unless
+        verify_events38[id] && Marshal.dump(verify_events38[id]) == dump
+    end
+    changed_pages.each do |page_number|
+      list = verify_events38.fetch(1).instance_variable_get(:@pages)[page_number - 1]
+        .instance_variable_get(:@list) || []
+      scripts = list.map { |command| script_text.call(command) }
+      prepare = scripts.index { |text| text.include?("WCF_WANDERER_LAYER_SCENE_PREPARE") }
+      snowbuild = scripts.each_index.select do |index|
+        scripts[index].include?("WCF_WANDERER_LAYER_SCENE_SNOWBUILD_AFTER_PREPARE")
+      end
+      errors << "Map038 E001 P#{page_number} snowbuild ordering" unless
+        prepare && snowbuild == [prepare + 1]
+    end
+    verify37 = load_data(map37_path).instance_variable_get(:@events).fetch(1)
+      .instance_variable_get(:@pages) || []
+    verify37.each_with_index do |page, page_index|
+      list = page.instance_variable_get(:@list) || []
+      sleep = list.index do |command|
+        command_code(command) == 284 && command_parameters(command)[0].to_s == "HQ_Room_Sleep"
+      end
+      fadein = sleep && (sleep...list.length).find { |index| command_code(list[index]) == 222 }
+      marker = fadein && ((fadein + 1)...list.length).find do |index|
+        script_text.call(list[index]).include?("WCF_PREP_SLEEP_VISIBLE_HOLD_P#{page_index + 1}")
+      end
+      wait = marker && marker + 1
+      errors << "Map037 E001 P#{page_index + 1} sleep hold is not 180" unless
+        marker == fadein + 1 && wait && command_code(list[wait]) == 230 &&
+          command_parameters(list[wait])[0].to_i == 180
+    end
+    source = File.binread("Scripts/WCF Snowball Rhythm.rb")
+    errors << "snowbuild frame order" unless source.include?(
+      ':frames => ["Wanderer_Party_snowbuild_2",' + "\n" +
+      '        "Wanderer_Party_snowbuild_1"]')
+    errors << "snowbuild camera focus" unless source.include?(
+      ':focus => [34, 23], :holds => [10, 10], :loops => 10')
+    runtime = load_data("Data/Scripts.rvdata2")
+    entry = runtime.find { |candidate| candidate[1].to_s.strip == "WCF Snowball Rhythm" }
+    errors << "runtime snowball script differs" unless
+      entry && Zlib::Inflate.inflate(entry[2]) == source
+    errors.each { |error| puts "WANDERER_PREP_SNOWBUILD_ERROR|#{error}" }
+    raise "Wanderer preparation snowbuild extension failed" unless errors.empty?
+    puts "WANDERER_PREP_SNOWBUILD|pages=#{changed_pages.join(',')}|frames=2,1|" \
+      "loops=10|focus=34,23|sleep_pages=#{sleep_holds.join(',')}|sleep_hold=180|errors=0"
+  end
+
+  def audit_wanderer_christmas_scene_layers
+    errors = []
+    map38 = load_data("Data/Map038.rvdata2")
+    counts = Hash.new(0)
+    (map38.instance_variable_get(:@events) || {}).each_value do |event|
+      next unless event
+      (event.instance_variable_get(:@pages) || []).each do |page|
+        page_counts = Hash.new(0)
+        (page.instance_variable_get(:@list) || []).each do |command|
+          next unless command_code(command) == 355
+          text = command_parameters(command)[0].to_s
+          next unless text.include?("WCF_WANDERER_LAYER_SCENE")
+          kind = text[/wcf_wanderer_layer_scene\(:(\w+)\)/, 1]
+          counts[kind] += 1 if kind
+          page_counts[kind] += 1 if kind
+        end
+        page_counts.each do |kind, count|
+          errors << "duplicate #{kind} call on one page" if count > 1
+        end
+      end
+    end
+    %w[prepare snowbuild snowkitchen snowmeet phuchoi].each do |kind|
+      errors << "missing #{kind}" if counts[kind] == 0
+    end
+
+    rescue_pages = []
+    party_event = (map38.instance_variable_get(:@events) || {})[1]
+    (party_event && party_event.instance_variable_get(:@pages) || []).each_with_index do |page, page_index|
+      list = page.instance_variable_get(:@list) || []
+      scripts = list.map do |command|
+        [355, 655].include?(command_code(command)) ? command_parameters(command)[0].to_s : ""
+      end
+      rescue_at = scripts.index { |text| text.match?(/wcf_wanderer_layer_scene\(:(?:snowmeet|snowkitchen)\)/) }
+      next unless rescue_at
+      rescue_pages << page_index + 1
+      first_message = list.index { |command| command_code(command) == 101 }
+      black_at = scripts.index { |text| text.match?(/shadows\.set_opacity\(255(?:\D|$)/) }
+      cg_show = scripts[0...rescue_at].rindex { |text| text.match?(/(?:WCFFramedCG|WCFGalleryScene)\.show/) }
+      cg_hide = scripts[0...rescue_at].rindex { |text| text.match?(/(?:WCFFramedCG|WCFGalleryScene)\.hide/) }
+      live_stage = scripts.index { |text| text.include?("WCF_SNOW_RESCUE_LIVE_STAGE") }
+      live_camera = scripts.index { |text| text.include?("WCF_SNOW_RESCUE_LIVE_CAMERA") }
+      buried_begin = scripts.index { |text| text.include?("WCF_SNOWMAN_BURIED_BEGIN") }
+      live_reveal = scripts.index { |text| text.include?("WCF_SNOW_RESCUE_LIVE_REVEAL") }
+      buried_animate = scripts.index { |text| text.include?("WCF_SNOWMAN_BURIED_ANIMATE") }
+      buried_text = list.index do |command|
+        command_code(command) == 401 &&
+          (command_parameters(command)[0].to_s.include?("bị chôn vùi") ||
+           command_parameters(command)[0].to_s.include?("đống tuyết đổ ầm xuống, chôn"))
+      end
+      prepare_at = scripts.index { |text| text.include?("WCF_WANDERER_LAYER_SCENE_PREPARE") }
+      snowbuild_at = scripts.index do |text|
+        text.include?("WCF_WANDERER_LAYER_SCENE_SNOWBUILD_AFTER_PREPARE")
+      end
+      party_at = scripts.index { |text| text.include?("WCF_WANDERER_PARTY_BEFORE") }
+      stage_at = scripts.index do |text|
+        text.include?("WCF_WANDERER_FREE_ROAM_CAST_RESTORE") ||
+          (text.include?("hq=$game_map.events[2]") && text.include?("$game_player.moveto"))
+      end
+      camera_at = scripts.index { |text| text.include?("WCF_SNOW_RESCUE_FREE_CAMERA") }
+      reveal_at = scripts.index { |text| text.include?("WCF_SNOW_RESCUE_FREE_REVEAL") }
+      camera_count = scripts.count { |text| text.include?("WCF_SNOW_RESCUE_FREE_CAMERA") }
+      reveal_count = scripts.count { |text| text.include?("WCF_SNOW_RESCUE_FREE_REVEAL") }
+      finish_at = list.rindex do |command|
+        command_code(command) == 123 && command_parameters(command)[0].to_s == "A"
+      end
+      early_reveal = scripts[0...rescue_at].any? do |text|
+        text.match?(/WCF_(?:NOODLE_OFFICE_REVEAL|LEO_SHOP_KUL_OFFICE_REVEAL|SHY_JEWEL_SHARED_KUL_OFFICE_REVEAL)/)
+      end
+      label = "Map038 E001 P#{page_index + 1}"
+      errors << "#{label} black setup ordering" unless black_at && first_message && black_at < first_message
+      errors << "#{label} exposes live map before rescue" if early_reveal
+      errors << "#{label} snow CG missing" unless cg_show
+      errors << "#{label} live snow staging missing" unless live_stage
+      errors << "#{label} live snow camera ordering" unless
+        live_stage && live_camera && buried_begin && live_reveal && buried_animate && buried_text &&
+        live_stage < live_camera && live_camera < buried_begin &&
+        buried_begin < live_reveal && live_reveal < buried_animate &&
+        buried_animate < buried_text
+      if live_stage
+        stage_script = scripts[live_stage]
+        errors << "#{label} standard renderer still handles custom snowman sheet" unless
+          stage_script.include?("hq.set_graphic('',0)") &&
+          stage_script.include?("hq.transparent=true") &&
+          stage_script.include?("$game_player.set_graphic('',0)") &&
+          stage_script.include?("$game_player.transparent=true")
+        errors << "#{label} Kohi/Shylvie live staging" unless
+          stage_script.include?("$Shylvie_giangsinh") && stage_script.include?("$Kohi_giangsinh")
+      end
+      errors << "#{label} laughing CG appears before buried scene" unless
+        live_reveal && buried_text && cg_show && live_reveal < buried_text && buried_text < cg_show
+      errors << "#{label} snow CG not hidden before rescue" unless cg_show && cg_hide && cg_show < cg_hide && cg_hide < rescue_at
+      errors << "#{label} prepare ordering" unless prepare_at && rescue_at < prepare_at
+      errors << "#{label} snowbuild-after-prepare ordering" unless
+        prepare_at && snowbuild_at && party_at &&
+        prepare_at < snowbuild_at && snowbuild_at < party_at
+      if prepare_at && party_at && scripts[(prepare_at + 1)...party_at].any? do |text|
+          text.match?(/wcf_wanderer_layer_scene\(:(?!prepare|snowbuild)/)
+        end
+        errors << "#{label} has an unexpected bright vignette after prepare"
+      end
+      errors << "#{label} finished table ordering" unless party_at && prepare_at && prepare_at < party_at
+      errors << "#{label} free camera count #{camera_count}/1" unless camera_count == 1
+      errors << "#{label} free reveal count #{reveal_count}/1" unless reveal_count == 1
+      errors << "#{label} free-roam staging ordering" unless
+        stage_at && party_at && party_at < stage_at && camera_at && stage_at < camera_at &&
+        reveal_at && camera_at < reveal_at && finish_at && reveal_at < finish_at
+    end
+    errors << "snow rescue page count #{rescue_pages.length}/4" unless rescue_pages.length == 4
+
+    map14 = load_data("Data/Map014.rvdata2")
+    pages = map14.instance_variable_get(:@events).fetch(24)
+      .instance_variable_get(:@pages) || []
+    errors << "Map014 seasonal setup page" unless pages[0] &&
+      (pages[0].instance_variable_get(:@list) || []).any? do |command|
+        command_code(command) == 355 &&
+          command_parameters(command)[0].to_s.include?("WCF_WANDERER_KITCHEN_SEASON")
+      end
+    errors << "Map014 seasonal refresh page" unless pages[1] &&
+      pages[1].instance_variable_get(:@trigger).to_i == 4 &&
+      (pages[1].instance_variable_get(:@list) || []).any? do |command|
+        command_code(command) == 355 &&
+          command_parameters(command)[0].to_s.include?("WCF_WANDERER_KITCHEN_SEASON")
+      end
+
+    source_path = "Scripts/WCF Snowball Rhythm.rb"
+    source = File.binread(source_path)
+    errors << "snowbuild loop" unless source.include?(":loops => 10")
+    errors << "snowbuild camera focus" unless
+      source.include?(':focus => [34, 23], :holds => [10, 10], :loops => 10')
+    errors << "phuchoi frame range" unless source.include?("(1..6).map")
+    errors << "layer scenes do not reveal through KUL" unless
+      source.include?("$game_map.shadows.set_opacity(0, 24)")
+    errors << "layer scenes do not return to KUL black" unless
+      source.include?("$game_map.shadows.set_opacity(255, 24)")
+    errors << "custom snowman sheet does not crop only logical row 1" unless
+      source.include?("bitmap.width * frame / 3") &&
+      source.include?("bitmap.height / 4") &&
+      source.include?("[[0, 8], [1, 18], [2, 36]]")
+    errors << "snowman helper does not hide both normal Hai Quy renderers" unless
+      source.include?('$game_player.set_graphic("", 0)') &&
+      source.include?('event.set_graphic("", 0)') &&
+      source.include?("$game_player.transparent = true") &&
+      source.include?("event.transparent = true")
+    snowman_path = "Graphics/Characters/$HaiQuy_Snowman.png"
+    if File.file?(snowman_path)
+      header = File.binread(snowman_path, 24)
+      width, height = header.byteslice(16, 8).unpack("N2")
+      errors << "snowman sheet canvas cannot provide four logical rows (#{width}x#{height})" unless
+        width >= 3 && height >= 4
+    else
+      errors << "snowman sheet asset missing"
+    end
+    runtime = load_data("Data/Scripts.rvdata2")
+    entry = runtime.find { |candidate| candidate[1].to_s.strip == "WCF Snowball Rhythm" }
+    errors << "runtime WCF Snowball Rhythm" unless entry &&
+      Zlib::Inflate.inflate(entry[2]) == source
+
+    errors.each { |error| puts "WANDERER_SCENE_LAYER_ERROR|#{error}" }
+    detail = %w[prepare snowbuild snowkitchen snowmeet phuchoi]
+      .map { |kind| "#{kind}=#{counts[kind]}" }.join("|")
+    puts "WANDERER_SCENE_LAYER_AUDIT|errors=#{errors.length}|#{detail}|" \
+      "kitchen=Christmas_when_Map038_039_or_noodle"
+    raise "Wanderer Christmas scene layer audit failed" unless errors.empty?
+  end
+
+  def audit_atlantis_parallax_chase
+    chase = load_data("Data/Map029.rvdata2")
+    surround = load_data("Data/Map034.rvdata2")
+    errors = []
+    parallax = chase.instance_variable_get(:@parallax_name).to_s
+    errors << "Map029 missing parallax" if parallax.empty?
+    errors << "Map034 parallax mismatch" unless
+      surround.instance_variable_get(:@parallax_name).to_s == parallax &&
+      surround.instance_variable_get(:@parallax_show)
+    [chase, surround].each_with_index do |map, index|
+      id = index.zero? ? 29 : 34
+      note = map.instance_variable_get(:@note).to_s
+      errors << "Map#{id} KUL note" unless
+        note.include?("[lighting on]") && note.include?("[opacity 185]") &&
+        note.include?("<full lock parallax>") && note.include?("<tile lock parallax>")
+      events = map.instance_variable_get(:@events) || {}
+      expected = index.zero? ? 9 : 4
+      anchors = events.values.compact.count do |event|
+        event.instance_variable_get(:@name).to_s.start_with?("FX-ATL-EERIE-LIGHT")
+      end
+      errors << "Map#{id} light anchors=#{anchors}" unless anchors == expected
+      setup = events.fetch(1).instance_variable_get(:@pages).first
+        .instance_variable_get(:@list) || []
+      marker = index.zero? ? "WCF_ATL_CHASE_EERIE_LIGHTS" : "WCF_ATL_SURROUND_EERIE_LIGHTS"
+      errors << "Map#{id} light setup" unless setup.any? do |command|
+        command_code(command) == 355 && command_parameters(command)[0].to_s.include?(marker)
+      end
+    end
+
+    list = surround.instance_variable_get(:@events).fetch(1)
+      .instance_variable_get(:@pages).first.instance_variable_get(:@list) || []
+    scripts = list.each_with_index.select { |command, _i| command_code(command) == 355 }
+      .map { |command, index| [command_parameters(command)[0].to_s, index] }
+    approach = scripts.find { |text, _i| text.include?("WCF_ATL_CLONE_JUMPSCARE") }
+    jumpscare = scripts.find { |text, _i| text.include?("atlantis_play_jumpscare") }
+    transfer = list.index do |command|
+      command_code(command) == 201 && command_parameters(command)[1].to_i == 29
+    end
+    errors << "Map034 clone approach" unless approach
+    errors << "Map034 jumpscare" unless jumpscare
+    errors << "Map034 jumpscare order" unless
+      approach && jumpscare && transfer && approach[1] < jumpscare[1] && jumpscare[1] < transfer
+    errors << "Map034 old monster approach remains" if scripts.any? do |text, _i|
+      text == "atlantis_monster_enter(2)"
+    end
+
+    png = File.binread("Graphics/Pictures/Jumpscare.png", 24)
+    width, height = png.byteslice(16, 8).unpack("N2")
+    errors << "Jumpscare atlas #{width}x#{height}" unless [width, height] == [1920, 1440]
+    source = File.binread("Scripts/Atlantis Mirror Maze Chase.rb")
+    errors << "monster scale" unless source.include?("MONSTER_SCALE = 0.72")
+    errors << "monster scene coverage" unless
+      source.include?("MONSTER_MAP_IDS = [25, 29, 34, 53, 55]")
+    errors << "eight-frame player" unless source.include?("8.times do |frame|")
+
+    runtime = load_data("Data/Scripts.rvdata2")
+    ["KUL Graphics", "Atlantis Mirror Maze Chase"].each do |name|
+      entry = runtime.find { |candidate| candidate[1].to_s.strip == name }
+      path = File.join("Scripts", script_filename(name))
+      errors << "runtime #{name}" unless entry &&
+        Zlib::Inflate.inflate(entry[2]) == File.binread(path)
+    end
+    errors.each { |error| puts "ATL_HORROR_ERROR|#{error}" }
+    puts "ATL_HORROR_AUDIT|errors=#{errors.length}|parallax=#{parallax}|" \
+      "chase_lights=9|surround_lights=4|jumpscare_frames=8|monster_scale=0.72"
+    raise "Atlantis parallax chase audit failed" unless errors.empty?
+  end
+
+  def audit_home_storage_key_gate
+    map = load_data("Data/Map022.rvdata2")
+    events = map.instance_variable_get(:@events) || {}
+    errors = []
+    album_list = events.fetch(16).instance_variable_get(:@pages).first
+      .instance_variable_get(:@list) || []
+    form_change = album_list.index do |command|
+      command_code(command) == 322 && command_parameters(command)[0, 2] == [3, "$HaiQuyAtHome_Base"]
+    end
+    form_switch = album_list.index do |command|
+      command_code(command) == 121 && command_parameters(command)[0, 3] == [40, 40, 0]
+    end
+    errors << "E016 form/switch order" unless form_change && form_switch && form_change < form_switch
+
+    pages = events.fetch(21).instance_variable_get(:@pages) || []
+    acquire = pages[1]
+    condition = acquire && acquire.instance_variable_get(:@condition)
+    errors << "E021 acquisition conditions" unless condition &&
+      condition.instance_variable_get(:@switch1_valid) &&
+      condition.instance_variable_get(:@switch1_id).to_i == 37 &&
+      condition.instance_variable_get(:@switch2_valid) &&
+      condition.instance_variable_get(:@switch2_id).to_i == 40
+    errors << "E021 does not grant key" unless acquire &&
+      (acquire.instance_variable_get(:@list) || []).any? do |command|
+        command_code(command) == 121 && command_parameters(command)[0, 3] == [38, 38, 0]
+      end
+    obtained = pages[2]
+    obtained_condition = obtained && obtained.instance_variable_get(:@condition)
+    errors << "E021 obtained page" unless obtained_condition &&
+      obtained_condition.instance_variable_get(:@switch1_valid) &&
+      obtained_condition.instance_variable_get(:@switch1_id).to_i == 38
+
+    errors.each { |error| puts "HOME_KEY_GATE_ERROR|#{error}" }
+    puts "HOME_KEY_GATE_AUDIT|errors=#{errors.length}|hint=S37|form=S40|key=S38"
+    raise "Map022 storage key gate audit failed" unless errors.empty?
+  end
+
+  def audit_all_shared_preparation_sequences
+    map = load_data("Data/Map037.rvdata2")
+    events = map.instance_variable_get(:@events) || {}
+    pages = events.fetch(1).instance_variable_get(:@pages) || []
+    errors = []
+    actor = events.fetch(3)
+    errors << "actor position" unless [actor.instance_variable_get(:@x), actor.instance_variable_get(:@y)] == [11, 7]
+    graphic = actor.instance_variable_get(:@pages).first.instance_variable_get(:@graphic)
+    errors << "actor graphic" unless graphic.instance_variable_get(:@character_name) == "$HaiQuy_Sleep_Night"
+    gift = events.fetch(2)
+    errors << "gift position" unless [gift.instance_variable_get(:@x), gift.instance_variable_get(:@y)] == [11, 8]
+
+    pages.each_with_index do |page, page_index|
+      number = page_index + 1
+      list = page.instance_variable_get(:@list) || []
+      scripts = list.map do |command|
+        [355, 655].include?(command_code(command)) ? command_parameters(command)[0].to_s : ""
+      end
+      stage = scripts.index { |text| text.include?("WCF_PREP_GIFT_STAGE_P#{number}") }
+      walk = list.index do |command|
+        next false unless command_code(command) == 205 && command_parameters(command)[0].to_i == 3
+        route = command_parameters(command)[1]
+        (route.instance_variable_get(:@list) || []).any? do |move|
+          move.instance_variable_get(:@code) == 45 &&
+            (move.instance_variable_get(:@parameters) || [])[0] == "find_path(8,5)"
+        end
+      end
+      sleep = list.index do |command|
+        command_code(command) == 284 && command_parameters(command)[0] == "HQ_Room_Sleep"
+      end
+      hidden = scripts.index do |text|
+        text.include?("WCF_PREP_SLEEP_PARALLAX_P#{number}") ||
+          (number == 2 && text.include?("WCF_NOODLE_SLEEP_PARALLAX"))
+      end
+      shows = [28, 29, 30, 31].map do |id|
+        scripts.index { |text| text =~ /WCFGalleryScene\.show\(#{id}\)/ }
+      end
+      transfer = list.rindex { |command| command_code(command) == 201 }
+      final_hide = scripts.index { |text| text.include?("WCF_PREP_CG_SEQUENCE_END_P#{number}") }
+      errors << "page #{number} stage" unless stage
+      errors << "page #{number} walk" unless walk
+      errors << "page #{number} sleep parallax" unless sleep
+      errors << "page #{number} hidden actor" unless hidden
+      errors << "page #{number} CG order" unless shows.none?(&:nil?) && shows == shows.sort
+      errors << "page #{number} sequence order" unless
+        [stage, walk, sleep, hidden, *shows, final_hide, transfer].none?(&:nil?) &&
+        stage < walk && walk < sleep && sleep < hidden && hidden < shows.first &&
+        shows.last < final_hide && final_hide < transfer
+      if shows.first && final_hide
+        early_hides = scripts[shows.first...final_hide].each_index.select do |offset|
+          scripts[shows.first + offset].include?("WCFGalleryScene.hide")
+        end
+        errors << "page #{number} CG gap" unless early_hides.empty?
+      end
+      after_sleep = list[(sleep || 0)...(transfer || list.length)]
+      errors << "page #{number} room restored" if after_sleep.any? do |command|
+        command_code(command) == 284 && command_parameters(command)[0] == "HQ_Room_Midnight_Base"
+      end
+      errors << "page #{number} sprite swap under CG" if scripts[(shows.first || 0)...(final_hide || scripts.length)].any? do |text|
+        text.include?("set_graphic")
+      end
+      kul_scripts = scripts.select do |text|
+        text.include?("$game_map.shadows") || text.include?("give_light") || text.include?("del_light")
+      end
+      prep_handoffs = kul_scripts.select do |text|
+        text.include?("WCF_PREP_TO_OFFICE_BLACK_P#{number}")
+      end
+      legacy_safe = kul_scripts.reject do |text|
+        text.include?("WCF_PREP_TO_OFFICE_BLACK_P#{number}")
+      end
+      allowed_entry = case number
+                      when 1, 2, 5
+                        legacy_safe.length == 1 &&
+                          legacy_safe[0].include?("WCF_PREP_ENTRY_KUL_OFF_P#{number}")
+                      when 3, 4
+                        legacy_safe.length == 2 &&
+                          legacy_safe.any? { |text| text.include?("WCF_MAGIC_BOOK_PREP_KUL_OFF") } &&
+                          legacy_safe.any? { |text| text.include?("WCF_MAGIC_BOOK_PREP_KUL_TO_OFFICE") }
+                      when 6
+                        legacy_safe.length == 1 &&
+                          legacy_safe[0].include?("WCF_JEWEL_PREP_KUL_OFF")
+                      else
+                        legacy_safe.empty?
+                      end
+      allowed_handoff = prep_handoffs.length == 1 && allowed_entry
+      errors << "page #{number} still uses KUL lighting outside the safe book-route handoff" if
+        kul_scripts.any? && !allowed_handoff
+    end
+    errors.each { |error| puts "PREP_SEQUENCE_ERROR|#{error}" }
+    puts "PREP_SEQUENCE_AUDIT|pages=#{pages.length}|errors=#{errors.length}|stage=11,7|gift=11,8|sleep=8,5|continuous_cg=11-14"
+    raise "Shared preparation sequence audit failed" unless errors.empty?
+  end
+
+  def frame_all_legacy_cgs
+    changed_maps = {}
+    Dir.glob("Data/Map[0-9][0-9][0-9].rvdata2").sort.each do |path|
+      map = load_data(path)
+      changed = 0
+      (map.instance_variable_get(:@events) || {}).each_value do |event|
+        next unless event
+        (event.instance_variable_get(:@pages) || []).each do |page|
+          list = page.instance_variable_get(:@list) || []
+          shows = list.each_index.select do |index|
+            command_code(list[index]) == 231 &&
+              command_parameters(list[index])[1].to_s =~ /\ACG(?:[1-9]|1[0-9]|2[0-4])\z/
+          end
+          shows.reverse_each do |index|
+            params = command_parameters(list[index])
+            picture_id = params[0].to_i
+            filename = params[1].to_s
+            erase_index = ((index + 1)...list.length).find do |candidate|
+              command_code(list[candidate]) == 235 &&
+                command_parameters(list[candidate])[0].to_i == picture_id
+            end
+            raise "#{path} #{filename} has no matching Erase Picture" unless erase_index
+            show_indent = list[index].instance_variable_get(:@indent).to_i
+            hide_indent = list[erase_index].instance_variable_get(:@indent).to_i
+            list[erase_index] = event_command(355, hide_indent,
+              ["WCFFramedCG.hide # WCF_FRAMED_CG"])
+            list[index] = event_command(355, show_indent,
+              ["WCFFramedCG.show(#{filename.inspect}) # WCF_FRAMED_CG"])
+            changed += 1
+          end
+          page.instance_variable_set(:@list, list)
+        end
+      end
+      next if changed == 0
+      save_data(path, map)
+      changed_maps[File.basename(path)[/\d+/].to_i] = changed
+    end
+
+    remaining = []
+    Dir.glob("Data/Map[0-9][0-9][0-9].rvdata2").sort.each do |path|
+      map = load_data(path)
+      (map.instance_variable_get(:@events) || {}).each do |event_id, event|
+        next unless event
+        (event.instance_variable_get(:@pages) || []).each_with_index do |page, page_index|
+          (page.instance_variable_get(:@list) || []).each do |command|
+            next unless command_code(command) == 231
+            filename = command_parameters(command)[1].to_s
+            next unless filename =~ /\ACG(?:[1-9]|1[0-9]|2[0-4])\z/
+            remaining << "#{File.basename(path)}/E#{event_id}/P#{page_index + 1}/#{filename}"
+          end
+        end
+      end
+    end
+    raise "Unframed 544x416 CG commands remain: #{remaining.join(', ')}" unless remaining.empty?
+    summary = changed_maps.sort.map { |map_id, count| "Map%03d=%d" % [map_id, count] }
+    puts "LEGACY_CG_FRAMES|converted=#{summary.join(',')}|remaining=0|composite=true"
+  end
+end
+
+module RVData2Audit
+  module_function
+
+  # Adds event-only exploration beats to the user-authored Map028 remake.
+  # Never regenerate the map: its parallax, collision table and exit position
+  # are authored data and must remain byte-for-byte unchanged.
+  def implement_remade_mirror_maze_events
+    path = "Data/Map028.rvdata2"
+    map = load_data(path)
+    width = map.instance_variable_get(:@width)
+    height = map.instance_variable_get(:@height)
+    parallax = map.instance_variable_get(:@parallax_name)
+    table = map.instance_variable_get(:@data)
+    table_hash = Digest::SHA256.hexdigest(Marshal.dump(table))
+    raise "Unexpected remade Map028 size" unless [width, height] == [37, 68]
+    raise "Unexpected remade Map028 parallax" unless parallax == "Dungeon"
+
+    events = map.instance_variable_get(:@events) || {}
+    controller = events.fetch(1)
+    exit_event = events.fetch(2)
+    raise "Map028 exit marker moved" unless
+      [exit_event.instance_variable_get(:@x), exit_event.instance_variable_get(:@y)] == [14, 66]
+
+    controller_page = (controller.instance_variable_get(:@pages) || []).first
+    controller_list = controller_page.instance_variable_get(:@list) || []
+    controller_light_changed = false
+    controller_darkness_changed = false
+    controller_list.each do |command|
+      next unless [355, 655].include?(command_code(command))
+      params = command_parameters(command).dup
+      text = params[0].to_s
+      if text.match?(/give_light\(([\"'])(?:player_small|maze_player_clear|maze_player_amber)\1\)/)
+        params[0] = text.gsub(/give_light\(([\"'])(?:player_small|maze_player_clear|maze_player_amber)\1\)/,
+          "give_light('maze_player_amber')")
+        controller_light_changed = true
+      elsif text.match?(/shadows\.set_opacity\((?:195|210|235),30\)/)
+        params[0] = text.sub(/shadows\.set_opacity\((?:195|210|235),30\)/,
+          "shadows.set_opacity(235,30)")
+        controller_darkness_changed = true
+      end
+      command.instance_variable_set(:@parameters, params)
+    end
+    raise "Map028 controller Player light setup missing" unless controller_light_changed ||
+      controller_list.any? { |command| command_parameters(command).join.include?("maze_player_amber") }
+    raise "Map028 controller darkness setup missing" unless controller_darkness_changed ||
+      controller_list.any? { |command| command_parameters(command).join.include?("set_opacity(235,30)") }
+    note = map.instance_variable_get(:@note).to_s
+    note = note.gsub(/\[opacity\s+(?:195|210|235)\]/i, "[opacity 235]")
+    map.instance_variable_set(:@note, note)
+
+    events.delete_if do |id, event|
+      id > 2 && event.instance_variable_get(:@name).to_s.include?("WCF-MAZE-")
+    end
+    template = controller
+    script = lambda { |text| event_command(355, 0, [text]) }
+    wait = lambda { |frames| event_command(230, 0, [frames]) }
+
+    set_graphic = lambda do |page, name, direction, pattern = 1,
+                             direction_fix: true, step_anime: false|
+      graphic = page.instance_variable_get(:@graphic)
+      graphic.instance_variable_set(:@tile_id, 0)
+      graphic.instance_variable_set(:@character_name, name)
+      graphic.instance_variable_set(:@character_index, 0)
+      graphic.instance_variable_set(:@direction, direction)
+      graphic.instance_variable_set(:@pattern, pattern)
+      page.instance_variable_set(:@direction_fix, direction_fix)
+      page.instance_variable_set(:@step_anime, step_anime)
+      page.instance_variable_set(:@walk_anime, false)
+      page.instance_variable_set(:@move_type, 0)
+      page
+    end
+
+    add_event = lambda do |id, name, x, y, pages|
+      event = event_from_pages(template, id, name, x, y, pages)
+      events[id] = event
+      event
+    end
+
+    # Painted mirror props sit on blocked wall cells adjacent to the route.
+    mirror_specs = [
+      [10, 20, 8, "$Mirror1", 2, 1],
+      [11, 15, 13, "$Mirror2", 2, 0],
+      [12, 23, 22, "$Mirror3", 2, 1],
+      [13, 12, 35, "$Mirror1", 4, 2],
+      [14, 17, 45, "$Mirror3", 6, 0],
+      [15, 13, 59, "$Mirror2", 8, 1]
+    ]
+    mirror_specs.each do |id, x, y, graphic, direction, pattern|
+      page = page_from_template(template, [], trigger: 0, priority: 1)
+      set_graphic.call(page, graphic, direction, pattern)
+      page.instance_variable_set(:@through, true)
+      add_event.call(id, "WCF-MAZE-MIRROR", x, y, [page])
+    end
+
+    # Clone anchors have no startup graphic, preventing a one-frame leak while
+    # the autorun controller initializes. Triggers assign Clone12..17 only for
+    # the short scare and always clear both graphic and KUL light afterwards.
+    clone_specs = [
+      [20, 28, 23], [21, 8, 36], [22, 18, 42],
+      [23, 9, 50], [24, 12, 64], [25, 16, 64]
+    ]
+    clone_specs.each do |id, x, y|
+      page = page_from_template(template, [], trigger: 0, priority: 1)
+      set_graphic.call(page, "", 2, 1)
+      page.instance_variable_set(:@through, true)
+      add_event.call(id, "SCARE-WCF-MAZE-CLONE", x, y, [page])
+    end
+
+    clone_show = lambda do |id, graphic, direction|
+      "e=$game_map.events[#{id}]; e.set_graphic('#{graphic}',0); " \
+        "e.set_direction(#{direction}); e.instance_variable_set(:@pattern,1); " \
+        "e.opacity=255; e.give_light('atlantis_clone'); char_effect(#{id},'Appear')"
+    end
+    clone_hide = lambda do |id|
+      "e=$game_map.events[#{id}]; e.drop_light; e.opacity=0; e.set_graphic('',0)"
+    end
+    mirror_frame = lambda do |id, direction, pattern, light = nil|
+      text = "e=$game_map.events[#{id}]; e.set_direction(#{direction}); " \
+        "e.instance_variable_set(:@pattern,#{pattern})"
+      text += "; e.give_light('#{light}')" if light
+      text
+    end
+
+    # Every floor trigger is one-shot, below the player and through. There is
+    # deliberately no damage or Game Over anywhere in the maze scares.
+    scare_specs = [
+      [40, 20, 9, [
+        script.call(mirror_frame.call(10, 6, 2, "atlantis_eerie_blue")),
+        script.call("RPG::SE.new('Darkness2',55,120).play"), wait.call(16),
+        script.call(mirror_frame.call(10, 8, 0)), wait.call(18),
+        script.call("$game_map.events[10].drop_light")
+      ]],
+      [41, 15, 14, [
+        script.call(mirror_frame.call(11, 4, 0, "atlantis_eerie_violet")),
+        script.call("RPG::SE.new('Darkness2',65,85).play"), wait.call(8),
+        script.call(mirror_frame.call(11, 6, 1)), wait.call(8),
+        script.call(mirror_frame.call(11, 8, 2)),
+        event_command(225, 0, [3, 6, 16, false]), wait.call(16),
+        script.call("$game_map.events[11].drop_light")
+      ]],
+      [42, 23, 23, [
+        script.call(mirror_frame.call(12, 6, 2, "atlantis_eerie_blue")),
+        script.call(clone_show.call(20, "$Clone12", 4)), wait.call(24),
+        script.call("RPG::SE.new('Darkness2',55,105).play"),
+        script.call(clone_hide.call(20)),
+        script.call("$game_map.events[12].drop_light")
+      ]],
+      [43, 12, 36, [
+        script.call(mirror_frame.call(13, 2, 0, "atlantis_eerie_violet")),
+        script.call(clone_show.call(21, "$Clone13", 6)), wait.call(20),
+        event_command(225, 0, [2, 7, 12, false]), wait.call(12),
+        script.call(clone_hide.call(21)),
+        script.call("$game_map.events[13].drop_light")
+      ]],
+      [44, 18, 45, [
+        script.call(mirror_frame.call(14, 4, 2, "atlantis_eerie_blue")),
+        script.call(clone_show.call(22, "$Clone14", 2)), wait.call(28),
+        script.call(clone_hide.call(22)),
+        script.call("$game_map.events[14].drop_light")
+      ]],
+      [45, 9, 54, [
+        script.call(clone_show.call(23, "$Clone15", 2)), wait.call(16),
+        script.call("RPG::SE.new('Darkness2',60,75).play"),
+        event_command(225, 0, [3, 7, 14, false]), wait.call(14),
+        script.call(clone_hide.call(23))
+      ]],
+      [46, 14, 64, [
+        script.call(mirror_frame.call(15, 6, 2, "atlantis_eerie_violet")),
+        script.call(clone_show.call(24, "$Clone16", 6)),
+        script.call(clone_show.call(25, "$Clone17", 4)), wait.call(22),
+        event_command(225, 0, [4, 8, 18, false]), wait.call(18),
+        script.call(clone_hide.call(24)), script.call(clone_hide.call(25)),
+        script.call("$game_map.events[15].drop_light")
+      ]]
+    ]
+    scare_specs.each do |id, x, y, commands|
+      live = page_from_template(template,
+        commands + [event_command(123, 0, ["A", 0])],
+        trigger: 1, priority: 0)
+      live.instance_variable_set(:@through, true)
+      done = page_from_template(template, [], trigger: 0, priority: 0,
+        self_switch: "A")
+      done.instance_variable_set(:@through, true)
+      add_event.call(id, "WCF-MAZE-SCARE-TRIGGER", x, y, [live, done])
+    end
+
+    # Lit barrels are visible KUL landmarks. Interacting transfers their fire
+    # to the player: the barrel switches from row 2 to row 1 and the player's
+    # warm, Region-shadow-aware light grows from 288px to 384px.
+    barrel_positions = [[30,7,5], [31,28,10], [32,8,15], [33,26,24],
+      [34,4,33], [35,17,41], [36,9,57]]
+    barrel_positions.each do |id, x, y|
+      lit_commands = [
+        event_command(108, 0, ["[light maze_barrel_fire]"]),
+        event_command(408, 0, ["[static]"]),
+        event_command(408, 0, ["[shadows]"]),
+        script.call("RPG::SE.new('Fire2',65,95).play"),
+        script.call("$game_player.give_light('maze_player_amber_wide')"),
+        script.call("$game_map.events[#{id}].drop_light"),
+        script.call("$game_map.screen.start_flash(Color.new(255,180,80,110),12)"),
+        event_command(123, 0, ["A", 0])
+      ]
+      lit = page_from_template(template, lit_commands, trigger: 0, priority: 1)
+      set_graphic.call(lit, "!$Barrel", 4, 1, step_anime: true)
+      lit.instance_variable_set(:@through, false)
+      spent = page_from_template(template, [], trigger: 0, priority: 1,
+        self_switch: "A")
+      set_graphic.call(spent, "!$Barrel", 2, 1)
+      spent.instance_variable_set(:@through, false)
+      add_event.call(id, "WCF-MAZE-BARREL-LIGHT-UPGRADE", x, y, [lit, spent])
+    end
+
+    # Persistent coloured pools make the parallax readable through authored
+    # light sources instead of weakening the global darkness. Invisible,
+    # through events are safe on the route and static lights cache shadows.
+    ambient_specs = [
+      [50, 18, 5,  "maze_cyan_static"],
+      [51, 31, 7,  "maze_violet_static"],
+      [52, 18, 10, "maze_cyan_static"],
+      [53, 3,  13, "maze_violet_static"],
+      [54, 18, 15, "maze_cyan_static"],
+      [55, 33, 18, "maze_violet_static"],
+      [56, 18, 23, "maze_cyan_static"],
+      [57, 33, 26, "maze_violet_static"],
+      [58, 18, 28, "maze_cyan_static"],
+      [59, 3,  30, "maze_violet_static"],
+      [60, 18, 32, "maze_cyan_static"],
+      [61, 32, 34, "maze_violet_static"],
+      [62, 10, 36, "maze_cyan_static"],
+      [63, 27, 40, "maze_violet_static"],
+      [64, 18, 46, "maze_cyan_static"],
+      [65, 17, 50, "maze_violet_static"],
+      [66, 9,  55, "maze_cyan_static"],
+      [67, 26, 57, "maze_violet_static"],
+      [68, 18, 60, "maze_cyan_static"],
+      [69, 27, 64, "maze_violet_static"],
+      [70, 14, 66, "maze_exit_beacon"]
+    ]
+    ambient_specs.each do |id, x, y, light|
+      commands = [
+        event_command(108, 0, ["[light #{light}]"]),
+        event_command(408, 0, ["[static]"]),
+        event_command(408, 0, ["[shadows]"])
+      ]
+      page = page_from_template(template, commands, trigger: 0, priority: 0)
+      page.instance_variable_set(:@through, true)
+      add_event.call(id, "WCF-MAZE-AMBIENT-LIGHT-#{light.upcase}", x, y, [page])
+    end
+
+    # Event 2 is the exact exit marker placed by the user. Only its event
+    # behavior is filled in; position and map geometry remain untouched.
+    exit_page = exit_event.instance_variable_get(:@pages).first
+    exit_page.instance_variable_set(:@trigger, 1)
+    exit_page.instance_variable_set(:@priority_type, 0)
+    exit_page.instance_variable_set(:@through, true)
+    exit_page.instance_variable_set(:@list, [
+      script.call("$game_player.drop_light"),
+      script.call("$game_map.events.each_value{|e| src=e.instance_variable_get(:@event); e.drop_light if src && src.name.include?('WCF-MAZE-')}"),
+      script.call("$game_map.shadows.set_color(0,0,0); $game_map.shadows.show; $game_map.shadows.set_opacity(255,24)"),
+      wait.call(24),
+      event_command(201, 0, [0, 34, 10, 10, 8, 2]),
+      event_command(0, 0, [])
+    ])
+    exit_event.instance_variable_set(:@name, "EXIT-ATL-MIRROR-TO-ENCIRCLEMENT [E002]")
+
+    map.instance_variable_set(:@events, events)
+    raise "Map028 collision table changed while adding events" unless
+      Digest::SHA256.hexdigest(Marshal.dump(map.instance_variable_get(:@data))) == table_hash
+    raise "Map028 authored metadata changed while adding events" unless
+      [map.instance_variable_get(:@width), map.instance_variable_get(:@height),
+       map.instance_variable_get(:@parallax_name)] == [37, 68, "Dungeon"]
+    save_data(path, map)
+    replace_runtime_script("KUL Graphics", "Scripts/KUL Graphics.rb")
+    puts "UPDATED|Map028|event_only=true|mirrors=6|clone_scares=6|triggers=7|barrels=7|ambient=21|player_light=amber>amber_wide|darkness=235|exit=14,66->Map034|gameover=false|table=#{table_hash}"
+  end
+
+  def audit_remade_mirror_maze_events
+    map = load_data("Data/Map028.rvdata2")
+    events = map.instance_variable_get(:@events) || {}
+    if events.values.any? do |event|
+        event.instance_variable_get(:@name).to_s.include?("CLONE-SPAWN-SENSOR")
+      end
+      return audit_atlantis_mirror_clone_prototype
+    end
+    errors = []
+    errors << "Map028 size changed" unless
+      [map.instance_variable_get(:@width), map.instance_variable_get(:@height)] == [37, 68]
+    errors << "Map028 parallax changed" unless map.instance_variable_get(:@parallax_name) == "Dungeon"
+    errors << "Map028 darkness is not 235" unless map.instance_variable_get(:@note).to_s.match?(/\[opacity\s+235\]/i)
+    exit_event = events[2]
+    errors << "Event 2 exit marker moved" unless exit_event &&
+      [exit_event.instance_variable_get(:@x), exit_event.instance_variable_get(:@y)] == [14, 66]
+
+    table = map.instance_variable_get(:@data)
+    raw = table.instance_variable_get(:@marshal_data)
+    _dim, width, height, _depth, size = raw.unpack("l<5")
+    values = raw.byteslice(20, size * 2).unpack("s<*")
+    passable = lambda { |x, y| values[2 * width * height + y * width + x] == 250 }
+    region_at = lambda { |x, y| values[3 * width * height + y * width + x] >> 8 }
+
+    mirrors = events.values.select { |event| event.instance_variable_get(:@name).to_s.include?("WCF-MAZE-MIRROR") }
+    clones = events.values.select { |event| event.instance_variable_get(:@name).to_s.include?("SCARE-WCF-MAZE-CLONE") }
+    triggers = events.values.select { |event| event.instance_variable_get(:@name).to_s.include?("WCF-MAZE-SCARE-TRIGGER") }
+    barrels = events.values.select { |event| event.instance_variable_get(:@name).to_s.include?("WCF-MAZE-BARREL") }
+    ambient = events.values.select { |event| event.instance_variable_get(:@name).to_s.include?("WCF-MAZE-AMBIENT-LIGHT") }
+    errors << "Expected 6 mirror events, found #{mirrors.length}" unless mirrors.length == 6
+    errors << "Expected 6 clone anchors, found #{clones.length}" unless clones.length == 6
+    errors << "Expected 7 scare triggers, found #{triggers.length}" unless triggers.length == 7
+    errors << "Expected 7 light barrels, found #{barrels.length}" unless barrels.length == 7
+    errors << "Expected 21 ambient lights, found #{ambient.length}" unless ambient.length == 21
+    ambient_presets = ambient.map do |event|
+      page = event.instance_variable_get(:@pages).first
+      list = page.instance_variable_get(:@list) || []
+      comments = list.select { |command| [108, 408].include?(command_code(command)) }.
+        map { |command| command_parameters(command)[0].to_s }
+      errors << "#{event.instance_variable_get(:@name)} is not a through floor light" unless
+        page.instance_variable_get(:@through) == true &&
+          page.instance_variable_get(:@priority_type) == 0 &&
+          region_at.call(event.instance_variable_get(:@x), event.instance_variable_get(:@y)) == 0
+      errors << "#{event.instance_variable_get(:@name)} lacks static Region shadows" unless
+        comments.include?("[static]") && comments.include?("[shadows]")
+      light_comment = comments.find { |text| text.start_with?("[light ") }
+      light_comment && light_comment[/\[light\s+([^\]]+)\]/, 1]
+    end
+    expected_ambient_presets = {
+      "maze_cyan_static" => 10,
+      "maze_violet_static" => 10,
+      "maze_exit_beacon" => 1
+    }
+    errors << "Ambient light distribution is incorrect: #{ambient_presets.tally}" unless
+      ambient_presets.tally == expected_ambient_presets
+
+    (triggers + barrels + ambient).each do |event|
+      x = event.instance_variable_get(:@x)
+      y = event.instance_variable_get(:@y)
+      errors << "#{event.instance_variable_get(:@name)} is not on a passable tile #{x},#{y}" unless passable.call(x, y)
+    end
+    blocked = barrels.to_h do |event|
+      [[event.instance_variable_get(:@x), event.instance_variable_get(:@y)], true]
+    end
+    start = [5, 3]
+    goal = [14, 66]
+    queue = [start]
+    reached = {start => true}
+    directions = [[1, 0], [-1, 0], [0, 1], [0, -1]]
+    until queue.empty?
+      x, y = queue.shift
+      directions.each do |dx, dy|
+        point = [x + dx, y + dy]
+        next if point[0] < 0 || point[1] < 0 || point[0] >= width || point[1] >= height
+        next if reached[point] || blocked[point] || !passable.call(point[0], point[1])
+        reached[point] = true
+        queue << point
+      end
+    end
+    errors << "Barrel collision blocks the authored route to Event 2" unless reached[goal]
+    mirror_names = mirrors.map do |event|
+      page = event.instance_variable_get(:@pages).first
+      page.instance_variable_get(:@graphic).instance_variable_get(:@character_name)
+    end
+    errors << "Mirror assets missing" unless mirror_names.sort ==
+      ["$Mirror1", "$Mirror1", "$Mirror2", "$Mirror2", "$Mirror3", "$Mirror3"].sort
+
+    all_scripts = events.values.flat_map do |event|
+      event.instance_variable_get(:@pages).flat_map do |page|
+        page.instance_variable_get(:@list).select { |command| [355, 655].include?(command_code(command)) }.
+          map { |command| command_parameters(command)[0].to_s }
+      end
+    end
+    controller_scripts = (events[1].instance_variable_get(:@pages).first.instance_variable_get(:@list) || []).
+      select { |command| [355, 655].include?(command_code(command)) }.
+      map { |command| command_parameters(command)[0].to_s }
+    errors << "Maze Player does not start with amber light" unless
+      controller_scripts.any? { |text| text.include?("give_light('maze_player_amber')") }
+    errors << "Maze controller darkness is not 235" unless
+      controller_scripts.any? { |text| text.include?("set_opacity(235,30)") }
+    errors << "Map028 contains a Game Over scare" if all_scripts.any? { |text| text.match?(/Gameover|game_over/i) }
+    (12..17).each do |clone_id|
+      errors << "$Clone#{clone_id} is not used" unless all_scripts.any? { |text| text.include?("$Clone#{clone_id}") }
+    end
+    errors << "Barrels do not upgrade Player light to amber wide" unless
+      barrels.all? do |event|
+        pages = event.instance_variable_get(:@pages)
+        lit = pages[0]
+        spent = pages[1]
+        lit_graphic = lit.instance_variable_get(:@graphic)
+        spent_graphic = spent.instance_variable_get(:@graphic)
+        lit_list = lit.instance_variable_get(:@list) || []
+        scripts = lit_list.select { |command| [355, 655].include?(command_code(command)) }.
+          map { |command| command_parameters(command)[0].to_s }
+        comments = lit_list.select { |command| [108, 408].include?(command_code(command)) }.
+          map { |command| command_parameters(command)[0].to_s }
+        spent_condition = spent.instance_variable_get(:@condition)
+        lit_graphic.instance_variable_get(:@character_name) == "!$Barrel" &&
+          lit_graphic.instance_variable_get(:@direction) == 4 &&
+          lit.instance_variable_get(:@step_anime) == true &&
+          spent_graphic.instance_variable_get(:@direction) == 2 &&
+          spent.instance_variable_get(:@step_anime) == false &&
+          comments.include?("[light maze_barrel_fire]") && comments.include?("[static]") &&
+          comments.include?("[shadows]") && !comments.include?("[no_shadows]") &&
+          scripts.any? { |text| text.include?("give_light('maze_player_amber_wide')") } &&
+          scripts.any? { |text| text.include?("events[#{event.instance_variable_get(:@id)}].drop_light") } &&
+          lit_list.any? { |command| command_code(command) == 123 && command_parameters(command) == ["A", 0] } &&
+          spent_condition.instance_variable_get(:@self_switch_valid) == true &&
+          spent_condition.instance_variable_get(:@self_switch_ch) == "A"
+      end
+    exit_list = exit_event && exit_event.instance_variable_get(:@pages).first.instance_variable_get(:@list) || []
+    exit_transfer = exit_list.find { |command| command_code(command) == 201 }
+    errors << "Event 2 does not transfer to Map034" unless exit_transfer && command_parameters(exit_transfer)[1] == 34
+
+    runtime_source = File.binread("Scripts/KUL Graphics.rb")
+    runtime_entry = load_data("Data/Scripts.rvdata2").find { |entry| entry[1].to_s.strip == "KUL Graphics" }
+    errors << "KUL Graphics runtime script is not synchronized" unless runtime_entry &&
+      Zlib::Inflate.inflate(runtime_entry[2]) == runtime_source
+    maze_presets = ["maze_player_amber", "maze_player_amber_wide",
+      "maze_cyan_static", "maze_violet_static", "maze_exit_beacon",
+      "maze_barrel_fire"]
+    errors << "Maze light presets are missing" unless maze_presets.all? do |preset|
+      runtime_source.include?(%Q{"#{preset}"})
+    end
+    maze_presets.each do |preset|
+      block = runtime_source[/"#{preset}"\s*=>\s*\{.*?\n\s*\}/m]
+      errors << "#{preset} does not cast Region shadows" unless block &&
+        block.include?(":shadows => true")
+    end
+    amber_block = runtime_source[/"maze_player_amber"\s*=>\s*\{.*?\n\s*\}/m]
+    amber_wide_block = runtime_source[/"maze_player_amber_wide"\s*=>\s*\{.*?\n\s*\}/m]
+    errors << "Maze light does not upgrade between amber assets" unless
+      amber_block && amber_block.include?(':light => "maze_amber_clear"') &&
+        amber_wide_block && amber_wide_block.include?(':light => "maze_amber_clear_wide"')
+    expected_light_files = %w[maze_amber_clear maze_amber_clear_wide
+      maze_cyan_clear maze_cyan_clear_wide maze_violet_clear]
+    missing_light_files = expected_light_files.reject do |name|
+      File.file?("Graphics/Lights/#{name}.png")
+    end
+    errors << "Missing maze light graphics: #{missing_light_files.join(', ')}" unless missing_light_files.empty?
+    expected_dimensions = {
+      "maze_amber_clear" => [288, 288],
+      "maze_amber_clear_wide" => [384, 384],
+      "maze_cyan_clear" => [320, 320],
+      "maze_cyan_clear_wide" => [384, 384],
+      "maze_violet_clear" => [320, 320]
+    }
+    expected_dimensions.each do |name, dimensions|
+      path = "Graphics/Lights/#{name}.png"
+      next unless File.file?(path)
+      header = File.binread(path, 24)
+      actual = header.byteslice(16, 8).unpack("NN")
+      errors << "#{name}.png dimensions #{actual.inspect}, expected #{dimensions.inspect}" unless actual == dimensions
+    end
+
+    puts "MIRROR_MAZE_EVENT_AUDIT|errors=#{errors.length}|map=37x68|parallax=Dungeon|darkness=235|player_light=amber>amber_wide|ambient=#{ambient.length}|region_shadows=true|exit=14,66|mirrors=#{mirrors.length}|clone_scares=#{clones.length}|triggers=#{triggers.length}|barrels=#{barrels.length}|gameover=false"
+    errors.each { |error| puts "ERROR|#{error}" }
+    raise "Remade mirror maze event audit failed" unless errors.empty?
+  end
+
+  # Installs only the event contents needed by the interactive clone
+  # prototype. It intentionally preserves every authored event coordinate,
+  # the parallax, collision/Region table and Event 2 exit marker.
+  def install_atlantis_mirror_clone_prototype
+    path = "Data/Map028.rvdata2"
+    map = load_data(path)
+    events = map.instance_variable_get(:@events) || {}
+    table_hash = Digest::SHA256.hexdigest(Marshal.dump(
+      map.instance_variable_get(:@data)))
+    positions = events.each_with_object({}) do |(id, event), result|
+      result[id] = [event.instance_variable_get(:@x),
+        event.instance_variable_get(:@y)]
+    end
+    metadata = [map.instance_variable_get(:@width),
+      map.instance_variable_get(:@height),
+      map.instance_variable_get(:@parallax_name),
+      map.instance_variable_get(:@note),
+      map.instance_variable_get(:@parallax_loop_x),
+      map.instance_variable_get(:@parallax_loop_y)]
+    raise "Map028 exit marker moved" unless events[2] && positions[2] == [14, 66]
+
+    # The anchors stay at the user's coordinates and begin as invisible,
+    # through events. Event Touch is used only after the runtime manager has
+    # released a clone and changed it to normal collision.
+    clone_types = {
+      20 => :pursuer, 21 => :watcher, 22 => :pursuer,
+      23 => :watcher, 24 => :pursuer, 25 => :watcher
+    }
+    clone_types.each do |event_id, kind|
+      event = events.fetch(event_id)
+      event.instance_variable_set(:@name,
+        "WCF-MAZE-CLONE-#{kind.to_s.upcase} [E%03d]" % event_id)
+      page = event.instance_variable_get(:@pages).first
+      page.instance_variable_set(:@trigger, 2)
+      page.instance_variable_set(:@priority_type, 1)
+      page.instance_variable_set(:@through, true)
+      page.instance_variable_set(:@walk_anime, true)
+      page.instance_variable_set(:@step_anime, true)
+      page.instance_variable_set(:@list, [
+        event_command(355, 0,
+          ["atlantis_mirror_clone_touch(#{event_id}) # WCF_MAZE_CLONE_TOUCH"]),
+        event_command(0, 0, [])
+      ])
+    end
+
+    # These retain their exact floor positions but are no longer old scare
+    # triggers. Each is now a non-blocking, one-shot clone spawn sensor.
+    sensor_specs = {
+      40 => [[10, 20, :pursuer]],
+      41 => [[11, 21, :watcher]],
+      42 => [[12, 22, :pursuer]],
+      43 => [[13, 23, :watcher]],
+      44 => [[14, 24, :pursuer]],
+      45 => [[15, 25, :watcher]],
+      46 => [[15, 24, :pursuer], [15, 25, :watcher]]
+    }
+    sensor_specs.each do |event_id, spawns|
+      event = events.fetch(event_id)
+      event.instance_variable_set(:@name,
+        "WCF-MAZE-CLONE-SPAWN-SENSOR [E%03d]" % event_id)
+      pages = event.instance_variable_get(:@pages)
+      live = pages.first
+      live.instance_variable_set(:@trigger, 1)
+      live.instance_variable_set(:@priority_type, 0)
+      live.instance_variable_set(:@through, true)
+      commands = spawns.map do |mirror_id, clone_id, kind|
+        event_command(355, 0,
+          ["atlantis_mirror_spawn(#{mirror_id},#{clone_id},:#{kind},#{event_id}) # WCF_MAZE_CLONE_SPAWN"])
+      end
+      commands << event_command(123, 0, ["A", 0])
+      commands << event_command(0, 0, [])
+      live.instance_variable_set(:@list, commands)
+      done = pages[1]
+      raise "Map028 sensor E#{event_id} lacks completion page" unless done
+      done.instance_variable_set(:@trigger, 0)
+      done.instance_variable_set(:@priority_type, 0)
+      done.instance_variable_set(:@through, true)
+      done.instance_variable_set(:@list, [event_command(0, 0, [])])
+    end
+
+    # Keep startup hiding compatible with the renamed clone anchors.
+    controller = events.fetch(1)
+    controller_page = controller.instance_variable_get(:@pages).first
+    controller_list = controller_page.instance_variable_get(:@list) || []
+    controller_list.each do |command|
+      next unless [355, 655].include?(command_code(command))
+      params = command_parameters(command).dup
+      next unless params[0].to_s.include?("opacity=0") &&
+        params[0].to_s.match?(/SCARE-|WCF-MAZE-CLONE/)
+      params[0] = "$game_map.events.each_value {|e| src=e.instance_variable_get(:@event); e.opacity=0 if src && src.name.include?('WCF-MAZE-CLONE') }"
+      command.instance_variable_set(:@parameters, params)
+    end
+
+    raise "Map028 collision/Region table changed" unless
+      Digest::SHA256.hexdigest(Marshal.dump(
+        map.instance_variable_get(:@data))) == table_hash
+    raise "Map028 metadata changed" unless metadata ==
+      [map.instance_variable_get(:@width), map.instance_variable_get(:@height),
+       map.instance_variable_get(:@parallax_name),
+       map.instance_variable_get(:@note),
+       map.instance_variable_get(:@parallax_loop_x),
+       map.instance_variable_get(:@parallax_loop_y)]
+    current_positions = events.each_with_object({}) do |(id, event), result|
+      result[id] = [event.instance_variable_get(:@x),
+        event.instance_variable_get(:@y)]
+    end
+    raise "Map028 event coordinates changed" unless current_positions == positions
+    save_data(path, map)
+    puts "UPDATED|Map028|event_content_only=true|old_scares=removed|" \
+      "clone_types=pursuer+watcher|daze=4|barrel_traps=true|" \
+      "sensors=7|positions=preserved|table=#{table_hash}"
+  end
+
+  def audit_atlantis_mirror_clone_prototype
+    map = load_data("Data/Map028.rvdata2")
+    events = map.instance_variable_get(:@events) || {}
+    errors = []
+    errors << "Map028 geometry" unless
+      [map.instance_variable_get(:@width),
+       map.instance_variable_get(:@height),
+       map.instance_variable_get(:@parallax_name)] == [37, 68, "Dungeon"]
+    exit_event = events[2]
+    exit_position = exit_event && [exit_event.instance_variable_get(:@x),
+      exit_event.instance_variable_get(:@y)]
+    errors << "Event 2 exit moved: #{exit_position.inspect}" unless
+      exit_position == [14, 66]
+    table = map.instance_variable_get(:@data)
+    raw = table.instance_variable_get(:@marshal_data)
+    _dimension, width, height, _depth, size = raw.unpack("l<5")
+    values = raw.byteslice(20, size * 2).unpack("s<*")
+    floor_passable = lambda do |x, y|
+      x >= 0 && y >= 0 && x < width && y < height &&
+        values[2 * width * height + y * width + x] == 250
+    end
+    clones = events.values.select do |event|
+      event.instance_variable_get(:@name).to_s.match?(/WCF-MAZE-CLONE-(?:PURSUER|WATCHER)/)
+    end
+    errors << "clone anchor count" unless clones.length == 6
+    clones.each do |event|
+      page = event.instance_variable_get(:@pages).first
+      scripts = (page.instance_variable_get(:@list) || []).select do |command|
+        [355, 655].include?(command_code(command))
+      end.map { |command| command_parameters(command)[0].to_s }
+      errors << "#{event.instance_variable_get(:@name)} page" unless
+        event.instance_variable_get(:@name).to_s.include?("WCF-MAZE-CLONE-") &&
+        page.instance_variable_get(:@trigger) == 2 &&
+        page.instance_variable_get(:@priority_type) == 1 &&
+        page.instance_variable_get(:@through) == true &&
+        scripts.any? { |text| text.include?("atlantis_mirror_clone_touch") }
+    end
+
+    sensors = events.values.select do |event|
+      event.instance_variable_get(:@name).to_s.include?("CLONE-SPAWN-SENSOR")
+    end
+    errors << "spawn sensor count" unless sensors.length >= 7
+    sensors.each do |event|
+      pages = event.instance_variable_get(:@pages) || []
+      live = pages[0]
+      scripts = (live.instance_variable_get(:@list) || []).select do |command|
+        [355, 655].include?(command_code(command))
+      end.map { |command| command_parameters(command)[0].to_s }
+      errors << "#{event.instance_variable_get(:@name)} still has old scare" if
+        (live.instance_variable_get(:@list) || []).any? do |command|
+          [205, 225, 230].include?(command_code(command)) ||
+            ([355, 655].include?(command_code(command)) &&
+             command_parameters(command)[0].to_s.match?(/set_graphic|char_effect|give_light/))
+        end
+      errors << "#{event.instance_variable_get(:@name)} sensor page" unless
+        event.instance_variable_get(:@name).to_s.include?("CLONE-SPAWN-SENSOR") &&
+        live.instance_variable_get(:@trigger) == 1 &&
+        live.instance_variable_get(:@priority_type) == 0 &&
+        live.instance_variable_get(:@through) == true &&
+        scripts.any? { |text| text.include?("atlantis_mirror_spawn") } &&
+        (live.instance_variable_get(:@list) || []).any? do |command|
+          command_code(command) == 123 && command_parameters(command) == ["A", 0]
+        end
+      spawn_calls = scripts.join(" ").scan(/atlantis_mirror_spawn\((\d+),(\d+),:(\w+)/)
+      errors << "#{event.instance_variable_get(:@name)} has no parsable spawn" if
+        spawn_calls.empty?
+      spawn_calls.group_by { |mirror_text, _clone_text, _kind| mirror_text }.each do |mirror_text, calls|
+        mirror = events[mirror_text.to_i]
+        unless mirror
+          errors << "#{event.instance_variable_get(:@name)} mirror E#{mirror_text} missing"
+          next
+        end
+        mx = mirror.instance_variable_get(:@x)
+        my = mirror.instance_variable_get(:@y)
+        mirror_page = mirror.instance_variable_get(:@pages).first
+        mirror_graphic = mirror_page.instance_variable_get(:@graphic)
+        front = mirror_graphic.instance_variable_get(:@direction).to_i
+        offsets = {2 => [0, 1], 4 => [-1, 0], 6 => [1, 0], 8 => [0, -1]}
+        directions = [front, 2, 4, 6, 8].uniq
+        candidates = directions.map do |direction|
+          dx, dy = offsets.fetch(direction)
+          [mx + dx, my + dy]
+        end
+        candidates.concat([[-1, -1], [1, -1], [-1, 1], [1, 1]].map do |dx, dy|
+          [mx + dx, my + dy]
+        end)
+        candidates.uniq!
+        count = candidates.count { |x, y| floor_passable.call(x, y) }
+        errors << "E#{event.instance_variable_get(:@id)} mirror E#{mirror_text} lacks adjacent clone landing tiles" if
+          count < calls.length
+      end
+    end
+    errors << "legacy scare trigger names remain" if events.values.any? do |event|
+      event.instance_variable_get(:@name).to_s.include?("SCARE-TRIGGER")
+    end
+
+    source = File.binread("Scripts/Atlantis Mirror Maze Chase.rb")
+    runtime = load_data("Data/Scripts.rvdata2").find do |entry|
+      entry[1].to_s.strip == "Atlantis Mirror Maze Chase"
+    end
+    errors << "runtime maze script missing" unless runtime
+    errors << "runtime maze script not synchronized" if runtime &&
+      Zlib::Inflate.inflate(runtime[2]) != source
+    required = ["MAX_DAZE = 4", "MAX_ACTIVE_CLONES = 2", ":pursuer", ":watcher",
+      "nearby_lit_barrel", "explode_clone", "begin_recovery",
+      "reset_maze_state", "start_fadeout(48)", "start_fadein(48)",
+      "MAZE_START_X = 5", "MAZE_START_Y = 3", "angle = @fall_start_angle",
+      "give_light(\"maze_player_amber\")", "player_looking_at?",
+      "atlantis_mirror_clone_touch", "clone_reached_player?",
+      "def clone_landing(_sensor, mirror)",
+      "directions = [mirror.direction, 2, 4, 6, 8].uniq",
+      "clone.instance_variable_set(:@priority_type, 1)",
+      "clone.instance_variable_set(:@trigger, 2)"]
+    required.each do |token|
+      errors << "runtime feature missing #{token}" unless source.include?(token.to_s)
+    end
+    mirror_manager_source = source[/class AtlantisMirrorManager.*?class AtlantisChaseManager/m]
+    errors << "clone landing still falls back to the sensor" if
+      mirror_manager_source && mirror_manager_source.include?("[sensor.x, sensor.y]")
+    errors << "mirror maze still uses Game Over at maximum daze" if
+      mirror_manager_source && mirror_manager_source.include?("Scene_Gameover")
+    (12..17).each do |number|
+      errors << "Clone#{number} asset unused" unless source.include?("$Clone#{number}")
+    end
+    barrels = events.values.select do |event|
+      event.instance_variable_get(:@name).to_s.include?("WCF-MAZE-BARREL")
+    end
+    errors << "barrel count" unless barrels.length == 7
+    spikes = events.values.select do |event|
+      source_page = (event.instance_variable_get(:@pages) || []).first
+      graphic = source_page && source_page.instance_variable_get(:@graphic)
+      graphic && graphic.instance_variable_get(:@character_name) == "!Other1" &&
+        graphic.instance_variable_get(:@character_index) == 4
+    end
+    errors << "spike count" unless spikes.length >= 9
+    errors << "spikes are not below-player touch events" unless spikes.all? do |event|
+      page = event.instance_variable_get(:@pages).first
+      page.instance_variable_get(:@priority_type) == 0 &&
+        page.instance_variable_get(:@trigger) == 1
+    end
+    ["prepare_spikes", "increase_daze(:spike)", "create_danger_overlay",
+     "start_daze_impact", "update_daze_relaxation",
+     "@daze_impact_timer = 54", "apply_daze_effects(36)",
+     "set_radial_blur(1 + strength", "10 + @daze * 2",
+     "prepare_spike_gauntlet",
+     "update_spike_gauntlet", "HARD_SPIKE_PATTERNS", "HARD_SPIKE_CYCLE = 144",
+     "select_hard_spike_pattern", "gauntlet_button_pressed?",
+     "focus_gauntlet_camera", "input_locked?"].each do |token|
+      errors << "spike/danger feature missing #{token}" unless source.include?(token)
+    end
+    ["when 60...72", "when 72...84", "when 84...126",
+     "when 126...138", "when 138...150"].each do |window|
+      errors << "spike transition is incorrectly safe: #{window}" unless
+        source.include?(window)
+    end
+    errors << "maze daze HUD still present" if
+      source.include?("create_daze_hud")
+
+    kul_source = File.binread("Scripts/KUL Graphics.rb")
+    kul_runtime = load_data("Data/Scripts.rvdata2").find do |entry|
+      entry[1].to_s.strip == "KUL Graphics"
+    end
+    errors << "KUL Graphics runtime not synchronized" unless kul_runtime &&
+      Zlib::Inflate.inflate(kul_runtime[2]) == kul_source
+    ["maze_spike_dim", "maze_spike_warning", "maze_boulder_warning",
+     "maze_door_lock", "maze_button_target"].each do |preset|
+      errors << "KUL maze light missing #{preset}" unless kul_source.include?(preset)
+    end
+    button_light = kul_source[/"maze_button_target"\s*=>\s*\{.*?\n\s*\}/m]
+    errors << "maze button light still flickers or can overflow" unless
+      button_light && button_light.include?(":opacity => 235, :variation => 0")
+    errors << "red spike light asset missing" unless
+      File.file?("Graphics/Lights/red.png")
+
+    boulder = events[28]
+    trigger = events[29]
+    boulder_end = events[37]
+    if boulder && trigger && boulder_end
+      boulder_position = [boulder.instance_variable_get(:@x),
+        boulder.instance_variable_get(:@y)]
+      trigger_position = [trigger.instance_variable_get(:@x),
+        trigger.instance_variable_get(:@y)]
+      end_position = [boulder_end.instance_variable_get(:@x),
+        boulder_end.instance_variable_get(:@y)]
+      errors << "boulder events are not aligned in rolling order" unless
+        boulder_position[1] == trigger_position[1] &&
+        trigger_position[1] == end_position[1] &&
+        boulder_position[0] > trigger_position[0] &&
+        trigger_position[0] > end_position[0]
+      active_page = boulder.instance_variable_get(:@pages).last
+      graphic = active_page && active_page.instance_variable_get(:@graphic)
+      errors << "Event 28 boulder graphic" unless graphic &&
+        graphic.instance_variable_get(:@character_name) == "!Other1" &&
+        graphic.instance_variable_get(:@character_index) == 1
+    else
+      errors << "boulder event 28/29/37 missing"
+      boulder_position = end_position = nil
+    end
+    ["prepare_boulder", "update_boulder", "$game_player.real_move_speed",
+     "give_light(\"maze_boulder_warning\")", "@daze = MAX_DAZE - 1",
+     "@boulder.animation_id = 126", "reset_boulder_state"].each do |token|
+      errors << "boulder feature missing #{token}" unless source.include?(token)
+    end
+
+    doors = [38, 39].map { |event_id| events[event_id] }
+    button = events[47]
+    gauntlet_triggers = [48, 49].map { |event_id| events[event_id] }
+    errors << "gauntlet door event 38/39 missing" unless doors.all?
+    errors << "gauntlet trigger event 48/49 missing" unless gauntlet_triggers.all?
+    errors << "gauntlet button event 47 missing" unless button
+    doors.compact.each do |door|
+      page = door.instance_variable_get(:@pages).last
+      graphic = page && page.instance_variable_get(:@graphic)
+      errors << "E#{door.instance_variable_get(:@id)} door graphic" unless
+        graphic && graphic.instance_variable_get(:@character_name) == "!Door2" &&
+        graphic.instance_variable_get(:@character_index) == 7
+    end
+    if button
+      page = button.instance_variable_get(:@pages).last
+      graphic = page && page.instance_variable_get(:@graphic)
+      errors << "E47 button graphic" unless graphic &&
+        graphic.instance_variable_get(:@character_name) == "!Switch1" &&
+        graphic.instance_variable_get(:@character_index) == 4
+    end
+
+    table_hash = Digest::SHA256.hexdigest(Marshal.dump(
+      map.instance_variable_get(:@data)))
+    puts "MIRROR_CLONE_PROTOTYPE_AUDIT|errors=#{errors.length}|" \
+      "old_scares=0|sensors=#{sensors.length}|clones=#{clones.length}|" \
+      "spawn=mirror-adjacent|" \
+      "types=pursuer+watcher|daze=impact-then-settle|danger_border=red|" \
+      "barrels=#{barrels.length}|spikes=#{spikes.length}|spike_lights=2|" \
+      "gauntlet=doors38+39/button47/triggers48+49|hard_patterns=3|" \
+      "boulder=#{boulder_position.inspect}->#{end_position.inspect}|" \
+      "gameover=false|recovery=fall+fade+reset@5,3|table=#{table_hash}"
+    errors.each { |error| puts "ERROR|#{error}" }
+    raise "Atlantis mirror clone prototype audit failed" unless errors.empty?
+  end
+
+  def repair_shylvie_room_transfer_landings
+    changed = []
+    Dir.glob("Data/Map[0-9][0-9][0-9].rvdata2").sort.each do |path|
+      map_id = File.basename(path)[/\d+/].to_i
+      map = load_data(path)
+      count = 0
+      changed_events = []
+      (map.instance_variable_get(:@events) || {}).each do |event_id, event|
+        event_count = 0
+        (event.instance_variable_get(:@pages) || []).each do |page|
+          (page.instance_variable_get(:@list) || []).each do |command|
+            next unless command_code(command) == 201
+            params = command_parameters(command).dup
+            next unless params[0].to_i == 0 && params[1].to_i == 43
+            next if params[2].to_i == 2 && params[3].to_i == 9
+            params[2] = 2
+            params[3] = 9
+            command.instance_variable_set(:@parameters, params)
+            count += 1
+            event_count += 1
+          end
+        end
+        changed_events << event_id if event_count.positive?
+      end
+      next if count.zero?
+      save_data(path, map)
+      changed << "Map%03d/E%s" % [map_id, changed_events.map { |id| "%03d" % id }.join('+')]
+    end
+    raise "No stale Shylvie-room transfer landing found" if changed.empty?
+    puts "UPDATED|ShylvieRoomLanding|sources=#{changed.join(',')}|arrival=2,9|exit=1,9"
+  end
+
+  # Repair only transition defects whose intended coordinates/state can be
+  # derived from their paired exit event and the existing route choreography.
+  def repair_confirmed_route_transition_safety
+    updated = []
+
+    # Every office variant enters the shared meeting room immediately below
+    # its exit at 17,5. Older variants still pointed at a sealed row near the
+    # bottom of the parallax room.
+    Dir.glob("Data/Map[0-9][0-9][0-9].rvdata2").sort.each do |path|
+      map = load_data(path)
+      count = 0
+      (map.instance_variable_get(:@events) || {}).values.compact.each do |event|
+        (event.instance_variable_get(:@pages) || []).each do |page|
+          (page.instance_variable_get(:@list) || []).each do |command|
+            next unless command_code(command) == 201
+            params = command_parameters(command).dup
+            next unless params[0].to_i == 0 && [61, 62].include?(params[1].to_i)
+            next if params[2].to_i == 17 && params[3].to_i == 6
+            params[2] = 17
+            params[3] = 6
+            command.instance_variable_set(:@parameters, params)
+            count += 1
+          end
+        end
+      end
+      if count.positive?
+        save_data(path, map)
+        updated << "#{File.basename(path, '.rvdata2')}:meeting=#{count}"
+      end
+    end
+
+    # The crafting-room door is at 37,37. Two office variants have a sealed
+    # tile at the old 37,36 return point, so use their nearest non-trigger
+    # walkable neighbour instead of landing directly on the transfer event.
+    map63_path = "Data/Map063.rvdata2"
+    map63 = load_data(map63_path)
+    crafting_list = map63.instance_variable_get(:@events).fetch(2)
+      .instance_variable_get(:@pages).first.instance_variable_get(:@list)
+    crafting_count = 0
+    crafting_list.each do |command|
+      next unless command_code(command) == 201
+      params = command_parameters(command).dup
+      destination = params[1].to_i
+      target = {13 => [36, 36], 38 => [36, 37]}[destination]
+      next unless target && [params[2].to_i, params[3].to_i] != target
+      params[2], params[3] = target
+      command.instance_variable_set(:@parameters, params)
+      crafting_count += 1
+    end
+    if crafting_count.positive?
+      save_data(map63_path, map63)
+      updated << "Map063:craft-return=#{crafting_count}"
+    end
+
+    # Restore native brightness while the KUL overlay is still fully black.
+    # This prevents a one-frame flash and avoids carrying native Fadeout into
+    # a destination whose reveal animates only the KUL layer.
+    [[20, 1, "WCF_NOODLE_REVIEW_SHOP_BLACK", "WCF_NOODLE_REVIEW_SHOP_REVEAL"],
+     [14, 25, "WCF_NOODLE_REVIEW_COOK_BLACK", "WCF_NOODLE_REVIEW_COOK_REVEAL"]].each do |map_id, event_id, black_marker, reveal_marker|
+      path = "Data/Map%03d.rvdata2" % map_id
+      map = load_data(path)
+      list = map.instance_variable_get(:@events).fetch(event_id)
+        .instance_variable_get(:@pages).first.instance_variable_get(:@list)
+      black_at = list.index do |command|
+        [355, 655].include?(command_code(command)) &&
+          command_parameters(command)[0].to_s.include?(black_marker)
+      end
+      reveal_at = list.index do |command|
+        [355, 655].include?(command_code(command)) &&
+          command_parameters(command)[0].to_s.include?(reveal_marker)
+      end
+      raise "Map%03d KUL transition markers missing" % map_id unless black_at && reveal_at && black_at < reveal_at
+      unless list[(black_at + 1)...reveal_at].any? { |command| command_code(command) == 222 }
+        list.insert(black_at + 1, event_command(222, 0, []))
+        save_data(path, map)
+        updated << "Map%03d:E%03d-native-fadein" % [map_id, event_id]
+      end
+    end
+
+    # The Aira ingredient montage receives KUL at opacity 255 from Map020.
+    # Turn that overlay off after native Fadein and before its first message.
+    map19_path = "Data/Map019.rvdata2"
+    map19 = load_data(map19_path)
+    market_list = map19.instance_variable_get(:@events).fetch(45)
+      .instance_variable_get(:@pages).first.instance_variable_get(:@list)
+    market_marker = "WCF_NOODLE_MARKET_KUL_OFF"
+    unless market_list.any? do |command|
+        [355, 655].include?(command_code(command)) &&
+          command_parameters(command)[0].to_s.include?(market_marker)
+      end
+      fadein_at = market_list.index { |command| command_code(command) == 222 }
+      raise "Map019 E045 native Fadein missing" unless fadein_at
+      market_list.insert(fadein_at + 1, event_command(355, 0,
+        ["$game_map.shadows.set_opacity(0); $game_map.shadows.hide # #{market_marker}"]))
+      save_data(map19_path, map19)
+      updated << "Map019:E045-KUL-off"
+    end
+
+    puts "UPDATED|ConfirmedRouteTransitionSafety|#{updated.join('|')}"
+  end
+
+  # A Show Choices command (102) must have one sibling When command (402)
+  # for every displayed option. If a When command is missing, VX Ace keeps
+  # executing the preceding branch, which can make one route fall through
+  # into another after a Transfer Player command.
+  def choice_branch_structure_errors
+    sources = Dir.glob("Data/Map[0-9][0-9][0-9].rvdata2").sort.map do |path|
+      map_id = File.basename(path)[/\d+/].to_i
+      map = load_data(path)
+      (map.instance_variable_get(:@events) || {}).values.compact.flat_map do |event|
+        event_id = event.instance_variable_get(:@id).to_i
+        (event.instance_variable_get(:@pages) || []).each_with_index.map do |page, page_index|
+          ["Map%03d/E%03d/P%d" % [map_id, event_id, page_index + 1], page]
+        end
+      end
+    end.flatten(1)
+
+    common_events = load_data("Data/CommonEvents.rvdata2")
+    common_events.compact.each do |common_event|
+      sources << ["CommonEvent%03d" % common_event.instance_variable_get(:@id).to_i, common_event]
+    end
+
+    errors = []
+    choice_count = 0
+    sources.each do |label, owner|
+      list = owner.instance_variable_get(:@list) || []
+      list.each_with_index do |command, command_index|
+        next unless command_code(command) == 102
+        choice_count += 1
+        choices = command_parameters(command)[0] || []
+        indent = command.instance_variable_get(:@indent).to_i
+        finish = ((command_index + 1)...list.length).find do |index|
+          command_code(list[index]) == 404 &&
+            list[index].instance_variable_get(:@indent).to_i == indent
+        end
+        unless finish
+          errors << "#{label}/C#{command_index + 1} has no matching End Choices"
+          next
+        end
+        branches = list[(command_index + 1)...finish].select do |candidate|
+          command_code(candidate) == 402 &&
+            candidate.instance_variable_get(:@indent).to_i == indent
+        end
+        indexes = branches.map { |branch| command_parameters(branch)[0].to_i }
+        expected = (0...choices.length).to_a
+        unless indexes == expected
+          errors << "#{label}/C#{command_index + 1} choices=#{choices.length} branches=#{indexes.inspect}"
+        end
+        branches.each do |branch|
+          index, text = command_parameters(branch)
+          next if index.to_i >= choices.length || choices[index.to_i].to_s == text.to_s
+          errors << "#{label}/C#{command_index + 1} branch #{index} label=#{text.inspect} expected=#{choices[index.to_i].inspect}"
+        end
+      end
+    end
+    [choice_count, errors]
+  end
+
+  def audit_all_choice_branches
+    choice_count, errors = choice_branch_structure_errors
+    puts "CHOICE_BRANCH_AUDIT|choices=#{choice_count}|errors=#{errors.length}"
+    errors.each { |error| puts "CHOICE_ERROR|#{error}" }
+    raise "Choice branch structure audit failed" unless errors.empty?
+  end
+
+  def repair_bus_route_choice_branches
+    path = "Data/Map010.rvdata2"
+    map = load_data(path)
+    event = (map.instance_variable_get(:@events) || {}).fetch(2)
+    page = (event.instance_variable_get(:@pages) || []).first
+    list = page.instance_variable_get(:@list) || []
+    choice_at = list.index do |command|
+      command_code(command) == 102 &&
+        (command_parameters(command)[0] || []).include?("Xuống Atlantis")
+    end
+    raise "Map010 bus route choice missing" unless choice_at
+    choice = list[choice_at]
+    choices = command_parameters(choice)[0] || []
+    expected_choices = ["Tới siêu thị", "Tới văn phòng Wanderer", "Xuống Atlantis", "Mua mì cay"]
+    raise "Map010 bus choices changed: #{choices.inspect}" unless choices == expected_choices
+    indent = choice.instance_variable_get(:@indent).to_i
+    end_at = ((choice_at + 1)...list.length).find do |index|
+      command_code(list[index]) == 404 && list[index].instance_variable_get(:@indent).to_i == indent
+    end
+    raise "Map010 End Choices missing" unless end_at
+
+    noodle_branch = list[(choice_at + 1)...end_at].find do |command|
+      command_code(command) == 402 && command_parameters(command)[0].to_i == 3
+    end
+    inserted = false
+    unless noodle_branch
+      atlantis_at = list.index do |command|
+        command_code(command) == 402 && command_parameters(command)[0, 2] == [2, "Xuống Atlantis"]
+      end
+      raise "Map010 Atlantis When branch missing" unless atlantis_at
+      noodle_marker = ((atlantis_at + 1)...end_at).find do |index|
+        [355, 655].include?(command_code(list[index])) &&
+          command_parameters(list[index])[0].to_s.include?("$game_self_switches[[14,25,'A']]=false")
+      end
+      raise "Map010 noodle branch body marker missing" unless noodle_marker
+      noodle_start = noodle_marker
+      while noodle_start > atlantis_at + 1
+        previous = list[noodle_start - 1]
+        break unless command_code(previous) == 121 &&
+          [[47, 48], [58, 59]].include?(command_parameters(previous)[0, 2])
+        noodle_start -= 1
+      end
+      atlantis_transfer = list[atlantis_at...noodle_start].rindex do |command|
+        command_code(command) == 201 && command_parameters(command)[0, 2] == [0, 22]
+      end
+      raise "Map010 Atlantis transfer missing before noodle body" unless atlantis_transfer
+      list.insert(noodle_start, event_command(402, indent, [3, "Mua mì cay"]))
+      inserted = true
+    end
+
+    page.instance_variable_set(:@list, list)
+    save_data(path, map)
+    audit_bus_route_choice_branches
+    puts "UPDATED|Map010BusChoices|inserted_noodle_when=#{inserted}|destinations=19,13,22,20"
+  end
+
+  def audit_bus_route_choice_branches
+    map = load_data("Data/Map010.rvdata2")
+    list = map.instance_variable_get(:@events).fetch(2)
+      .instance_variable_get(:@pages).first.instance_variable_get(:@list)
+    choice_at = list.index do |command|
+      command_code(command) == 102 &&
+        (command_parameters(command)[0] || []).include?("Xuống Atlantis")
+    end
+    errors = []
+    unless choice_at
+      errors << "route choice missing"
+    else
+      choice = list[choice_at]
+      indent = choice.instance_variable_get(:@indent).to_i
+      choices = command_parameters(choice)[0] || []
+      expected_choices = ["Tới siêu thị", "Tới văn phòng Wanderer", "Xuống Atlantis", "Mua mì cay"]
+      errors << "labels #{choices.inspect}" unless choices == expected_choices
+      end_at = ((choice_at + 1)...list.length).find do |index|
+        command_code(list[index]) == 404 && list[index].instance_variable_get(:@indent).to_i == indent
+      end
+      if !end_at
+        errors << "End Choices missing"
+      else
+        branches = (choice_at + 1...end_at).select do |index|
+          command_code(list[index]) == 402 && list[index].instance_variable_get(:@indent).to_i == indent
+        end
+        indexes = branches.map { |index| command_parameters(list[index])[0].to_i }
+        errors << "branch indexes #{indexes.inspect}" unless indexes == [0, 1, 2, 3]
+        expected_destinations = [19, 13, 22, 20]
+        branches.each_with_index do |start_at, branch_index|
+          finish_at = branches[branch_index + 1] || end_at
+          transfers = list[(start_at + 1)...finish_at].select do |command|
+            command_code(command) == 201 && command_parameters(command)[0].to_i == 0
+          end
+          destinations = transfers.map { |command| command_parameters(command)[1].to_i }
+          expected = expected_destinations[branch_index]
+          errors << "branch #{branch_index} transfers #{destinations.inspect}, expected [#{expected}]" unless destinations == [expected]
+        end
+        if branches.length == 4
+          atlantis_body = list[(branches[2] + 1)...branches[3]]
+          noodle_body = list[(branches[3] + 1)...end_at]
+          errors << "Atlantis branch contains noodle activation" if atlantis_body.any? do |command|
+            command_code(command) == 121 && command_parameters(command)[0, 2] == [55, 55]
+          end
+          errors << "noodle branch does not activate Switch 55" unless noodle_body.any? do |command|
+            command_code(command) == 121 && command_parameters(command)[0, 2] == [55, 55] && command_parameters(command)[2].to_i == 0
+          end
+        end
+      end
+    end
+    puts "BUS_CHOICE_AUDIT|errors=#{errors.length}|routes=supermarket,wanderer,atlantis,noodle"
+    errors.each { |error| puts "BUS_CHOICE_ERROR|#{error}" }
+    raise "Map010 bus route choice audit failed" unless errors.empty?
+  end
+
+  # Project-wide static safety net for direct Transfer Player commands. It
+  # validates bounds, tile passage at every destination, and the common
+  # native-Fadeout/no-fade bug that leaves the following map permanently black.
+  def audit_all_route_transfer_safety
+    map_paths = Dir.glob("Data/Map[0-9][0-9][0-9].rvdata2").sort
+    maps = map_paths.to_h do |path|
+      [File.basename(path)[/\d+/].to_i, load_data(path)]
+    end
+    tilesets = load_data("Data/Tilesets.rvdata2")
+    flag_cache = {}
+    flags_for = lambda do |tileset_id|
+      flag_cache[tileset_id] ||= begin
+        flags = tilesets[tileset_id].instance_variable_get(:@flags)
+        raw = flags.instance_variable_get(:@marshal_data)
+        _dim, _x, _y, _z, size = raw.unpack("l<5")
+        raw.byteslice(20, size * 2).unpack("S<*")
+      end
+    end
+    table_cache = {}
+    table_for = lambda do |map_id|
+      table_cache[map_id] ||= begin
+        map = maps.fetch(map_id)
+        raw = map.instance_variable_get(:@data).instance_variable_get(:@marshal_data)
+        _dim, width, height, depth, size = raw.unpack("l<5")
+        [width, height, depth, raw.byteslice(20, size * 2).unpack("s<*")]
+      end
+    end
+    passage = lambda do |map_id, x, y, direction|
+      map = maps.fetch(map_id)
+      width, height, depth, values = table_for.call(map_id)
+      next false if x < 0 || y < 0 || x >= width || y >= height
+      bit = {2 => 0x01, 4 => 0x02, 6 => 0x04, 8 => 0x08}.fetch(direction)
+      flags = flags_for.call(map.instance_variable_get(:@tileset_id))
+      result = false
+      decided = false
+      [2, 1, 0].select { |z| z < depth }.each do |z|
+        tile_id = values[z * width * height + y * width + x].to_i
+        flag = flags[tile_id].to_i
+        next if (flag & 0x10) != 0
+        result = (flag & bit).zero?
+        decided = true
+        break
+      end
+      decided && result
+    end
+    can_leave = lambda do |map_id, x, y|
+      width, height, _depth, _values = table_for.call(map_id)
+      opposites = {2 => 8, 4 => 6, 6 => 4, 8 => 2}
+      deltas = {2 => [0, 1], 4 => [-1, 0], 6 => [1, 0], 8 => [0, -1]}
+      deltas.any? do |direction, (dx, dy)|
+        nx = x + dx
+        ny = y + dy
+        nx >= 0 && ny >= 0 && nx < width && ny < height &&
+          passage.call(map_id, x, y, direction) &&
+          passage.call(map_id, nx, ny, opposites[direction])
+      end
+    end
+    destination_stages_player = lambda do |map_id|
+      (maps[map_id].instance_variable_get(:@events) || {}).values.compact.any? do |event|
+        (event.instance_variable_get(:@pages) || []).any? do |page|
+          next false unless [3, 4].include?(page.instance_variable_get(:@trigger))
+          (page.instance_variable_get(:@list) || []).any? do |command|
+            (command_code(command) == 205 && command_parameters(command)[0].to_i == -1) ||
+              ([355, 655].include?(command_code(command)) &&
+               command_parameters(command)[0].to_s.match?(/\$game_player\.(?:moveto|find_path)|find_path\s*\(/))
+          end
+        end
+      end
+    end
+    # A blocked landing is harmless while an autorun owns control and always
+    # transfers away again. This covers transit maps and visual-only cutscenes;
+    # it must not exempt rooms whose autorun merely erases itself into free roam.
+    destination_is_controlled_cutscene = lambda do |map_id|
+      autoruns = (maps[map_id].instance_variable_get(:@events) || {}).values.compact.flat_map do |event|
+        (event.instance_variable_get(:@pages) || []).select do |page|
+          page.instance_variable_get(:@trigger) == 3
+        end
+      end
+      !autoruns.empty? && autoruns.all? do |page|
+        (page.instance_variable_get(:@list) || []).any? do |command|
+          [201, 353, 354].include?(command_code(command)) ||
+            ([355, 655].include?(command_code(command)) &&
+             command_parameters(command)[0].to_s.match?(/SceneManager\.goto\s*\(\s*Scene_Title/))
+        end
+      end
+    end
+    destination_restores_native_fade = lambda do |map_id|
+      (maps[map_id].instance_variable_get(:@events) || {}).values.compact.any? do |event|
+        (event.instance_variable_get(:@pages) || []).any? do |page|
+          next false unless [3, 4].include?(page.instance_variable_get(:@trigger))
+          list = page.instance_variable_get(:@list) || []
+          fadein = list.index { |command| command_code(command) == 222 }
+          first_visible_action = list.index { |command| [101, 102, 201].include?(command_code(command)) }
+          fadein && (!first_visible_action || fadein < first_visible_action)
+        end
+      end
+    end
+    # Follow a dialogue-free transit map (for example Map021) to the map that
+    # actually restores native screen brightness.
+    destination_or_transit_restores_native_fade = nil
+    destination_or_transit_restores_native_fade = lambda do |map_id, visited = {}|
+      next false if visited[map_id]
+      visited = visited.merge(map_id => true)
+      next true if destination_restores_native_fade.call(map_id)
+      autorun_pages = (maps[map_id].instance_variable_get(:@events) || {}).values.compact.flat_map do |event|
+        (event.instance_variable_get(:@pages) || []).select do |page|
+          [3, 4].include?(page.instance_variable_get(:@trigger))
+        end
+      end
+      autorun_pages.any? do |page|
+        list = page.instance_variable_get(:@list) || []
+        transfer_index = list.index { |candidate| command_code(candidate) == 201 }
+        next false unless transfer_index
+        visible_before = list[0...transfer_index].any? do |candidate|
+          [101, 102, 105, 231, 301].include?(command_code(candidate))
+        end
+        next false if visible_before
+        params = command_parameters(list[transfer_index])
+        params[0].to_i == 0 && maps[params[1].to_i] &&
+          destination_or_transit_restores_native_fade.call(params[1].to_i, visited)
+      end
+    end
+    source_restores_after_transfer = lambda do |list, command_index|
+      tail = list[(command_index + 1)..] || []
+      tail.each do |candidate|
+        code = command_code(candidate)
+        break if [101, 102, 105, 201, 301].include?(code)
+        return true if code == 222
+      end
+      false
+    end
+    nearest_mobile = lambda do |map_id, x, y|
+      width, height, _depth, _values = table_for.call(map_id)
+      candidates = []
+      1.upto([width, height].max) do |radius|
+        (y - radius).upto(y + radius) do |cy|
+          (x - radius).upto(x + radius) do |cx|
+            next unless (cx - x).abs + (cy - y).abs == radius
+            next unless cx.between?(0, width - 1) && cy.between?(0, height - 1)
+            candidates << [cx, cy] if can_leave.call(map_id, cx, cy)
+          end
+        end
+        break unless candidates.empty?
+      end
+      candidates.first
+    end
+
+    transfers = []
+    errors = []
+    warnings = []
+    event_script_syntax_errors(maps.keys.sort).each do |syntax_error|
+      errors << "event script syntax: #{syntax_error}"
+    end
+    maps.each do |source_id, map|
+      (map.instance_variable_get(:@events) || {}).each do |event_id, event|
+        next unless event
+        (event.instance_variable_get(:@pages) || []).each_with_index do |page, page_index|
+          list = page.instance_variable_get(:@list) || []
+          list.each_with_index do |command, command_index|
+            next unless command_code(command) == 201
+            params = command_parameters(command)
+            label = "Map%03d/E%03d/P%d/C%d" %
+              [source_id, event_id, page_index + 1, command_index + 1]
+            if params[0].to_i != 0
+              warnings << "#{label} uses variable-based transfer"
+              next
+            end
+            destination, x, y, _direction, fade = params[1, 5].map(&:to_i)
+            transfers << [source_id, destination, x, y, fade, label]
+            unless maps[destination]
+              errors << "#{label} targets missing Map%03d" % destination
+              next
+            end
+            width, height, _depth, _values = table_for.call(destination)
+            unless x.between?(0, width - 1) && y.between?(0, height - 1)
+              errors << "#{label} lands outside Map%03d at %d,%d" % [destination, x, y]
+              next
+            end
+            staged_destination = destination_stages_player.call(destination) &&
+              !(source_id == 63 && event_id == 2)
+            mobile_landing = can_leave.call(destination, x, y)
+            controlled_cutscene = destination_is_controlled_cutscene.call(destination)
+            if !mobile_landing && staged_destination && !controlled_cutscene
+              warnings << "#{label} lands immobile in Map%03d at %d,%d but an autorun stages the player; playtest page conditions" % [destination, x, y]
+            end
+            unless mobile_landing || staged_destination || controlled_cutscene
+              suggestion = nearest_mobile.call(destination, x, y)
+              suffix = suggestion ? "; nearest mobile=#{suggestion.join(',')}" : ""
+              errors << "#{label} lands on an immobile tile in Map%03d at %d,%d%s" % [destination, x, y, suffix]
+            end
+            next unless fade == 2
+            native = list[0...command_index].each_index.select do |index|
+              [221, 222].include?(command_code(list[index]))
+            end.last
+            if native && command_code(list[native]) == 221 &&
+                !source_restores_after_transfer.call(list, command_index) &&
+                !destination_or_transit_restores_native_fade.call(destination)
+              errors << "#{label} transfers no-fade after native Fadeout without an early Fadein on Map%03d" % destination
+            end
+            scripts = list[0...command_index].select do |prior|
+              [355, 655].include?(command_code(prior))
+            end.map { |prior| command_parameters(prior)[0].to_s }
+            last_kul = scripts.reverse.find { |text| text.include?("shadows.set_opacity(") }
+            if last_kul && last_kul.match?(/set_opacity\(255(?:\D|$)/)
+              dest_scripts = (maps[destination].instance_variable_get(:@events) || {}).values.compact.flat_map do |dest_event|
+                (dest_event.instance_variable_get(:@pages) || []).select do |dest_page|
+                  [3, 4].include?(dest_page.instance_variable_get(:@trigger))
+                end.flat_map do |dest_page|
+                  (dest_page.instance_variable_get(:@list) || []).select do |dest_command|
+                    [355, 655].include?(command_code(dest_command))
+                  end.map { |dest_command| command_parameters(dest_command)[0].to_s }
+                end
+              end
+              unless dest_scripts.any? { |text| text.match?(/shadows\.set_opacity\((?:0|[1-9]\d?|1\d\d|2[0-4]\d)(?:,|\))/) }
+                warnings << "#{label} hands KUL black to Map%03d without a statically visible reveal" % destination
+              end
+            end
+          end
+        end
+      end
+    end
+
+    # The chase manager performs one scripted runtime transfer not represented
+    # by Event Command 201.
+    if maps[25]
+      errors << "Scripted Map029 -> Map025 landing 4,4 is immobile" unless can_leave.call(25, 4, 4) || destination_stages_player.call(25)
+    end
+    puts "ROUTE_TRANSFER_AUDIT|transfers=#{transfers.length}|errors=#{errors.length}|warnings=#{warnings.length}|maps=#{maps.length}"
+    errors.each { |error| puts "TRANSFER_ERROR|#{error}" }
+    warnings.each { |warning| puts "TRANSFER_WARNING|#{warning}" }
+    raise "Route transfer safety audit failed" unless errors.empty?
+  end
+
+  # Repair the shared bedroom -> Christmas office handoff. The preparation
+  # pages used a native Fade Out immediately before Map038, while the office
+  # scenes only revealed KUL. Native brightness therefore remained zero even
+  # after KUL became transparent. KUL now owns the final blackout, and every
+  # corresponding office entry explicitly restores native brightness behind it.
+  def repair_shared_prep_office_kul_handoff
+    script_text = lambda do |command|
+      [355, 655].include?(command_code(command)) ? command_parameters(command)[0].to_s : ""
+    end
+
+    map37 = load_data("Data/Map037.rvdata2")
+    controller37 = (map37.instance_variable_get(:@events) || {}).fetch(1)
+    pages37 = controller37.instance_variable_get(:@pages) || []
+    repaired37 = []
+    pages37.each_with_index do |page, page_index|
+      list = page.instance_variable_get(:@list) || []
+      transfer_at = list.rindex do |command|
+        command_code(command) == 201 && [14, 38].include?(command_parameters(command)[1].to_i)
+      end
+      next unless transfer_at
+      marker = "WCF_PREP_TO_OFFICE_BLACK_P#{page_index + 1}"
+      unless list.any? { |command| script_text.call(command).include?(marker) }
+        final_fade = (0...transfer_at).to_a.reverse.find do |index|
+          command_code(list[index]) == 221
+        end
+        raise "Map037 page #{page_index + 1} final Fade Out missing" unless final_fade
+        list[final_fade] = event_command(355, 0, [
+          "$game_map.shadows.set_color(0,0,0); $game_map.shadows.show; " \
+          "$game_map.shadows.set_opacity(255,24) # #{marker}"
+        ])
+        list.insert(final_fade + 1, event_command(230, 0, [24]))
+        repaired37 << page_index + 1
+      end
+      page.instance_variable_set(:@list, list)
+    end
+    raise "Expected six Map037 preparation pages" unless pages37.length == 6
+    save_data("Data/Map037.rvdata2", map37)
+
+    map38 = load_data("Data/Map038.rvdata2")
+    controller38 = (map38.instance_variable_get(:@events) || {}).fetch(1)
+    pages38 = controller38.instance_variable_get(:@pages) || []
+    route_switches = [nil, 55, 61, 66, 72, 76]
+    repaired38 = []
+    route_switches.each do |switch_id|
+      page = pages38.find do |candidate|
+        condition = candidate.instance_variable_get(:@condition)
+        if switch_id
+          condition.instance_variable_get(:@switch1_valid) == true &&
+            condition.instance_variable_get(:@switch1_id).to_i == switch_id &&
+            candidate.instance_variable_get(:@trigger).to_i == 3
+        else
+          condition.instance_variable_get(:@switch1_valid) == false &&
+            condition.instance_variable_get(:@self_switch_valid) == false &&
+            candidate.instance_variable_get(:@trigger).to_i == 3
+        end
+      end
+      raise "Map038 route entry missing for switch #{switch_id.inspect}" unless page
+      list = page.instance_variable_get(:@list) || []
+      black_at = list.index do |command|
+        script_text.call(command).match?(/shadows\.set_opacity\(255(?:\D|$)/)
+      end
+      raise "Map038 route entry lacks KUL black for switch #{switch_id.inspect}" unless black_at
+      text = script_text.call(list[black_at])
+      unless text.include?("WCF_OFFICE_ENTRY_NATIVE_FADE_RESET")
+        list[black_at].instance_variable_set(:@parameters, [
+          "$game_map.screen.clear_fade; #{text} # WCF_OFFICE_ENTRY_NATIVE_FADE_RESET"
+        ])
+        repaired38 << (switch_id || 0)
+      end
+      page.instance_variable_set(:@list, list)
+    end
+    save_data("Data/Map038.rvdata2", map38)
+
+    # The noodle branch visits the Christmas kitchen between Map037 and
+    # Map038, so it needs the same native-brightness normalization behind KUL.
+    map14 = load_data("Data/Map014.rvdata2")
+    cooking = (map14.instance_variable_get(:@events) || {}).fetch(25)
+      .instance_variable_get(:@pages).find do |page|
+        condition = page.instance_variable_get(:@condition)
+        condition.instance_variable_get(:@switch1_valid) == true &&
+          condition.instance_variable_get(:@switch1_id).to_i == 55 &&
+          condition.instance_variable_get(:@variable_valid) == true &&
+          condition.instance_variable_get(:@variable_id).to_i == 51 &&
+          condition.instance_variable_get(:@variable_value).to_i == 3
+      end
+    raise "Map014 noodle cooking entry missing" unless cooking
+    cooking_list = cooking.instance_variable_get(:@list) || []
+    cooking_black = cooking_list.index do |command|
+      script_text.call(command).match?(/shadows\.set_opacity\(255(?:\D|$)/)
+    end
+    raise "Map014 noodle cooking KUL black missing" unless cooking_black
+    cooking_text = script_text.call(cooking_list[cooking_black])
+    unless cooking_text.include?("WCF_KITCHEN_ENTRY_NATIVE_FADE_RESET")
+      cooking_list[cooking_black].instance_variable_set(:@parameters, [
+        "$game_map.screen.clear_fade; #{cooking_text} # WCF_KITCHEN_ENTRY_NATIVE_FADE_RESET"
+      ])
+    end
+    cooking.instance_variable_set(:@list, cooking_list)
+    save_data("Data/Map014.rvdata2", map14)
+    puts "PREP_OFFICE_KUL_HANDOFF_FIXED|Map037_pages=#{repaired37.join(',')}|" \
+      "Map038_routes=#{repaired38.join(',')}|Map014_noodle=true|" \
+      "native_brightness_reset=true|KUL_owned=true"
+  end
+
+  def audit_shared_prep_office_kul_handoff
+    errors = []
+    script_text = lambda do |command|
+      [355, 655].include?(command_code(command)) ? command_parameters(command)[0].to_s : ""
+    end
+    map37 = load_data("Data/Map037.rvdata2")
+    pages37 = (map37.instance_variable_get(:@events) || {}).fetch(1)
+      .instance_variable_get(:@pages) || []
+    errors << "Map037 preparation page count #{pages37.length}/6" unless pages37.length == 6
+    pages37.each_with_index do |page, page_index|
+      list = page.instance_variable_get(:@list) || []
+      transfer_at = list.rindex do |command|
+        command_code(command) == 201 && [14, 38].include?(command_parameters(command)[1].to_i)
+      end
+      marker_at = list.index do |command|
+        script_text.call(command).include?("WCF_PREP_TO_OFFICE_BLACK_P#{page_index + 1}")
+      end
+      label = "Map037 E001 P#{page_index + 1}"
+      errors << "#{label} transfer missing" unless transfer_at
+      errors << "#{label} KUL handoff missing" unless marker_at
+      errors << "#{label} KUL handoff ordering" unless marker_at && transfer_at && marker_at < transfer_at
+      if marker_at && transfer_at
+        errors << "#{label} native Fade Out remains after KUL handoff" if
+          list[(marker_at + 1)...transfer_at].any? { |command| command_code(command) == 221 }
+        errors << "#{label} KUL wait missing" unless
+          list[marker_at + 1] && command_code(list[marker_at + 1]) == 230 &&
+          command_parameters(list[marker_at + 1])[0].to_i >= 20
+      end
+      latest_native = transfer_at && (0...transfer_at).to_a.reverse.find do |index|
+        [221, 222].include?(command_code(list[index]))
+      end
+      errors << "#{label} native brightness may remain black" if
+        latest_native && command_code(list[latest_native]) == 221
+    end
+
+    map38 = load_data("Data/Map038.rvdata2")
+    pages38 = (map38.instance_variable_get(:@events) || {}).fetch(1)
+      .instance_variable_get(:@pages) || []
+    route_switches = [nil, 55, 61, 66, 72, 76]
+    route_switches.each do |switch_id|
+      page = pages38.find do |candidate|
+        condition = candidate.instance_variable_get(:@condition)
+        if switch_id
+          condition.instance_variable_get(:@switch1_valid) == true &&
+            condition.instance_variable_get(:@switch1_id).to_i == switch_id &&
+            candidate.instance_variable_get(:@trigger).to_i == 3
+        else
+          condition.instance_variable_get(:@switch1_valid) == false &&
+            condition.instance_variable_get(:@self_switch_valid) == false &&
+            candidate.instance_variable_get(:@trigger).to_i == 3
+        end
+      end
+      label = "Map038 route switch #{switch_id || 'default'}"
+      unless page
+        errors << "#{label} entry missing"
+        next
+      end
+      list = page.instance_variable_get(:@list) || []
+      scripts = list.map { |command| script_text.call(command) }
+      reset_at = scripts.index { |text| text.include?("WCF_OFFICE_ENTRY_NATIVE_FADE_RESET") }
+      reveal_at = scripts.index { |text| text.match?(/shadows\.set_opacity\(0(?:\D|$)/) }
+      errors << "#{label} native fade reset missing" unless reset_at && scripts[reset_at].include?("clear_fade")
+      errors << "#{label} KUL reveal missing" unless reveal_at
+      errors << "#{label} reveals before black/reset" unless reset_at && reveal_at && reset_at < reveal_at
+    end
+    map14 = load_data("Data/Map014.rvdata2")
+    cooking = (map14.instance_variable_get(:@events) || {}).fetch(25)
+      .instance_variable_get(:@pages).find do |page|
+        condition = page.instance_variable_get(:@condition)
+        condition.instance_variable_get(:@switch1_valid) == true &&
+          condition.instance_variable_get(:@switch1_id).to_i == 55 &&
+          condition.instance_variable_get(:@variable_valid) == true &&
+          condition.instance_variable_get(:@variable_id).to_i == 51 &&
+          condition.instance_variable_get(:@variable_value).to_i == 3
+      end
+    cooking_scripts = cooking ? (cooking.instance_variable_get(:@list) || []).map do |command|
+      script_text.call(command)
+    end : []
+    kitchen_reset = cooking_scripts.index { |text| text.include?("WCF_KITCHEN_ENTRY_NATIVE_FADE_RESET") }
+    kitchen_reveal = cooking_scripts.index { |text| text.include?("WCF_NOODLE_REVIEW_COOK_REVEAL") }
+    errors << "Map014 noodle native fade reset missing" unless
+      kitchen_reset && cooking_scripts[kitchen_reset].include?("clear_fade")
+    errors << "Map014 noodle KUL reveal ordering" unless
+      kitchen_reset && kitchen_reveal && kitchen_reset < kitchen_reveal
+    errors.each { |error| puts "PREP_OFFICE_KUL_ERROR|#{error}" }
+    puts "PREP_OFFICE_KUL_AUDIT|errors=#{errors.length}|Map037_pages=#{pages37.length}|" \
+      "Map014_noodle=1|Map038_routes=6"
+    raise "Shared preparation office KUL audit failed" unless errors.empty?
+  end
+
+  # Build a playtest-only route checkpoint hub. It is intentionally isolated:
+  # no production map transfers into Map069 and the normal starting position is
+  # left untouched. Testers select Map069 as the test start in the editor.
+  def create_route_test_hub
+    map_id = 69
+    if File.file?(format("Data/Map%03d.rvdata2", map_id))
+      raise "Map069 already exists. Full Test Hub rebuild is disabled to " \
+        "preserve manually arranged event positions and sprites."
+    end
+    width = 44
+    height = 32
+    base = load_data("Data/Map004.rvdata2")
+    template = (load_data("Data/Map024.rvdata2").instance_variable_get(:@events) || {}).values.compact.first
+    raise "No event template available for Map069" unless template
+
+    map = Marshal.load(Marshal.dump(base))
+    map.instance_variable_set(:@display_name, "Route Checkpoint Hub")
+    map.instance_variable_set(:@width, width)
+    map.instance_variable_set(:@height, height)
+    map.instance_variable_set(:@tileset_id, 4)
+    map.instance_variable_set(:@scroll_type, 0)
+    map.instance_variable_set(:@parallax_name, "")
+    map.instance_variable_set(:@parallax_loop_x, false)
+    map.instance_variable_set(:@parallax_loop_y, false)
+    map.instance_variable_set(:@autoplay_bgm, false)
+    map.instance_variable_set(:@autoplay_bgs, false)
+    map.instance_variable_set(:@disable_dashing, false)
+    map.instance_variable_set(:@encounter_list, [])
+    map.instance_variable_set(:@encounter_step, 30)
+    map.instance_variable_set(:@note,
+      "[lighting off]\r\nTEST HUB — no production links")
+
+    table = blank_table(width, height, 4)
+    height.times do |y|
+      width.times do |x|
+        table_set(table, x, y, 0, 2816)
+        # Region bands make the six route sections explicit in the editor and
+        # provide stable metadata without adding collision to the test room.
+        table_set(table, x, y, 3, ([y / 5 + 1, 6].min) << 8)
+      end
+    end
+    map.instance_variable_set(:@data, table)
+
+    set_graphic = lambda do |page, name, index = 0, direction = 2, pattern = 1|
+      graphic = page.instance_variable_get(:@graphic)
+      graphic.instance_variable_set(:@tile_id, 0)
+      graphic.instance_variable_set(:@character_name, name)
+      graphic.instance_variable_set(:@character_index, index)
+      graphic.instance_variable_set(:@direction, direction)
+      graphic.instance_variable_set(:@pattern, pattern)
+      page.instance_variable_set(:@direction_fix, true)
+      page.instance_variable_set(:@walk_anime, false)
+      page.instance_variable_set(:@step_anime, false)
+    end
+
+    transfer_commands = lambda do |key, label, destination, x, y, direction = 2, overrides = nil|
+      call = overrides ?
+        "WCFTestHub.prepare(:#{key},#{overrides})" :
+        "WCFTestHub.prepare(:#{key})"
+      [
+        event_command(101, 0, ["", 0, 0, 2]),
+        event_command(401, 0, ["[TEST] #{label}"]),
+        event_command(102, 0, [["Đi tới checkpoint", "Hủy"], 1]),
+        event_command(402, 0, [0, "Đi tới checkpoint"]),
+        event_command(355, 1, [call]),
+        event_command(201, 1, [0, destination, x, y, direction, 2]),
+        event_command(402, 0, [1, "Hủy"]),
+        event_command(404, 0, [])
+      ]
+    end
+
+    target_choice_commands = lambda do |key, label, destination, x, y, gift = nil, variable = 43|
+      labels = ["Leo", "Kohi", "Shylvie", "Hakase"]
+      commands = [
+        event_command(101, 0, ["", 0, 0, 2]),
+        event_command(401, 0, ["[TEST] #{label}"]),
+        event_command(401, 0, ["Chọn người nhận tại checkpoint."]),
+        event_command(102, 0, [labels, 0])
+      ]
+      labels.each_with_index do |label, index|
+        value = index + 1
+        variables = gift ? "{42=>#{gift},43=>#{value}}" : "{#{variable}=>#{value}}"
+        commands << event_command(402, 0, [index, label])
+        commands << event_command(355, 1,
+          ["WCFTestHub.prepare(:#{key},{:result=>#{value},:variables=>#{variables}})"])
+        commands << event_command(201, 1, [0, destination, x, y, 2, 2])
+      end
+      commands << event_command(404, 0, [])
+      commands
+    end
+
+    specs = [
+      # Section 1 — main spine.
+      [:silverwing, "01 Silverwing mở đầu", 3, 3, 3, 5, 3, "!$HaiQuy"],
+      [:city, "02 Thành phố", 9, 3, 6, 94, 11, "!$Base_HQ_Thuongphuct"],
+      [:bus, "03 Xe buýt", 15, 3, 10, 12, 9, "$Bus"],
+      [:wanderer, "04 Wanderer Office", 21, 3, 13, 4, 4, "$Leo_Normal"],
+      [:home, "05 Nhà Hải Quỳ", 27, 3, 22, 10, 39, "$HaiQuyAtHome_Base"],
+      [:book_shop, "06 Tiệm sách phép", 33, 3, 23, 15, 37, "$VapeEden"],
+      # Section 2 — Atlantis memory/chase.
+      [:storage_dark, "07 Kho tối", 3, 8, 26, 5, 5, "$HaiQuyAtHome_Base"],
+      [:storage_lit, "08 Kho đã bật đèn", 9, 8, 26, 5, 5, "$HaiQuyAtHome_Base"],
+      [:memory, "09 Ký ức bãi rác", 15, 8, 24, 8, 6, "$HaiQuy_Badend"],
+      [:maze, "10 Mê cung gương", 21, 8, 28, 5, 3, "$Mirror1"],
+      [:encirclement, "11 Vòng vây clone", 27, 8, 34, 10, 10, "$Clone1"],
+      [:chase, "12 Rượt đuổi", 33, 8, 29, 5, 7, "Monster1"],
+      [:post_chase, "13 Sau rượt đuổi", 39, 8, 25, 4, 4, "$HaiQuyAtHome_Base"],
+      # Section 3 — supermarket gifts. Four prep events ask recipient.
+      [:market, "14 Siêu thị", 3, 13, 19, 26, 35, "$Gift_Coffee"],
+      [:market_prep, "15 Chuẩn bị cà phê", 9, 13, 37, 10, 9, "$Gift_Coffee", :target, 1],
+      [:market_prep, "16 Chuẩn bị đồ bếp", 15, 13, 37, 10, 9, "$Gift_Cookware", :target, 2],
+      [:market_prep, "17 Chuẩn bị khăn", 21, 13, 37, 10, 9, "$Gift_Knitting", :target, 3],
+      [:market_prep, "18 Chuẩn bị mở khóa", 27, 13, 37, 10, 9, "$Gift_Lockpick", :target, 4],
+      [:market_party, "19 Tiệc route siêu thị", 33, 13, 38, 22, 34, "!$HaiQuy_GiangSinh"],
+      # Section 4 — noodle and Shylvie book route.
+      [:noodle_shop, "20 Quán mì cay", 3, 18, 20, 15, 12, "$Shylvie_normal"],
+      [:noodle_prep, "21 Chuẩn bị mì cay", 9, 18, 37, 10, 9, "$Gift_Cookware"],
+      [:noodle_kitchen, "22 Bếp Wanderer", 15, 18, 14, 14, 6, "!$HaiQuy_GiangSinh"],
+      [:noodle_party, "23 Tiệc mì cay", 21, 18, 38, 22, 34, "$Leo_Normal"],
+      [:shy_book_prep, "24 Chuẩn bị sách Shylvie", 27, 18, 37, 7, 5, "$Gift_Knitting"],
+      [:shy_book_party, "25 Tiệc sách Shylvie", 33, 18, 38, 22, 34, "$Shylvie_normal"],
+      [:shy_book_end, "26 Hậu truyện Shylvie", 39, 18, 50, 21, 31, "$Shylvie_normal"],
+      # Section 5 — Hakase/Abyss and Leo route.
+      [:hak_book_prep, "27 Chuẩn bị sách Hakase", 3, 23, 37, 7, 5, "$Gift_Knitting"],
+      [:hak_book_party, "28 Tiệc sách Hakase", 9, 23, 38, 22, 34, "$VapeEden"],
+      [:hak_book_end, "29 Hậu truyện Hakase", 15, 23, 52, 21, 31, "$VapeEden"],
+      [:abyss_owner, "30 Chủ tiệm / Vực Sâu", 21, 23, 53, 8, 8, "Monster1"],
+      [:leo_bus, "31 Tin nhắn Leo", 27, 23, 56, 88, 18, "$Bus"],
+      [:leo_magic, "32 Tiệm ma pháp", 33, 23, 57, 6, 9, "$Gift_Lockpick"],
+      [:leo_cafe, "33 Quán cà phê", 39, 23, 58, 12, 9, "$Gift_Coffee"],
+      # Section 6 — Leo conclusion and Shylvie jewel route.
+      [:leo_weapon, "34 Cửa hàng vũ khí", 3, 28, 59, 12, 13, "$Gift_Cookware"],
+      [:leo_prep, "35 Chuẩn bị route Leo", 9, 28, 37, 7, 5, "$Leo_Normal"],
+      [:leo_party, "36 Tiệc route Leo", 15, 28, 38, 22, 34, "$Leo_Normal"],
+      [:jewel_shop, "37 Tiệm đá phong thủy", 21, 28, 64, 9, 23, "$Shylvie_normal"],
+      [:jewel_prep, "38 Chuẩn bị đá", 27, 28, 37, 7, 5, "$Gift_Lockpick", :recipient],
+      [:jewel_party, "39 Tiệc đá phong thủy", 33, 28, 66, 8, 7, "$Shylvie_normal"],
+      [:jewel_end, "40 Hậu truyện đá", 39, 28, 67, 8, 7, "$Shylvie_normal"]
+    ]
+
+    events = {}
+    # Help event doubles as the seventh marker in the first route band.
+    help_commands = [
+      event_command(101, 0, ["", 0, 0, 2]),
+      event_command(401, 0, ["Mỗi sprite là một checkpoint độc lập."]),
+      event_command(401, 0, ["Tương tác để nạp route và điện thoại."]),
+      event_command(401, 0, ["Các món quà sẽ hỏi người nhận."]),
+      event_command(401, 0, ["Ra menu chính để bắt đầu lượt test mới."])
+    ]
+    help_page = page_from_template(template, help_commands, trigger: 0, priority: 1)
+    set_graphic.call(help_page, "!$firebarrel", 0, 2, 1)
+    events[1] = event_from_pages(template, 1, "00 Hướng dẫn TEST HUB", 39, 3, [help_page])
+
+    specs.each_with_index do |spec, index|
+      key, name, event_x, event_y, destination, x, y, graphic, mode, gift = spec
+      commands = if mode == :target
+        target_choice_commands.call(key, name, destination, x, y, gift, 43)
+      elsif mode == :recipient
+        target_choice_commands.call(key, name, destination, x, y, nil, 57)
+      else
+        transfer_commands.call(key, name, destination, x, y)
+      end
+      page = page_from_template(template, commands, trigger: 0, priority: 1)
+      set_graphic.call(page, graphic, 0, 2, 1)
+      event_id = index + 2
+      events[event_id] = event_from_pages(template, event_id, name, event_x, event_y, [page])
+    end
+    map.instance_variable_set(:@events, events)
+    save_data("Data/Map069.rvdata2", map)
+
+    infos = load_data("Data/MapInfos.rvdata2")
+    info = infos[map_id] || Marshal.load(Marshal.dump(infos[68] || infos.values.compact.last))
+    info.instance_variable_set(:@name, "TEST — Route Checkpoint Hub")
+    info.instance_variable_set(:@parent_id, 0)
+    info.instance_variable_set(:@order,
+      infos.values.compact.map {|item| item.instance_variable_get(:@order).to_i }.max + (infos[map_id] ? 0 : 1))
+    info.instance_variable_set(:@expanded, true)
+    infos[map_id] = info
+    save_data("Data/MapInfos.rvdata2", infos)
+
+    insert_runtime_script("WCF Test Hub", "Scripts/WCF Test Hub.rb")
+    puts "CREATED|Map069|size=#{width}x#{height}|checkpoints=#{specs.length}|help=1|phone=timeline+contacts+group_chat"
+  end
+
+  # Remove the obsolete F8 shortcut without rebuilding Map069. This preserves
+  # all sprite/position edits made directly by the user in RPG Maker.
+  def remove_route_test_hub_f8
+    path = "Data/Map069.rvdata2"
+    map = load_data(path)
+    note = map.instance_variable_get(:@note).to_s
+    note = note.gsub("TEST HUB — F8 returns here during playtest; no production links",
+      "TEST HUB — no production links")
+    map.instance_variable_set(:@note, note)
+    replacements = 0
+    (map.instance_variable_get(:@events) || {}).each_value do |event|
+      (event.instance_variable_get(:@pages) || []).each do |page|
+        (page.instance_variable_get(:@list) || []).each do |command|
+          next unless command_code(command) == 401
+          params = command_parameters(command)
+          next unless params[0].to_s.include?("F8") ||
+            params[0].to_s == "Thoát menu chính để bắt đầu lượt test mới."
+          command.instance_variable_set(:@parameters,
+            ["Ra menu chính để bắt đầu lượt test mới."])
+          replacements += 1
+        end
+      end
+    end
+    save_data(path, map)
+    insert_runtime_script("WCF Test Hub", "Scripts/WCF Test Hub.rb")
+    puts "UPDATED|Map069|remove_F8=true|help_replacements=#{replacements}|sprites_preserved=true"
+  end
+
+  # Add one isolated jukebox to the existing Test Hub. Never rebuild the map:
+  # every pre-existing event, including user-authored positions and animation
+  # flags, is compared byte-for-byte before the updated map is saved.
+  def install_test_hub_bgm_sampler
+    path = "Data/Map069.rvdata2"
+    map = load_data(path)
+    events = map.instance_variable_get(:@events) || {}
+    marker = "BGM TEST — 20 TRACKS"
+    existing_pair = events.find do |_event_id, event|
+      event && event.instance_variable_get(:@name).to_s.include?(marker)
+    end
+    event_id = existing_pair ? existing_pair[0] : events.keys.max.to_i + 1
+    existing = existing_pair && existing_pair[1]
+    protected = events.each_with_object({}) do |(id, event), snapshot|
+      snapshot[id] = Marshal.dump(event) unless id == event_id
+    end
+
+    groups = {
+      :office_home => [
+        ["Silverwing", "Silverwing"],
+        ["WandererOffice", "WandererOffice"],
+        ["wochristmas", "wochristmas"],
+        ["hqhouse", "hqhouse"]
+      ],
+      :shops_a => [
+        ["bookstore", "bookstore"], ["smarket", "smarket"],
+        ["magishop", "magishop"], ["coffeeshop", "coffeeshop"]
+      ],
+      :shops_b => [
+        ["armshop", "armshop"], ["rockshop", "rockshop"],
+        ["bus", "bus"], ["bedroom", "bedroom"]
+      ],
+      :emotion => [
+        ["sad magic", "sad magic"], ["gag", "gag"],
+        ["tragic", "tragic"], ["emotion", "emotion"]
+      ],
+      :action => [
+        ["pressure", "pressure"], ["clones", "clones"],
+        ["combat", "combat"]
+      ]
+    }
+    expected_tracks = groups.values.flatten(1).map { |_label, name| name } + ["mainmenu"]
+    available = Dir.glob("Audio/BGM/*").select { |item| File.file?(item) }
+      .map { |item| File.basename(item, ".*") }
+    missing = expected_tracks.reject { |name| available.include?(name) }
+    raise "Test Hub BGM files missing: #{missing.join(', ')}" unless missing.empty?
+
+    track_menu = lambda do |tracks, indent|
+      commands = [event_command(102, indent, [tracks.map(&:first), 5])]
+      tracks.each_with_index do |(label, name), index|
+        commands << event_command(402, indent, [index, label])
+        commands << event_command(241, indent + 1, [bgm_audio(name)])
+        commands << event_command(101, indent + 1, ["", 0, 0, 2])
+        commands << event_command(401, indent + 1, ["[BGM TEST] Đang phát: #{name}"])
+      end
+      commands << event_command(403, indent, [])
+      commands << event_command(404, indent, [])
+      commands
+    end
+
+    root = "WCF_BGM_TEST_MENU"
+    commands = [
+      event_command(118, 0, [root]),
+      event_command(101, 0, ["", 0, 0, 2]),
+      event_command(401, 0, ["[TEST] Chọn BGM cần kiểm tra crash."]),
+      event_command(401, 0, ["Nhấn hủy ở menu chính để thoát."]),
+      event_command(102, 0, [["Địa điểm", "Cảm xúc", "Hành động", "Hệ thống"], 5]),
+      event_command(402, 0, [0, "Địa điểm"]),
+      event_command(102, 1, [["Văn phòng / Nhà", "Cửa hàng A", "Cửa hàng B", "Quay lại"], 5]),
+      event_command(402, 1, [0, "Văn phòng / Nhà"])
+    ]
+    commands.concat(track_menu.call(groups[:office_home], 2))
+    commands << event_command(119, 2, [root])
+    commands << event_command(402, 1, [1, "Cửa hàng A"])
+    commands.concat(track_menu.call(groups[:shops_a], 2))
+    commands << event_command(119, 2, [root])
+    commands << event_command(402, 1, [2, "Cửa hàng B"])
+    commands.concat(track_menu.call(groups[:shops_b], 2))
+    commands << event_command(119, 2, [root])
+    commands << event_command(402, 1, [3, "Quay lại"])
+    commands << event_command(119, 2, [root])
+    commands << event_command(403, 1, [])
+    commands << event_command(119, 2, [root])
+    commands << event_command(404, 1, [])
+
+    commands << event_command(402, 0, [1, "Cảm xúc"])
+    commands.concat(track_menu.call(groups[:emotion], 1))
+    commands << event_command(119, 1, [root])
+
+    commands << event_command(402, 0, [2, "Hành động"])
+    commands.concat(track_menu.call(groups[:action], 1))
+    commands << event_command(119, 1, [root])
+
+    commands << event_command(402, 0, [3, "Hệ thống"])
+    commands << event_command(102, 1, [["mainmenu", "Dừng BGM", "Quay lại"], 5])
+    commands << event_command(402, 1, [0, "mainmenu"])
+    commands << event_command(241, 2, [bgm_audio("mainmenu")])
+    commands << event_command(101, 2, ["", 0, 0, 2])
+    commands << event_command(401, 2, ["[BGM TEST] Đang phát: mainmenu"])
+    commands << event_command(402, 1, [1, "Dừng BGM"])
+    commands << event_command(242, 2, [1])
+    commands << event_command(101, 2, ["", 0, 0, 2])
+    commands << event_command(401, 2, ["[BGM TEST] Đã fadeout BGM."])
+    commands << event_command(402, 1, [2, "Quay lại"])
+    commands << event_command(119, 2, [root])
+    commands << event_command(403, 1, [])
+    commands << event_command(119, 2, [root])
+    commands << event_command(404, 1, [])
+    commands << event_command(119, 1, [root])
+    commands << event_command(403, 0, [])
+    commands << event_command(404, 0, [])
+
+    # Keep the Test Hub convention that every root menu visibly exposes Hủy.
+    # The existing category tree becomes the first branch without changing any
+    # of its labels, BGM commands, or loop targets.
+    intro = commands.shift(4)
+    commands.each do |command|
+      command.instance_variable_set(:@indent,
+        command.instance_variable_get(:@indent).to_i + 1)
+    end
+    commands = intro + [
+      event_command(102, 0, [["Chọn BGM", "Hủy"], 2]),
+      event_command(402, 0, [0, "Chọn BGM"])
+    ] + commands + [
+      event_command(402, 0, [1, "Hủy"]),
+      event_command(404, 0, [])
+    ]
+
+    if existing
+      page = (existing.instance_variable_get(:@pages) || []).first
+      raise "Existing Test Hub BGM event has no page" unless page
+      page.instance_variable_set(:@list, commands + [event_command(0, 0, [])])
+    else
+      template = events.values.compact.first
+      raise "Map069 event template missing" unless template
+      page = page_from_template(template, commands, trigger: 0, priority: 1)
+      graphic = page.instance_variable_get(:@graphic)
+      graphic.instance_variable_set(:@tile_id, 0)
+      graphic.instance_variable_set(:@character_name, "!$gamemachine02")
+      graphic.instance_variable_set(:@character_index, 0)
+      graphic.instance_variable_set(:@direction, 2)
+      graphic.instance_variable_set(:@pattern, 1)
+      page.instance_variable_set(:@direction_fix, true)
+      page.instance_variable_set(:@walk_anime, true)
+      page.instance_variable_set(:@step_anime, true)
+      events[event_id] = event_from_pages(template, event_id, marker, 39, 29, [page])
+    end
+
+    protected.each do |id, snapshot|
+      raise "Map069 E#{id} changed while adding BGM tester" unless
+        Marshal.dump(events[id]) == snapshot
+    end
+    map.instance_variable_set(:@events, events)
+    save_data(path, map)
+    audit_test_hub_bgm_sampler
+    event = events[event_id]
+    puts "TEST_HUB_BGM_SAMPLER_INSTALLED|event=#{event_id}|" \
+         "position=#{event.instance_variable_get(:@x)},#{event.instance_variable_get(:@y)}|" \
+         "tracks=#{expected_tracks.length}|existing_events_preserved=#{protected.length}"
+  end
+
+  def audit_test_hub_bgm_sampler
+    map = load_data("Data/Map069.rvdata2")
+    events = map.instance_variable_get(:@events) || {}
+    pair = events.find do |_id, event|
+      event && event.instance_variable_get(:@name).to_s.include?("BGM TEST — 20 TRACKS")
+    end
+    raise "Test Hub BGM sampler missing" unless pair
+    event_id, event = pair
+    list = event.instance_variable_get(:@pages).first.instance_variable_get(:@list) || []
+    tracks = list.select { |command| command_code(command) == 241 }.map do |command|
+      command_parameters(command)[0].instance_variable_get(:@name)
+    end
+    expected = [
+      "sad magic", "Silverwing", "WandererOffice", "bus", "bookstore",
+      "bedroom", "smarket", "magishop", "gag", "wochristmas",
+      "coffeeshop", "armshop", "rockshop", "hqhouse", "pressure",
+      "clones", "tragic", "combat", "mainmenu", "emotion"
+    ]
+    errors = []
+    errors << "BGM set mismatch: #{tracks.sort.inspect}" unless tracks.sort == expected.sort
+    errors << "BGM choices contain duplicates" unless tracks.uniq.length == expected.length
+    errors << "BGM fadeout option missing" unless list.any? { |command| command_code(command) == 242 }
+    errors << "BGM menu loop label missing" unless list.any? do |command|
+      command_code(command) == 118 && command_parameters(command)[0] == "WCF_BGM_TEST_MENU"
+    end
+    errors << "BGM sampler is not an action event" unless
+      event.instance_variable_get(:@pages).first.instance_variable_get(:@trigger).to_i == 0
+    errors << "BGM sampler graphic missing" unless
+      event.instance_variable_get(:@pages).first.instance_variable_get(:@graphic)
+        .instance_variable_get(:@character_name) == "!$gamemachine02"
+    errors << "BGM sampler asset missing" unless File.file?("Graphics/Characters/!$gamemachine02.png")
+    raise errors.join("\n") unless errors.empty?
+    puts "TEST_HUB_BGM_SAMPLER_AUDIT_OK|event=#{event_id}|tracks=#{tracks.length}|" \
+         "stop=true|menu_loop=true"
+  end
+
+  # Enable both editor animation flags on every existing Test Hub page.  This
+  # is intentionally a page-attribute-only edit: event coordinates, graphics,
+  # conditions and command lists are verified byte-for-byte before saving.
+  def enable_route_test_hub_event_animations
+    raise "Disabled: Test Hub animation flags are user-authored per event"
+    path = "Data/Map069.rvdata2"
+    map = load_data(path)
+    events = map.instance_variable_get(:@events) || {}
+    protected = events.each_with_object({}) do |(event_id, event), result|
+      next unless event
+      result[event_id] = {
+        :x => event.instance_variable_get(:@x),
+        :y => event.instance_variable_get(:@y),
+        :pages => (event.instance_variable_get(:@pages) || []).map do |page|
+          copy = Marshal.load(Marshal.dump(page))
+          copy.instance_variable_set(:@walk_anime, true)
+          copy.instance_variable_set(:@step_anime, true)
+          Marshal.dump(copy)
+        end
+      }
+    end
+
+    changed = 0
+    page_count = 0
+    events.each_value do |event|
+      next unless event
+      (event.instance_variable_get(:@pages) || []).each do |page|
+        page_count += 1
+        changed += 1 unless
+          page.instance_variable_get(:@walk_anime) == true &&
+          page.instance_variable_get(:@step_anime) == true
+        page.instance_variable_set(:@walk_anime, true)
+        page.instance_variable_set(:@step_anime, true)
+      end
+    end
+
+    events.each do |event_id, event|
+      next unless event
+      snapshot = protected.fetch(event_id)
+      raise "Map069 E#{event_id} position changed" unless
+        event.instance_variable_get(:@x) == snapshot[:x] &&
+        event.instance_variable_get(:@y) == snapshot[:y]
+      actual_pages = (event.instance_variable_get(:@pages) || []).map do |page|
+        Marshal.dump(page)
+      end
+      raise "Map069 E#{event_id} changed beyond animation flags" unless
+        actual_pages == snapshot[:pages]
+    end
+
+    save_data(path, map)
+    audit_route_test_hub_event_animations
+    puts "TEST_HUB_ANIMATION_ENABLED|events=#{events.values.compact.length}|" \
+      "pages=#{page_count}|changed=#{changed}|positions=preserved"
+  end
+
+  def audit_route_test_hub_event_animations
+    map = load_data("Data/Map069.rvdata2")
+    events = map.instance_variable_get(:@events) || {}
+    intentional_off = [2, 5, 13, 16, 17, 18, 19, 21, 22, 24, 25, 26,
+                       28, 30, 33, 34, 35, 39]
+    errors = []
+    page_count = 0
+    events.each do |event_id, event|
+      next unless event
+      (event.instance_variable_get(:@pages) || []).each_with_index do |page, page_index|
+        page_count += 1
+        expected = !intentional_off.include?(event_id)
+        errors << "E#{event_id}/P#{page_index + 1} walk=#{page.instance_variable_get(:@walk_anime).inspect}, expected #{expected}" unless
+          page.instance_variable_get(:@walk_anime) == expected
+        errors << "E#{event_id}/P#{page_index + 1} step=#{page.instance_variable_get(:@step_anime).inspect}, expected #{expected}" unless
+          page.instance_variable_get(:@step_anime) == expected
+      end
+    end
+    errors.each { |error| puts "TEST_HUB_ANIMATION_ERROR|#{error}" }
+    puts "TEST_HUB_ANIMATION_AUDIT|events=#{events.values.compact.length}|" \
+      "pages=#{page_count}|intentional_off=#{intentional_off.length}|" \
+      "errors=#{errors.length}"
+    raise "Test Hub event animation audit failed" unless errors.empty?
+  end
+
+  def restore_route_test_hub_intentional_animation_flags
+    path = "Data/Map069.rvdata2"
+    map = load_data(path)
+    events = map.instance_variable_get(:@events) || {}
+    intentional_off = [2, 5, 13, 16, 17, 18, 19, 21, 22, 24, 25, 26,
+                       28, 30, 33, 34, 35, 39]
+    protected = events.each_with_object({}) do |(event_id, event), result|
+      next unless event
+      copy = Marshal.load(Marshal.dump(event))
+      (copy.instance_variable_get(:@pages) || []).each do |page|
+        expected = !intentional_off.include?(event_id)
+        page.instance_variable_set(:@walk_anime, expected)
+        page.instance_variable_set(:@step_anime, expected)
+      end
+      result[event_id] = Marshal.dump(copy)
+    end
+    events.each do |event_id, event|
+      next unless event
+      expected = !intentional_off.include?(event_id)
+      (event.instance_variable_get(:@pages) || []).each do |page|
+        page.instance_variable_set(:@walk_anime, expected)
+        page.instance_variable_set(:@step_anime, expected)
+      end
+      raise "Map069 E#{event_id} changed beyond restored animation flags" unless
+        Marshal.dump(event) == protected[event_id]
+    end
+    save_data(path, map)
+    audit_route_test_hub_event_animations
+    puts "TEST_HUB_ANIMATION_RESTORED|off=#{intentional_off.join(',')}|" \
+      "on=#{events.values.compact.length - intentional_off.length}|" \
+      "positions_and_commands=preserved"
+  end
+
+  # Add a visible cancel path to the four supermarket preparation selectors
+  # and the jewel preparation selector. VX Ace only permits four entries in a
+  # single Show Choices command, so the existing four recipients are nested
+  # under a two-entry "select / cancel" menu.
+  def install_route_test_hub_choice_cancels
+    path = "Data/Map069.rvdata2"
+    map = load_data(path)
+    events = map.instance_variable_get(:@events) || {}
+    target_ids = [16, 17, 18, 19, 39]
+    protected_events = events.each_with_object({}) do |(event_id, event), result|
+      next if target_ids.include?(event_id)
+      result[event_id] = Marshal.dump(event)
+    end
+    target_shells = target_ids.each_with_object({}) do |event_id, result|
+      event = events[event_id]
+      raise "Map069 E#{event_id} missing" unless event
+      pages = event.instance_variable_get(:@pages) || []
+      raise "Map069 E#{event_id} must have one page" unless pages.length == 1
+      shell = Marshal.load(Marshal.dump(event))
+      shell.instance_variable_get(:@pages).first.instance_variable_set(:@list, [])
+      result[event_id] = Marshal.dump(shell)
+    end
+
+    changed = 0
+    target_ids.each do |event_id|
+      page = events[event_id].instance_variable_get(:@pages).first
+      list = page.instance_variable_get(:@list) || []
+      root_cancel = list.any? do |command|
+        command_code(command) == 102 &&
+          command.instance_variable_get(:@indent).to_i == 0 &&
+          command_parameters(command)[0].include?("Hủy")
+      end
+      next if root_cancel
+
+      choice_start = list.index do |command|
+        command_code(command) == 102 &&
+          command.instance_variable_get(:@indent).to_i == 0
+      end
+      raise "Map069 E#{event_id} recipient choice missing" unless choice_start
+      choices = command_parameters(list[choice_start])[0]
+      raise "Map069 E#{event_id} expected four recipient choices" unless
+        choices == ["Leo", "Kohi", "Shylvie", "Hakase"]
+      choice_end = ((choice_start + 1)...list.length).find do |index|
+        command_code(list[index]) == 404 &&
+          list[index].instance_variable_get(:@indent).to_i == 0
+      end
+      raise "Map069 E#{event_id} choice end missing" unless choice_end
+
+      nested = list[choice_start..choice_end]
+      nested.each do |command|
+        command.instance_variable_set(:@indent,
+          command.instance_variable_get(:@indent).to_i + 1)
+      end
+      wrapper = [
+        event_command(102, 0, [["Chọn người nhận", "Hủy"], 1]),
+        event_command(402, 0, [0, "Chọn người nhận"])
+      ] + nested + [
+        event_command(402, 0, [1, "Hủy"]),
+        event_command(404, 0, [])
+      ]
+      page.instance_variable_set(:@list,
+        list[0...choice_start] + wrapper + list[(choice_end + 1)..-1])
+      changed += 1
+    end
+
+    protected_events.each do |event_id, snapshot|
+      raise "Map069 E#{event_id} changed unexpectedly" unless
+        Marshal.dump(events[event_id]) == snapshot
+    end
+    target_ids.each do |event_id|
+      shell = Marshal.load(Marshal.dump(events[event_id]))
+      shell.instance_variable_get(:@pages).first.instance_variable_set(:@list, [])
+      raise "Map069 E#{event_id} position/graphic/settings changed" unless
+        Marshal.dump(shell) == target_shells[event_id]
+    end
+
+    save_data(path, map)
+    audit_route_test_hub_choice_cancels
+    puts "TEST_HUB_CANCELS_INSTALLED|events=#{target_ids.join(',')}|" \
+      "changed=#{changed}|positions=preserved"
+  end
+
+  def audit_route_test_hub_choice_cancels
+    map = load_data("Data/Map069.rvdata2")
+    events = map.instance_variable_get(:@events) || {}
+    target_ids = [16, 17, 18, 19, 39]
+    errors = []
+    target_ids.each do |event_id|
+      event = events[event_id]
+      unless event
+        errors << "E#{event_id} missing"
+        next
+      end
+      list = event.instance_variable_get(:@pages).fetch(0)
+        .instance_variable_get(:@list) || []
+      root = list.find do |command|
+        command_code(command) == 102 &&
+          command.instance_variable_get(:@indent).to_i == 0
+      end
+      errors << "E#{event_id} lacks visible root cancel" unless root &&
+        command_parameters(root)[0] == ["Chọn người nhận", "Hủy"]
+      inner = list.find do |command|
+        command_code(command) == 102 &&
+          command.instance_variable_get(:@indent).to_i == 1
+      end
+      errors << "E#{event_id} recipient choices changed" unless inner &&
+        command_parameters(inner)[0] == ["Leo", "Kohi", "Shylvie", "Hakase"]
+      cancel_branch = list.any? do |command|
+        command_code(command) == 402 &&
+          command.instance_variable_get(:@indent).to_i == 0 &&
+          command_parameters(command) == [1, "Hủy"]
+      end
+      errors << "E#{event_id} cancel branch missing" unless cancel_branch
+    end
+    root_choice_pages = 0
+    events.each do |event_id, event|
+      next unless event
+      (event.instance_variable_get(:@pages) || []).each_with_index do |page, page_index|
+        root_choices = (page.instance_variable_get(:@list) || []).select do |command|
+          command_code(command) == 102 &&
+            command.instance_variable_get(:@indent).to_i == 0
+        end
+        next if root_choices.empty?
+        root_choice_pages += 1
+        errors << "E#{event_id}/P#{page_index + 1} root menu lacks Hủy" unless
+          root_choices.first && command_parameters(root_choices.first)[0].include?("Hủy")
+      end
+    end
+    errors.each { |error| puts "TEST_HUB_CANCEL_ERROR|#{error}" }
+    puts "TEST_HUB_CANCEL_AUDIT|wrapped=#{target_ids.length}|" \
+      "root_choice_pages=#{root_choice_pages}|errors=#{errors.length}"
+    raise "Test Hub cancel audit failed" unless errors.empty?
+  end
+
+  # Add the three Leo recommendation variants to the two late-route
+  # checkpoints without rebuilding Map069. Only the command lists of E36 and
+  # E37 are replaced; user-arranged positions, graphics, names, page settings,
+  # and every other event are protected by before/after comparisons.
+  def install_test_hub_leo_branch_choices
+    path = "Data/Map069.rvdata2"
+    map = load_data(path)
+    events = map.instance_variable_get(:@events) || {}
+    target_ids = [36, 37]
+    target_ids.each do |event_id|
+      event = events[event_id]
+      raise "Map069 E#{event_id} missing" unless event
+      pages = event.instance_variable_get(:@pages) || []
+      raise "Map069 E#{event_id} must have exactly one page" unless pages.length == 1
+    end
+
+    protected_events = events.each_with_object({}) do |(event_id, event), result|
+      next if target_ids.include?(event_id)
+      result[event_id] = Marshal.dump(event)
+    end
+    target_shells = target_ids.each_with_object({}) do |event_id, result|
+      shell = Marshal.load(Marshal.dump(events[event_id]))
+      shell.instance_variable_get(:@pages).each do |page|
+        page.instance_variable_set(:@list, [])
+      end
+      result[event_id] = Marshal.dump(shell)
+    end
+
+    labels = [
+      "Kohi — quán cà phê",
+      "Shylvie — đá/khiên",
+      "Hakase — tiệm ma pháp",
+      "Hủy"
+    ]
+    branches = [
+      [labels[0], 1],
+      [labels[1], 2],
+      [labels[2], 3]
+    ]
+    checkpoints = {
+      36 => ["[TEST] 35 Chuẩn bị route Leo", :leo_prep, 37, 7, 5],
+      37 => ["[TEST] 36 Tiệc route Leo", :leo_party, 38, 22, 34]
+    }
+
+    checkpoints.each do |event_id, (heading, key, destination, x, y)|
+      commands = [
+        event_command(101, 0, ["", 0, 0, 2]),
+        event_command(401, 0, [heading]),
+        event_command(401, 0, ["Chọn nhánh gợi ý của Leo."]),
+        event_command(102, 0, [labels, 3])
+      ]
+      branches.each_with_index do |(label, branch), index|
+        commands << event_command(402, 0, [index, label])
+        commands << event_command(355, 1, [
+          "WCFTestHub.prepare(:#{key},{:result=>#{branch},:variables=>{55=>#{branch}}})"
+        ])
+        commands << event_command(201, 1, [0, destination, x, y, 2, 2])
+      end
+      commands << event_command(402, 0, [3, labels[3]])
+      commands << event_command(404, 0, [])
+      commands << event_command(0, 0, [])
+      events[event_id].instance_variable_get(:@pages).first
+        .instance_variable_set(:@list, commands)
+    end
+
+    save_data(path, map)
+    saved = load_data(path)
+    saved_events = saved.instance_variable_get(:@events) || {}
+    protected_events.each do |event_id, dump|
+      raise "Map069 E#{event_id} changed unexpectedly" unless
+        saved_events[event_id] && Marshal.dump(saved_events[event_id]) == dump
+    end
+    target_shells.each do |event_id, dump|
+      shell = Marshal.load(Marshal.dump(saved_events[event_id]))
+      shell.instance_variable_get(:@pages).each do |page|
+        page.instance_variable_set(:@list, [])
+      end
+      raise "Map069 E#{event_id} position/graphic/settings changed" unless
+        Marshal.dump(shell) == dump
+    end
+    puts "UPDATED|Map069|events=36,37|leo_branches=1,2,3|" \
+      "event_commands_only=true|positions_and_sprites_preserved=true"
+  end
+
+  def audit_test_hub_leo_branch_choices
+    map = load_data("Data/Map069.rvdata2")
+    events = map.instance_variable_get(:@events) || {}
+    errors = []
+    expected = {
+      36 => [:leo_prep, 37, [7, 5]],
+      37 => [:leo_party, 38, [22, 34]]
+    }
+    expected.each do |event_id, (key, destination, coordinates)|
+      event = events[event_id]
+      unless event
+        errors << "Map069 E#{event_id} missing"
+        next
+      end
+      page = (event.instance_variable_get(:@pages) || []).first
+      list = page ? (page.instance_variable_get(:@list) || []) : []
+      choice = list.find { |command| command_code(command) == 102 }
+      choice_labels = choice ? command_parameters(choice)[0] : []
+      errors << "Map069 E#{event_id} does not offer three Leo branches plus cancel" unless
+        choice_labels == ["Kohi — quán cà phê", "Shylvie — đá/khiên",
+          "Hakase — tiệm ma pháp", "Hủy"]
+      (1..3).each do |branch|
+        expected_script =
+          "WCFTestHub.prepare(:#{key},{:result=>#{branch},:variables=>{55=>#{branch}}})"
+        errors << "Map069 E#{event_id} Leo branch #{branch} loader missing" unless
+          list.any? do |command|
+            [355, 655].include?(command_code(command)) &&
+              command_parameters(command)[0].to_s == expected_script
+          end
+      end
+      transfers = list.select { |command| command_code(command) == 201 }
+      errors << "Map069 E#{event_id} must have one transfer per Leo branch" unless
+        transfers.length == 3
+      errors << "Map069 E#{event_id} transfer destination changed" unless
+        transfers.all? do |command|
+          parameters = command_parameters(command)
+          parameters[1].to_i == destination && parameters[2, 2] == coordinates
+        end
+    end
+    errors.each { |error| puts "TEST_HUB_LEO_BRANCH_ERROR|#{error}" }
+    puts "TEST_HUB_LEO_BRANCH_AUDIT|errors=#{errors.length}|events=36,37|branches=3"
+    raise "Test Hub Leo branch audit failed" unless errors.empty?
+  end
+
+  # Expose every authored late-route variant from the Test Hub while keeping
+  # the user's Map069 layout intact. Fixed book-party routes are audited but
+  # deliberately left as single checkpoints because they have no sub-branch.
+  def install_test_hub_party_and_epilogue_choices
+    path = "Data/Map069.rvdata2"
+    map = load_data(path)
+    events = map.instance_variable_get(:@events) || {}
+    target_ids = [20, 24, 40, 41]
+    target_ids.each do |event_id|
+      event = events[event_id]
+      raise "Map069 E#{event_id} missing" unless event
+      pages = event.instance_variable_get(:@pages) || []
+      raise "Map069 E#{event_id} must have exactly one page" unless pages.length == 1
+    end
+
+    protected_events = events.each_with_object({}) do |(event_id, event), result|
+      next if target_ids.include?(event_id)
+      result[event_id] = Marshal.dump(event)
+    end
+    target_shells = target_ids.each_with_object({}) do |event_id, result|
+      shell = Marshal.load(Marshal.dump(events[event_id]))
+      shell.instance_variable_get(:@pages).each do |page|
+        page.instance_variable_set(:@list, [])
+      end
+      result[event_id] = Marshal.dump(shell)
+    end
+
+    # E20: all 20 supermarket outcomes. Coffee has normal/Atlantis variants;
+    # the other three gifts each have the four authored recipients.
+    gifts = ["Máy pha cà phê", "Dao/chảo", "Đồ đan", "Bộ phá khóa"]
+    recipients = ["Leo", "Kohi", "Shylvie", "Hakase"]
+    market = [
+      event_command(101, 0, ["", 0, 0, 2]),
+      event_command(401, 0, ["[TEST] 19 Tiệc route siêu thị"]),
+      event_command(401, 0, ["Chọn đúng tổ hợp cần kiểm tra."]),
+      event_command(102, 0, [["Chọn trường hợp", "Hủy"], 1]),
+      event_command(402, 0, [0, "Chọn trường hợp"]),
+      event_command(101, 1, ["", 0, 0, 2]),
+      event_command(401, 1, ["Chọn món quà."]),
+      event_command(102, 1, [gifts, 0])
+    ]
+    append_market_recipients = lambda do |commands, indent, gift, coffee_ready|
+      commands << event_command(101, indent, ["", 0, 0, 2])
+      commands << event_command(401, indent, ["Chọn người nhận."])
+      commands << event_command(102, indent, [recipients, 0])
+      recipients.each_with_index do |recipient, recipient_index|
+        target = recipient_index + 1
+        commands << event_command(402, indent, [recipient_index, recipient])
+        commands << event_command(355, indent + 1, [
+          "WCFTestHub.prepare(:market_party,{:result=>#{target}," \
+          ":switches=>{52=>#{coffee_ready}}," \
+          ":variables=>{42=>#{gift},43=>#{target}}})"
+        ])
+        commands << event_command(201, indent + 1, [0, 38, 22, 34, 2, 2])
+      end
+      commands << event_command(404, indent, [])
+    end
+    gifts.each_with_index do |gift_label, gift_index|
+      gift = gift_index + 1
+      market << event_command(402, 1, [gift_index, gift_label])
+      if gift == 1
+        coffee_labels = ["Cà phê thường", "Cà phê Atlantis"]
+        market << event_command(101, 2, ["", 0, 0, 2])
+        market << event_command(401, 2, ["Chọn nguồn cà phê."])
+        market << event_command(102, 2, [coffee_labels, 0])
+        coffee_labels.each_with_index do |coffee_label, coffee_index|
+          market << event_command(402, 2, [coffee_index, coffee_label])
+          append_market_recipients.call(market, 3, gift, coffee_index == 1)
+        end
+        market << event_command(404, 2, [])
+      else
+        append_market_recipients.call(market, 2, gift, false)
+      end
+    end
+    market << event_command(404, 1, [])
+    market << event_command(402, 0, [1, "Hủy"])
+    market << event_command(404, 0, [])
+    market << event_command(0, 0, [])
+    events[20].instance_variable_get(:@pages).first
+      .instance_variable_set(:@list, market)
+
+    # E24: the noodle route has two real cooking branches.
+    noodle_labels = ["Aira nấu mì", "Hải Quỳ tự nấu", "Hủy"]
+    noodle = [
+      event_command(101, 0, ["", 0, 0, 2]),
+      event_command(401, 0, ["[TEST] 23 Tiệc mì cay"]),
+      event_command(401, 0, ["Chọn nhánh nấu mì."]),
+      event_command(102, 0, [noodle_labels, 2])
+    ]
+    [[1, true], [2, false]].each_with_index do |(branch, aira_control), index|
+      noodle << event_command(402, 0, [index, noodle_labels[index]])
+      noodle << event_command(355, 1, [
+        "WCFTestHub.prepare(:noodle_party,{:switches=>{56=>#{aira_control}}," \
+        ":variables=>{50=>#{branch}}})"
+      ])
+      noodle << event_command(201, 1, [0, 38, 22, 34, 2, 2])
+    end
+    noodle << event_command(402, 0, [2, "Hủy"])
+    noodle << event_command(404, 0, [])
+    noodle << event_command(0, 0, [])
+    events[24].instance_variable_get(:@pages).first
+      .instance_variable_set(:@list, noodle)
+
+    # E40/E41: the jewel party and its epilogue must retain the same one of
+    # four recipients. A wrapper choice leaves a safe Cancel path despite the
+    # VX Ace four-choice limit.
+    {
+      40 => ["[TEST] 39 Tiệc đá phong thủy", :jewel_party, 66, 8, 7],
+      41 => ["[TEST] 40 Hậu truyện đá", :jewel_end, 67, 8, 7]
+    }.each do |event_id, (heading, key, destination, x, y)|
+      commands = [
+        event_command(101, 0, ["", 0, 0, 2]),
+        event_command(401, 0, [heading]),
+        event_command(102, 0, [["Chọn người nhận", "Hủy"], 1]),
+        event_command(402, 0, [0, "Chọn người nhận"]),
+        event_command(101, 1, ["", 0, 0, 2]),
+        event_command(401, 1, ["Chọn nhánh cần kiểm tra."]),
+        event_command(102, 1, [recipients, 0])
+      ]
+      recipients.each_with_index do |recipient, index|
+        branch = index + 1
+        commands << event_command(402, 1, [index, recipient])
+        commands << event_command(355, 2, [
+          "WCFTestHub.prepare(:#{key},{:result=>#{branch}," \
+          ":variables=>{57=>#{branch}}})"
+        ])
+        commands << event_command(201, 2, [0, destination, x, y, 2, 2])
+      end
+      commands << event_command(404, 1, [])
+      commands << event_command(402, 0, [1, "Hủy"])
+      commands << event_command(404, 0, [])
+      commands << event_command(0, 0, [])
+      events[event_id].instance_variable_get(:@pages).first
+        .instance_variable_set(:@list, commands)
+    end
+
+    save_data(path, map)
+    saved_events = (load_data(path).instance_variable_get(:@events) || {})
+    protected_events.each do |event_id, dump|
+      raise "Map069 E#{event_id} changed unexpectedly" unless
+        saved_events[event_id] && Marshal.dump(saved_events[event_id]) == dump
+    end
+    target_shells.each do |event_id, dump|
+      shell = Marshal.load(Marshal.dump(saved_events[event_id]))
+      shell.instance_variable_get(:@pages).each do |page|
+        page.instance_variable_set(:@list, [])
+      end
+      raise "Map069 E#{event_id} position/graphic/settings changed" unless
+        Marshal.dump(shell) == dump
+    end
+    puts "UPDATED|Map069|events=20,24,40,41|market_cases=20|" \
+      "noodle_cases=2|jewel_cases=4|event_commands_only=true|" \
+      "positions_and_sprites_preserved=true"
+  end
+
+  def audit_test_hub_party_and_epilogue_choices
+    map = load_data("Data/Map069.rvdata2")
+    events = map.instance_variable_get(:@events) || {}
+    errors = []
+    lists = {}
+    [20, 24, 26, 27, 29, 30, 37, 40, 41].each do |event_id|
+      event = events[event_id]
+      errors << "Map069 E#{event_id} missing" unless event
+      page = event && (event.instance_variable_get(:@pages) || []).first
+      lists[event_id] = page ? (page.instance_variable_get(:@list) || []) : []
+    end
+    scripts = lambda do |event_id|
+      lists[event_id].select do |command|
+        [355, 655].include?(command_code(command))
+      end.map { |command| command_parameters(command)[0].to_s }
+    end
+    transfers = lambda do |event_id, destination, x, y, count|
+      found = lists[event_id].select { |command| command_code(command) == 201 }
+      errors << "Map069 E#{event_id} transfer count #{found.length}, expected #{count}" unless
+        found.length == count
+      errors << "Map069 E#{event_id} transfer destination changed" unless
+        found.all? do |command|
+          parameters = command_parameters(command)
+          parameters[1, 3] == [destination, x, y]
+        end
+    end
+
+    market_scripts = scripts.call(20).grep(/prepare\(:market_party/)
+    errors << "Map069 E20 must expose 20 supermarket outcomes" unless
+      market_scripts.length == 20 && market_scripts.uniq.length == 20
+    (1..4).each do |target|
+      [false, true].each do |coffee_ready|
+        marker = ":result=>#{target},:switches=>{52=>#{coffee_ready}}," \
+          ":variables=>{42=>1,43=>#{target}}"
+        errors << "Map069 E20 coffee target #{target}/#{coffee_ready} missing" unless
+          market_scripts.any? { |text| text.include?(marker) }
+      end
+      (2..4).each do |gift|
+        marker = ":result=>#{target},:switches=>{52=>false}," \
+          ":variables=>{42=>#{gift},43=>#{target}}"
+        errors << "Map069 E20 gift #{gift}/target #{target} missing" unless
+          market_scripts.any? { |text| text.include?(marker) }
+      end
+    end
+    transfers.call(20, 38, 22, 34, 20)
+
+    noodle_scripts = scripts.call(24).grep(/prepare\(:noodle_party/)
+    errors << "Map069 E24 Aira cooking branch missing" unless
+      noodle_scripts.any? do |text|
+        text.include?(":switches=>{56=>true},:variables=>{50=>1}")
+      end
+    errors << "Map069 E24 Hai Quy cooking branch missing" unless
+      noodle_scripts.any? do |text|
+        text.include?(":switches=>{56=>false},:variables=>{50=>2}")
+      end
+    transfers.call(24, 38, 22, 34, 2)
+
+    {37=>[:leo_party,55,38,22,34,3], 40=>[:jewel_party,57,66,8,7,4],
+     41=>[:jewel_end,57,67,8,7,4]}.each do |event_id, data|
+      key, variable, destination, x, y, count = data
+      branch_scripts = scripts.call(event_id).grep(/prepare\(:#{key}/)
+      (1..count).each do |branch|
+        errors << "Map069 E#{event_id} branch #{branch} missing" unless
+          branch_scripts.any? do |text|
+            text.include?(":result=>#{branch}") &&
+              text.include?(":variables=>{#{variable}=>#{branch}}")
+          end
+      end
+      transfers.call(event_id, destination, x, y, count)
+    end
+
+    # These routes contain one authored party/epilogue each, so a synthetic
+    # choice would create a branch that does not exist in the game script.
+    {
+      26=>[:shy_book_party,38,22,34], 27=>[:shy_book_end,50,21,31],
+      29=>[:hak_book_party,38,22,34], 30=>[:hak_book_end,52,21,31]
+    }.each do |event_id, (key, destination, x, y)|
+      errors << "Map069 E#{event_id} fixed loader missing" unless
+        scripts.call(event_id).any? { |text| text.include?("prepare(:#{key})") }
+      transfers.call(event_id, destination, x, y, 1)
+    end
+
+    errors.each { |error| puts "TEST_HUB_PARTY_BRANCH_ERROR|#{error}" }
+    puts "TEST_HUB_PARTY_BRANCH_AUDIT|errors=#{errors.length}|" \
+      "market=20|noodle=2|leo=3|jewel=4|fixed_book_routes=4"
+    raise "Test Hub party/epilogue branch audit failed" unless errors.empty?
+  end
+
+  def audit_route_test_hub
+    errors = []
+    path = "Data/Map069.rvdata2"
+    errors << "Map069 file missing" unless File.file?(path)
+    if File.file?(path)
+      map = load_data(path)
+      events = map.instance_variable_get(:@events) || {}
+      errors << "Map069 dimensions changed" unless
+        [map.instance_variable_get(:@width), map.instance_variable_get(:@height)] == [44, 32]
+      errors << "Map069 must have lighting off" unless
+        map.instance_variable_get(:@note).to_s.include?("[lighting off]")
+      # Map069 is intentionally editable by the user; sprite/checkpoint pruning
+      # must not make the audit demand a destructive full rebuild.
+      errors << "Map069 contains too few usable checkpoint events" unless events.length >= 35
+      errors << "Map069 jewel preparation checkpoint missing" unless
+        events.values.any? { |event| event.instance_variable_get(:@name).to_s.include?("38 Chuẩn bị đá") }
+      names = events.values.map {|event| event.instance_variable_get(:@name).to_s }
+      errors << "Map069 lacks route sections" unless
+        ["Silverwing", "Mê cung", "Siêu thị", "mì cay", "Hakase", "đá phong thủy"].all? do |marker|
+          names.any? {|name| name.include?(marker) }
+        end
+      transfers = events.values.flat_map do |event|
+        (event.instance_variable_get(:@pages) || []).flat_map do |page|
+          (page.instance_variable_get(:@list) || []).select {|command| command_code(command) == 201 }
+        end
+      end
+      errors << "Map069 contains too few checkpoint transfers" unless transfers.length >= 40
+      graphics = events.values.flat_map do |event|
+        (event.instance_variable_get(:@pages) || []).map do |page|
+          page.instance_variable_get(:@graphic).instance_variable_get(:@character_name).to_s
+        end
+      end.reject(&:empty?).uniq
+      graphics.each do |graphic|
+        errors << "Missing checkpoint graphic #{graphic}" unless
+          File.file?(File.join("Graphics", "Characters", "#{graphic}.png"))
+      end
+    end
+
+    infos = load_data("Data/MapInfos.rvdata2")
+    info = infos[69]
+    errors << "MapInfos[69] missing" unless info
+    errors << "Map069 is not a root TEST map" unless info &&
+      info.instance_variable_get(:@parent_id).to_i == 0 &&
+      info.instance_variable_get(:@name).to_s.start_with?("TEST")
+
+    source = File.binread("Scripts/WCF Test Hub.rb")
+    %w[CONTACTS CHECKPOINTS seed_phone install_group_chat force_timeline phone_group_chats].each do |marker|
+      errors << "Runtime helper lacks #{marker}" unless source.include?(marker)
+    end
+    silverwing_checkpoint = source[/\:silverwing\s*=>[^\n]+/]
+    errors << "Silverwing checkpoint does not restore !$HaiQuy" unless
+      silverwing_checkpoint && silverwing_checkpoint.include?('"!$HaiQuy"')
+    errors << "Obsolete F8 return hook remains in runtime helper" if
+      source.include?("Input::F8") || source.include?("return_to_hub")
+    {
+      "leo_magic" => [3, 57, 33],
+      "leo_cafe" => [1, 58, 34],
+      "leo_weapon" => [2, 59, 35]
+    }.each do |key, (branch, destination, event_id)|
+      checkpoint = source[/\:#{key}\s*=>[^\n]+/]
+      errors << "#{key} checkpoint missing" unless checkpoint
+      errors << "#{key} starts after its reveal autorun" unless checkpoint &&
+        checkpoint.include?("55=>#{branch},56=>1")
+      if File.file?(path)
+        event = load_data(path).instance_variable_get(:@events)[event_id]
+        commands = event && event.instance_variable_get(:@pages).first
+          .instance_variable_get(:@list) || []
+        errors << "Map069 E#{event_id} #{key} loader missing" unless commands.any? do |command|
+          [355, 655].include?(command_code(command)) &&
+            command_parameters(command)[0].to_s.include?("prepare(:#{key})")
+        end
+        errors << "Map069 E#{event_id} destination changed" unless commands.any? do |command|
+          command_code(command) == 201 && command_parameters(command)[1].to_i == destination
+        end
+      end
+    end
+    [57, 58].each do |map_id|
+      shop = load_data(format("Data/Map%03d.rvdata2", map_id))
+      pages = shop.instance_variable_get(:@events).fetch(1)
+        .instance_variable_get(:@pages) || []
+      intro = pages.find do |page|
+        condition = page.instance_variable_get(:@condition)
+        condition.instance_variable_get(:@switch1_valid) &&
+          condition.instance_variable_get(:@switch1_id).to_i == 72 &&
+          condition.instance_variable_get(:@variable_valid) &&
+          condition.instance_variable_get(:@variable_id).to_i == 56 &&
+          condition.instance_variable_get(:@variable_value).to_i == 1
+      end
+      scripts = intro && (intro.instance_variable_get(:@list) || []).select do |command|
+        [355, 655].include?(command_code(command))
+      end.map { |command| command_parameters(command)[0].to_s } || []
+      errors << "Map#{map_id} stage-1 intro autorun missing" unless intro &&
+        intro.instance_variable_get(:@trigger).to_i == 3
+      lighting_ready = if map_id == 57
+        scripts.any? do |text|
+          text.include?("WCF_MAGIC_SHOP_KUL_DISABLED") &&
+            text.include?("shadows.set_opacity(0)") && text.include?("shadows.hide")
+        end
+      else
+        scripts.any? { |text| text.match?(/shadows\.set_opacity\((?:0|70),\s*28\)/) }
+      end
+      errors << "Map#{map_id} lighting setup missing" unless lighting_ready
+      errors << "Map#{map_id} intro does not advance stage" unless
+        (intro.instance_variable_get(:@list) || []).any? do |command|
+          command_code(command) == 122 && command_parameters(command)[0, 2] == [56, 56] &&
+            command_parameters(command)[4].to_i == 2
+        end
+    end
+    map59 = load_data("Data/Map059.rvdata2")
+    weapon_intro = map59.instance_variable_get(:@events).fetch(1)
+      .instance_variable_get(:@pages).first
+    weapon_scripts = (weapon_intro.instance_variable_get(:@list) || []).select do |command|
+      [355, 655].include?(command_code(command))
+    end.map { |command| command_parameters(command)[0].to_s }
+    weapon_condition = weapon_intro.instance_variable_get(:@condition)
+    errors << "Map59 intro autorun missing" unless
+      weapon_intro.instance_variable_get(:@trigger).to_i == 3 &&
+      weapon_condition.instance_variable_get(:@switch1_valid) &&
+      weapon_condition.instance_variable_get(:@switch1_id).to_i == 72
+    errors << "Map59 KUL reveal missing" unless weapon_scripts.any? do |text|
+      text.match?(/shadows\.set_opacity\(0,\s*28\)/)
+    end
+    maintenance_source = File.binread(__FILE__)
+    errors << "Map069 full-rebuild guard missing" unless
+      maintenance_source.include?("Full Test Hub rebuild is disabled")
+    errors << "Map058 full-rebuild guards missing" unless
+      maintenance_source.scan(/legacy generator rebuilds (?:Map058|Map057\/Map058)/).length == 2
+    if File.file?(path)
+      map = load_data(path)
+      errors << "Map069 still documents the obsolete F8 shortcut" if
+        map.instance_variable_get(:@note).to_s.include?("F8") ||
+        (map.instance_variable_get(:@events) || {}).values.compact.any? do |event|
+          (event.instance_variable_get(:@pages) || []).any? do |page|
+            (page.instance_variable_get(:@list) || []).any? do |command|
+              command_code(command) == 401 && command_parameters(command)[0].to_s.include?("F8")
+            end
+          end
+        end
+    end
+    runtime_scripts = load_data("Data/Scripts.rvdata2")
+    runtime = runtime_scripts.find {|entry| entry[1].to_s.strip == "WCF Test Hub" }
+    errors << "WCF Test Hub runtime script missing" unless runtime
+    errors << "WCF Test Hub runtime script is not synchronized" if runtime &&
+      Zlib::Inflate.inflate(runtime[2]) != source
+    hub_index = runtime_scripts.index(runtime)
+    main_index = runtime_scripts.index {|entry| entry[1].to_s.strip == "Main" }
+    phone_index = runtime_scripts.index {|entry| entry[1].to_s.strip == "Custom Menu" }
+    errors << "WCF Test Hub is not safely placed after phone scripts and before Main" unless
+      hub_index && main_index && phone_index && phone_index < hub_index && hub_index < main_index
+    production_links = Dir.glob("Data/Map[0-9][0-9][0-9].rvdata2").reject {|item| item.end_with?("Map069.rvdata2") }.flat_map do |map_path|
+      map = load_data(map_path)
+      (map.instance_variable_get(:@events) || {}).values.compact.flat_map do |event|
+        (event.instance_variable_get(:@pages) || []).flat_map do |page|
+          (page.instance_variable_get(:@list) || []).select do |command|
+            command_code(command) == 201 && command_parameters(command)[1].to_i == 69
+          end
+        end
+      end
+    end
+    errors << "A production map links into Map069" unless production_links.empty?
+    puts "TEST_HUB_AUDIT|errors=#{errors.length}|map=69|phone=full|production_links=#{production_links.length}"
+    errors.each {|error| puts "TEST_HUB_ERROR|#{error}" }
+    raise "Route test hub audit failed" unless errors.empty?
+  end
 end
 
 command = ARGV.shift
 case command
 when "compare-scripts"
   RVData2Audit.compare_scripts
+when "audit-writer-dialogue"
+  RVData2Audit.apply_writer_dialogue_feedback(ARGV.fetch(0), write: false)
+when "apply-writer-dialogue"
+  RVData2Audit.apply_writer_dialogue_feedback(ARGV.fetch(0), write: true)
+when "frame-map006-cg"
+  RVData2Audit.frame_map006_cg
+when "fix-writer-sug088-line-length"
+  RVData2Audit.fix_writer_sug088_line_length
+when "audit-dialogue-line-limits"
+  RVData2Audit.audit_dialogue_line_limits(ARGV.map(&:to_i))
+when "reflow-tested-dialogue"
+  RVData2Audit.reflow_tested_dialogue(ARGV.map(&:to_i))
+when "audit-prep-map-variants"
+  RVData2Audit.audit_prep_map_variants
+when "dump-map-infos"
+  RVData2Audit.dump_map_infos
+when "dump-bgm-usage"
+  RVData2Audit.dump_bgm_usage
+when "install-scene-bgm-plan"
+  RVData2Audit.install_scene_bgm_plan
+when "audit-scene-bgm-plan"
+  RVData2Audit.audit_scene_bgm_plan
+when "disable-map057-kul-dimming"
+  RVData2Audit.disable_map057_kul_dimming
+when "audit-map057-kul-dimming"
+  RVData2Audit.audit_map057_kul_dimming_disabled
+when "apply-requested-writer-route-fixes"
+  RVData2Audit.requested_writer_route_fixes
+when "fix-checkout-variant-indent"
+  RVData2Audit.fix_checkout_variant_indent
+when "audit-requested-writer-route-fixes"
+  RVData2Audit.audit_requested_writer_route_fixes
+when "archive-legacy-preparation-maps"
+  RVData2Audit.archive_legacy_preparation_maps
+when "center-silverwing-opening-camera"
+  RVData2Audit.center_silverwing_opening_camera
+when "repair-all-shared-preparation-sequences"
+  RVData2Audit.repair_all_shared_preparation_sequences
+when "audit-all-shared-preparation-sequences"
+  RVData2Audit.audit_all_shared_preparation_sequences
+when "fix-market-prep-duplicate-sleep-reminder"
+  RVData2Audit.fix_market_prep_duplicate_sleep_reminder
+when "audit-market-prep-sleep-reminders"
+  RVData2Audit.audit_market_prep_sleep_reminders
+when "repair-supermarket-route-dialogue-matrix"
+  RVData2Audit.repair_supermarket_route_dialogue_matrix
+when "audit-supermarket-route-dialogue-matrix"
+  RVData2Audit.audit_supermarket_route_dialogue_matrix
+when "gate-home-storage-key-with-form-change"
+  RVData2Audit.gate_home_storage_key_with_form_change
+when "enhance-atlantis-parallax-chase"
+  RVData2Audit.enhance_atlantis_parallax_chase
+when "audit-atlantis-parallax-chase"
+  RVData2Audit.audit_atlantis_parallax_chase
+when "install-wanderer-christmas-scene-layers"
+  RVData2Audit.install_wanderer_christmas_scene_layers
+when "repair-wanderer-snow-rescue-sequence"
+  RVData2Audit.repair_wanderer_snow_rescue_sequence
+when "extend-wanderer-prepare-snowbuild-and-sleep"
+  RVData2Audit.extend_wanderer_prepare_snowbuild_and_sleep
+when "install-snowman-buried-animation"
+  RVData2Audit.install_snowman_buried_animation
+when "repair-wanderer-free-roam-actor-state"
+  RVData2Audit.repair_wanderer_free_roam_actor_state
+when "audit-wanderer-christmas-scene-layers"
+  RVData2Audit.audit_wanderer_christmas_scene_layers
+when "audit-home-storage-key-gate"
+  RVData2Audit.audit_home_storage_key_gate
+when "frame-all-legacy-cgs"
+  RVData2Audit.frame_all_legacy_cgs
 when "dump-map"
   RVData2Audit.dump_map(Integer(ARGV.fetch(0)))
 when "diff-script"
@@ -11874,6 +21541,14 @@ when "complete-map023-old-book-shop"
   RVData2Audit.complete_map023_old_book_shop
 when "rebuild-map024-memory-intro"
   RVData2Audit.rebuild_map024_memory_intro
+when "update-map024-falling-memory-pictures"
+  RVData2Audit.update_map024_falling_memory_pictures
+when "audit-map024-falling-memory-pictures"
+  RVData2Audit.audit_map024_falling_memory_pictures
+when "update-map024-falling-memory-layers"
+  RVData2Audit.update_map024_falling_memory_layers
+when "audit-map024-falling-memory-layers"
+  RVData2Audit.audit_map024_falling_memory_layers
 when "name-atlantis-flags"
   RVData2Audit.name_atlantis_flags
 when "audit-map-state"
@@ -11886,6 +21561,50 @@ when "prepare-map027-demo"
   RVData2Audit.prepare_map027_demo_events
 when "create-atlantis-mirror-chase"
   RVData2Audit.create_atlantis_mirror_and_chase_maps
+when "implement-remade-mirror-maze-events"
+  RVData2Audit.implement_remade_mirror_maze_events
+when "install-atlantis-mirror-clone-prototype"
+  RVData2Audit.install_atlantis_mirror_clone_prototype
+when "audit-atlantis-mirror-clone-prototype"
+  RVData2Audit.audit_atlantis_mirror_clone_prototype
+when "audit-remade-mirror-maze-events"
+  RVData2Audit.audit_remade_mirror_maze_events
+when "repair-shylvie-room-transfer-landings"
+  RVData2Audit.repair_shylvie_room_transfer_landings
+when "repair-confirmed-route-transition-safety"
+  RVData2Audit.repair_confirmed_route_transition_safety
+when "audit-all-route-transfer-safety"
+  RVData2Audit.audit_all_route_transfer_safety
+when "repair-shared-prep-office-kul-handoff"
+  RVData2Audit.repair_shared_prep_office_kul_handoff
+when "audit-shared-prep-office-kul-handoff"
+  RVData2Audit.audit_shared_prep_office_kul_handoff
+when "create-route-test-hub"
+  RVData2Audit.create_route_test_hub
+when "audit-route-test-hub"
+  RVData2Audit.audit_route_test_hub
+when "remove-route-test-hub-f8"
+  RVData2Audit.remove_route_test_hub_f8
+when "install-test-hub-bgm-sampler"
+  RVData2Audit.install_test_hub_bgm_sampler
+when "audit-test-hub-bgm-sampler"
+  RVData2Audit.audit_test_hub_bgm_sampler
+when "audit-route-test-hub-event-animations"
+  RVData2Audit.audit_route_test_hub_event_animations
+when "restore-route-test-hub-intentional-animation-flags"
+  RVData2Audit.restore_route_test_hub_intentional_animation_flags
+when "install-route-test-hub-choice-cancels"
+  RVData2Audit.install_route_test_hub_choice_cancels
+when "audit-route-test-hub-choice-cancels"
+  RVData2Audit.audit_route_test_hub_choice_cancels
+when "install-test-hub-leo-branch-choices"
+  RVData2Audit.install_test_hub_leo_branch_choices
+when "audit-test-hub-leo-branch-choices"
+  RVData2Audit.audit_test_hub_leo_branch_choices
+when "install-test-hub-party-and-epilogue-choices"
+  RVData2Audit.install_test_hub_party_and_epilogue_choices
+when "audit-test-hub-party-and-epilogue-choices"
+  RVData2Audit.audit_test_hub_party_and_epilogue_choices
 when "remove-khas-awesome-light-effects"
   RVData2Audit.remove_khas_awesome_light_effects
 when "fix-atlantis-chase-exit-map"
@@ -11926,6 +21645,12 @@ when "repair-supermarket-item-route-state"
   RVData2Audit.repair_supermarket_item_route_state
 when "audit-repeated-route-state"
   RVData2Audit.audit_repeated_route_state_commands
+when "repair-bus-route-choice-branches"
+  RVData2Audit.repair_bus_route_choice_branches
+when "audit-bus-route-choice-branches"
+  RVData2Audit.audit_bus_route_choice_branches
+when "audit-all-choice-branches"
+  RVData2Audit.audit_all_choice_branches
 when "integrate-picture-gallery-assets"
   RVData2Audit.integrate_picture_gallery_assets
 when "normalize-picture-and-black-scene-messages"
@@ -11936,18 +21661,56 @@ when "merge-noodle-shared-christmas-office"
   RVData2Audit.merge_noodle_party_into_shared_christmas_office
 when "implement-atlantis-teleport-book-shylvie-route"
   RVData2Audit.implement_atlantis_teleport_book_shylvie_route
+when "install-map050-falling-characters"
+  RVData2Audit.install_map050_falling_characters
+when "audit-map050-falling-characters"
+  RVData2Audit.audit_map050_falling_characters
+when "repair-magic-book-route-kul"
+  RVData2Audit.repair_magic_book_route_kul
+when "audit-magic-book-route-kul"
+  RVData2Audit.audit_magic_book_route_kul
 when "implement-atlantis-ancient-book-hakase-route"
   RVData2Audit.implement_atlantis_ancient_book_hakase_route
 when "implement-atlantis-owner-abyss-route"
   RVData2Audit.implement_atlantis_owner_abyss_route
 when "implement-leo-shop-routes"
   RVData2Audit.implement_leo_shop_routes
+when "repair-leo-interactive-shop-maps"
+  RVData2Audit.repair_leo_interactive_shop_maps
+when "install-cafe-npc-anchor-hitboxes"
+  RVData2Audit.install_cafe_npc_anchor_hitboxes
+when "audit-cafe-npc-anchor-hitboxes"
+  RVData2Audit.audit_cafe_npc_anchor_hitboxes
 when "implement-shylvie-jewel-routes"
   RVData2Audit.implement_shylvie_jewel_routes
+when "install-wanderer-party-layers"
+  RVData2Audit.install_wanderer_party_layers
 when "repair-leo-shop-branch-state"
   RVData2Audit.repair_leo_shop_branch_state
 when "repair-leo-shop-map38-kul-reveal"
   RVData2Audit.repair_leo_shop_map38_kul_reveal
+when "polish-wanderer-routes"
+  RVData2Audit.polish_wanderer_noodle_shylvie_leo_routes
+when "finalize-wanderer-route-review"
+  RVData2Audit.finalize_wanderer_route_review
+when "stage-jewel-epilogue-kitchen"
+  RVData2Audit.stage_jewel_epilogue_kitchen
+when "convert-jewel-shop-to-free-roam"
+  RVData2Audit.convert_jewel_shop_to_free_roam
+when "fix-jewel-shop-bedroom-kul"
+  RVData2Audit.fix_jewel_shop_bedroom_kul
+when "repair-kul-transfer-handoffs"
+  RVData2Audit.repair_kul_transfer_handoffs
+when "audit-kul-transfer-handoffs"
+  RVData2Audit.audit_kul_transfer_handoffs
+when "update-hq-room-tv-parallax"
+  RVData2Audit.update_hq_room_tv_parallax_bad_end
+when "fix-map064-shylvie-layer-syntax"
+  RVData2Audit.fix_map064_shylvie_layer_syntax
+when "fix-shylvie-jewel-ending-hint-light"
+  RVData2Audit.fix_shylvie_jewel_ending_hint_light
+when "audit-reviewed-route-script-syntax"
+  RVData2Audit.audit_reviewed_route_event_script_syntax
 when "fix-invalid-game-screen-calls"
   RVData2Audit.fix_invalid_game_screen_calls
 when "inspect-system-id-range"

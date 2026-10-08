@@ -18,6 +18,11 @@ end
 
 Size = Struct.new(:width)
 
+module Graphics
+  def self.width; 640; end
+  def self.height; 480; end
+end
+
 class FakeContents
   attr_accessor :font
 
@@ -114,3 +119,90 @@ continuing.pop_message_initialize("Máy quét kêu “bíp” một tiếng.")
 raise "Continuing pop message was not resized" unless continuing.resized_target == 8
 
 puts "POP_MESSAGE_CONTINUATION_TEST|ok|target=8|resized=true"
+
+window.width = 640
+raise "Oversized pop window was not clamped left" unless
+  window.pop_message_window_x(0) == 0
+raise "Oversized pop window was not clamped right" unless
+  window.pop_message_window_x(640) == 0
+
+window.width = 300
+raise "Left-edge pop window escaped screen" unless
+  window.pop_message_window_x(20) == 0
+raise "Right-edge pop window escaped screen" unless
+  window.pop_message_window_x(620) == 340
+
+puts "POP_MESSAGE_POSITION_TEST|ok|screen=640|clamped=true"
+
+class FakeMapEffects
+  attr_accessor :x, :y, :ox, :oy, :zoom_x, :zoom_y, :angle, :mirror
+
+  def initialize
+    @x = @ox = 320
+    @y = @oy = 240
+    @zoom_x = @zoom_y = 1.3
+    @angle = 0
+    @mirror = false
+  end
+
+  def active?; true; end
+end
+
+class FakeGameMap
+  attr_reader :effects
+
+  def initialize
+    @effects = FakeMapEffects.new
+  end
+end
+
+$game_map = FakeGameMap.new
+zoomed_anchor = window.pop_message_map_effect_point(400, 200)
+raise "Map Effects zoom anchor mismatch: #{zoomed_anchor.inspect}" unless
+  zoomed_anchor == [424, 188]
+$game_map.effects.angle = 90
+rotated_anchor = window.pop_message_map_effect_point(400, 240)
+raise "Map Effects rotation anchor mismatch: #{rotated_anchor.inspect}" unless
+  rotated_anchor == [320, 344]
+$game_map = nil
+
+puts "POP_MESSAGE_MAP_EFFECTS_TEST|ok|zoom=true|rotation=true"
+
+class PopToNormalWindow < Window_Message
+  attr_reader :transition_order, :placement_height
+
+  def initialize
+    super
+    @transition_order = []
+  end
+
+  def reset_size
+    @transition_order << :reset_size
+    self.width = window_width
+    self.height = window_height
+  end
+
+  def update_placement
+    @transition_order << :update_placement
+    @placement_height = height
+    self.y = 2 * (Graphics.height - height) / 2
+  end
+
+  def create_bubble_sprite(*)
+    @transition_order << :hide_bubble
+  end
+end
+
+transition = PopToNormalWindow.new
+transition.width = 220
+transition.height = 48
+transition.instance_variable_set(:@pop_message_id, 3)
+transition.cancel_pop_message
+raise "Normal size was not restored before placement" unless
+  transition.transition_order[0, 2] == [:reset_size, :update_placement]
+raise "Placement still used pop height #{transition.placement_height}" unless
+  transition.placement_height == transition.window_height
+raise "Normal bottom message escaped screen" unless
+  transition.y + transition.height == Graphics.height
+
+puts "POP_TO_NORMAL_PLACEMENT_TEST|ok|height=#{transition.height}|bottom=#{transition.y + transition.height}"

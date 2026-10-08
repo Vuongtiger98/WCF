@@ -284,17 +284,13 @@ class Window_Message < Window_Base
     anchor_x, baseline_y, top_y = pop_message_anchor(character)
     @bubble_sprite.src_rect.set(0, 0, @bubble_sprite.bitmap.width,
       @bubble_sprite.bitmap.height / 2) if @bubble_sprite
-    self.x = anchor_x - self.width / 2
+    self.x = pop_message_window_x(anchor_x)
     self.y = top_y - self.height
     if @bubble_sprite
       @bubble_sprite.x = anchor_x - @bubble_sprite.width / 2
       @bubble_sprite.y = self.y + self.height
       @bubble_sprite.y += YES::POP_MESSAGE::EFFECT_SETTING[:bubble_offset_y]
     end
-    #---
-    end_x = self.x + self.width
-    self.x = 0 if self.x < 0
-    self.x = Graphics.width - self.width if end_x > Graphics.width
     if self.y < 0
       self.y = baseline_y
       if @bubble_sprite
@@ -304,6 +300,14 @@ class Window_Message < Window_Base
                                     @bubble_sprite.width, @bubble_sprite.height)
       end
     end
+  end
+
+  # Keep dynamically-sized pop windows inside the actual 640x480 game area.
+  # A line wider than the screen used to produce a negative x coordinate; the
+  # auxiliary face window inherited that coordinate and was clipped as well.
+  def pop_message_window_x(anchor_x)
+    maximum = [Graphics.width - self.width, 0].max
+    [[anchor_x - self.width / 2, 0].max, maximum].min
   end
 
   def pop_message_anchor(character)
@@ -325,12 +329,37 @@ class Window_Message < Window_Base
       draw_x = sprite.x + offset_x
       draw_y = sprite.y + offset_y
       top = draw_y - sprite.oy * sprite.zoom_y
-      return [draw_x, draw_y, top]
+      anchor_x, baseline_y = pop_message_map_effect_point(draw_x, draw_y)
+      _, top_y = pop_message_map_effect_point(draw_x, top)
+      return [anchor_x, baseline_y, top_y]
     end
     bitmap = Cache.character(character.character_name)
     sign = character.character_name[/^[\!\$]./]
     height = sign && sign.include?('$') ? bitmap.height / 4 : bitmap.height / 8
-    [character.screen_x, character.screen_y, character.screen_y - height]
+    draw_x = character.screen_x
+    draw_y = character.screen_y
+    anchor_x, baseline_y = pop_message_map_effect_point(draw_x, draw_y)
+    _, top_y = pop_message_map_effect_point(draw_x, draw_y - height)
+    [anchor_x, baseline_y, top_y]
+  end
+
+  # Map Effects renders the map viewport to a snapshot and then transforms that
+  # snapshot. Sprite_Character#screen_x/screen_y still report coordinates from
+  # before this transform, while Window_Message is drawn after it. Convert the
+  # pop anchor into the final on-screen coordinate so the bubble tag continues
+  # to point at the character during zoomed or rotated map scenes.
+  def pop_message_map_effect_point(screen_x, screen_y)
+    effects = $game_map.effects rescue nil
+    return [screen_x, screen_y] unless effects && effects.active?
+    dx = (screen_x - effects.ox) * effects.zoom_x
+    dy = (screen_y - effects.oy) * effects.zoom_y
+    dx = -dx if effects.mirror
+    angle = effects.angle.to_f * Math::PI / 180.0
+    cosine = Math.cos(angle)
+    sine = Math.sin(angle)
+    x = effects.x + dx * cosine - dy * sine
+    y = effects.y + dx * sine + dy * cosine
+    [x.round, y.round]
   end
   
   #--------------------------------------------------------------------------
@@ -355,7 +384,7 @@ class Window_Message < Window_Base
       end
     end
     #---
-    self.width = width
+    self.width = [width, Graphics.width].min
     self.height = fitting_height(lines)
     create_contents
   end
@@ -461,8 +490,12 @@ class Window_Message < Window_Base
   #--------------------------------------------------------------------------
   def cancel_pop_message
     @pop_message_id = nil
-    update_placement
+    # Restore the normal 4-line window before calculating its screen
+    # position. A pop window is usually much shorter; positioning that short
+    # window first and enlarging it afterwards leaves bottom messages below
+    # Graphics.height when a \cbm message immediately follows a \bm message.
     reset_size
+    update_placement
     create_bubble_sprite
   end
 
@@ -521,8 +554,11 @@ class Window_Message < Window_Base
     yes_pop_message_open_and_wait
     @face_window ||= Window_MessageFace.new
     @face_window.draw_content_face
-    @face_window.x = self.x + 8
-    @face_window.y += self.y + self.height
+    maximum_x = [Graphics.width - @face_window.width, 0].max
+    maximum_y = [Graphics.height - @face_window.height, 0].max
+    @face_window.x = [[self.x + 8, 0].max, maximum_x].min
+    @face_window.y = [[self.y + self.height - @face_window.height, 0].max,
+                      maximum_y].min
     @face_window.show_face
   end
   

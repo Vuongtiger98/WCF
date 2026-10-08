@@ -185,3 +185,5 @@ Random Event Patch.rb
 Atlantis Mirror Maze Chase.rb
 Atlantis Shrimp Fishing.rb
 WCF Snowball Rhythm.rb
+WCF Storage Memory Transition.rb
+WCF Test Hub.rb

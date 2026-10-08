@@ -48,7 +48,7 @@ Flag route đề xuất, chưa ghi vào Database: `WCF_ROUTE_GROUP`, `WCF_GIFT_I
 | Loại | ID | Tên runtime | Ý nghĩa |
 |---|---:|---|---|
 | Switch | 37 | `HQ_KEY_HINT_READY` | Đã kiểm tra cửa kho đủ ba lần |
-| Switch | 38 | `HQ_STORAGE_KEY` | Đã lấy chìa khóa ở tủ nhang |
+| Switch | 38 | `HQ_STORAGE_KEY` | Đã lấy chìa khóa ở tủ nhang sau khi có cả key hint và dạng ở nhà |
 | Switch | 39 | `HQ_STORAGE_LIGHT` | Đã bật đèn phòng kho |
 | Switch | 40 | `HQ_HOME_FORM_CHANGED` | Đã xem album và đổi sang dạng ở nhà |
 | Switch | 41 | `HQ_MEAL_DONE` | Đã hoàn thành cutscene pha mì |

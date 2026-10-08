@@ -145,6 +145,96 @@ module Light_Core
     :offset => [0,0],
   },
 
+  # Warm exploration lights carried by the Player after taking fire from the
+  # maze barrels. Both remain dynamic and respect Map028 Region-height shadows.
+  "maze_player_amber" => {
+    :light => "maze_amber_clear",
+    :opacity => 255, :variation => 0,
+    :static => false, :shadows => true,
+    :offset => [0,0],
+  },
+
+  "maze_player_amber_wide" => {
+    :light => "maze_amber_clear_wide",
+    :opacity => 255, :variation => 0,
+    :static => false, :shadows => true,
+    :offset => [0,0],
+  },
+
+  # Permanent navigation pools. Static sources pre-render their Region
+  # shadows once, allowing the long maze to use many lights efficiently.
+  "maze_cyan_static" => {
+    :light => "maze_cyan_clear",
+    :opacity => 215, :variation => 5,
+    :static => true, :shadows => true,
+    :offset => [0,0],
+  },
+
+  "maze_violet_static" => {
+    :light => "maze_violet_clear",
+    :opacity => 195, :variation => 7,
+    :static => true, :shadows => true,
+    :offset => [0,0],
+  },
+
+  "maze_exit_beacon" => {
+    :light => "maze_cyan_clear_wide",
+    :opacity => 245, :variation => 3,
+    :static => true, :shadows => true,
+    :offset => [0,0],
+  },
+
+  "maze_barrel_fire" => {
+    :light => "maze_amber_clear",
+    :opacity => 215, :variation => 22,
+    :static => true, :shadows => true,
+    :offset => [0,0],
+  },
+
+  # Low red pools keep the Other1 spike row readable against the dark
+  # parallax. The manager switches to the brighter preset while a spike is
+  # rising or exposed, turning the light itself into an advance warning.
+  "maze_spike_dim" => {
+    :light => "red",
+    :opacity => 85, :variation => 10,
+    :static => true, :shadows => false,
+    :offset => [0,0],
+  },
+
+  "maze_spike_warning" => {
+    :light => "red",
+    :opacity => 185, :variation => 28,
+    :static => true, :shadows => false,
+    :offset => [0,0],
+  },
+
+  # Moving warning light attached to the rolling boulder in Map028. It must
+  # remain dynamic so KUL follows the event across the dark corridor.
+  "maze_boulder_warning" => {
+    :light => "maze_amber_clear",
+    :opacity => 225, :variation => 18,
+    :static => false, :shadows => false,
+    :offset => [0,0],
+  },
+
+  # The retreat gauntlet highlights its newly locked exit and the remote
+  # release button. Both sources are static because their events do not move.
+  "maze_door_lock" => {
+    :light => "red",
+    :opacity => 205, :variation => 18,
+    :static => true, :shadows => false,
+    :offset => [0,0],
+  },
+
+  "maze_button_target" => {
+    :light => "maze_amber_clear",
+    # Keep this below KUL's 255 ceiling and disable per-frame variation.
+    # The previous 245+rand(22) overflowed and produced black flicker.
+    :opacity => 235, :variation => 0,
+    :static => true, :shadows => false,
+    :offset => [0,0],
+  },
+
   # Cutscene character light for maps whose temporary/blank height data must
   # not cast a shadow over the light source itself. Uses the same small.png.
   "actor_small" => {
@@ -171,6 +261,23 @@ module Light_Core
     :light => "violet",
     :opacity => 190, :variation => 18,
     :static => false, :shadows => true,
+    :offset => [0,0],
+  },
+
+  # Fixed pools of cold colour for the painted mirror corridor.  These do not
+  # cast tile shadows: the corridor itself is a parallax illustration, so a
+  # height-map shadow would only obscure the authored broken mirrors.
+  "atlantis_eerie_violet" => {
+    :light => "violet",
+    :opacity => 205, :variation => 14,
+    :static => true, :shadows => false,
+    :offset => [0,0],
+  },
+
+  "atlantis_eerie_blue" => {
+    :light => "blue",
+    :opacity => 195, :variation => 10,
+    :static => true, :shadows => false,
     :offset => [0,0],
   },
   

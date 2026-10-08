@@ -65,6 +65,248 @@ module WCF_SNOWBALL
   end
 end
 
+#==============================================================================
+# ** Wanderer Christmas layer cutscenes
+#------------------------------------------------------------------------------
+# The authored images are full-map transparent layers (1440x1344), not
+# character sheets.  Each vignette owns its KUL transition: camera movement,
+# sprite changes and layer cleanup happen behind black.  The painted action is
+# the only map image exposed, and the helper returns to black so dialogue can
+# continue without briefly showing the live staging underneath.
+#==============================================================================
+class Game_Interpreter
+  WCF_WANDERER_LAYER_SCENES = {
+    :prepare => {
+      :frames => ["Wanderer_Party_prepare"],
+      :focus => [15, 25], :holds => [90], :loops => 1
+    },
+    :snowbuild => {
+      :frames => ["Wanderer_Party_snowbuild_2",
+        "Wanderer_Party_snowbuild_1"],
+      :focus => [34, 23], :holds => [10, 10], :loops => 10
+    },
+    :snowkitchen => {
+      :frames => (1..5).map {|id| "Wanderer_Party_snowkitchen_#{id}" },
+      :focus => [30, 16], :holds => [8, 8, 8, 8, 24], :loops => 1
+    },
+    :snowmeet => {
+      :frames => (1..5).map {|id| "Wanderer_Party_snowmeet#{id}" },
+      :focus => [21, 34], :holds => [8, 8, 8, 8, 24], :loops => 1
+    },
+    :phuchoi => {
+      :frames => ["Wanderer_Party_phuchoi"] +
+        (1..6).map {|id| "Wanderer_Party_phuchoi_#{id}" },
+      :focus => [18, 24], :holds => [8, 8, 8, 8, 8, 8, 24], :loops => 1
+    }
+  }
+
+  # $HaiQuy_Snowman contains two painted rows in the first half of a padded
+  # 3x4-style canvas: snowman poses in logical row 1 and normal Hải Quỳ in
+  # logical row 2. The buried overlay must crop one quarter of the full canvas
+  # height; using one half exposes both painted rows at once.
+  def wcf_snowman_buried_begin(event_id = 2)
+    wcf_snowman_buried_hide
+    event = $game_map.events[event_id]
+    return unless event
+    $game_temp.instance_variable_set(:@wcf_snowman_buried_event_id, event_id)
+    followers = $game_player.followers
+    @wcf_snowman_followers_visible = followers.visible
+    followers.visible = false
+    followers.refresh
+    # The buried pose replaces both possible Hải Quỳ renderers on Map038:
+    # the player and the NPC anchor. Transparency alone is not sufficient
+    # because a player refresh can restore the normal character sprite while
+    # the custom snowman overlay is still active.
+    $game_player.set_graphic("", 0)
+    $game_player.transparent = true
+    event.set_graphic("", 0)
+    event.transparent = true
+    scene = SceneManager.scene
+    spriteset = scene.respond_to?(:spriteset) ? scene.spriteset : nil
+    viewport = spriteset ? spriteset.instance_variable_get(:@viewport1) : nil
+    sprite = Sprite.new(viewport)
+    sprite.bitmap = Cache.character("$HaiQuy_Snowman")
+    sprite.z = event.screen_z + 2
+    @wcf_snowman_buried_sprite = sprite
+    @wcf_snowman_buried_event = event
+    wcf_snowman_buried_frame(0)
+    wcf_snowman_buried_update_position
+  end
+
+  def wcf_snowman_buried_frame(frame)
+    sprite = @wcf_snowman_buried_sprite
+    return unless sprite && !sprite.disposed? && sprite.bitmap
+    bitmap = sprite.bitmap
+    left = bitmap.width * frame / 3
+    right = bitmap.width * (frame + 1) / 3
+    frame_width = right - left
+    frame_height = bitmap.height / 4
+    sprite.src_rect.set(left, 0, frame_width, frame_height)
+    sprite.ox = frame_width / 2
+    sprite.oy = frame_height
+  end
+
+  def wcf_snowman_buried_update_position
+    sprite = @wcf_snowman_buried_sprite
+    event = @wcf_snowman_buried_event
+    return unless sprite && !sprite.disposed? && event
+    # A page refresh or another cutscene command must never restore either
+    # normal Hải Quỳ renderer while the custom snowman overlay is active.
+    $game_player.set_graphic("", 0) unless $game_player.character_name.empty?
+    $game_player.transparent = true
+    event.set_graphic("", 0) unless event.character_name.empty?
+    event.transparent = true
+    sprite.x = event.screen_x
+    sprite.y = event.screen_y
+    sprite.z = event.screen_z + 2
+  end
+
+  def wcf_snowman_buried_animate
+    return unless @wcf_snowman_buried_sprite
+    [[0, 8], [1, 18], [2, 36]].each do |frame, duration|
+      wcf_snowman_buried_frame(frame)
+      duration.times do
+        wcf_snowman_buried_update_position
+        Fiber.yield
+      end
+    end
+  end
+
+  def wcf_snowman_buried_hide
+    sprite = @wcf_snowman_buried_sprite
+    sprite.dispose if sprite && !sprite.disposed?
+    @wcf_snowman_buried_sprite = nil
+    @wcf_snowman_buried_event = nil
+    $game_temp.instance_variable_set(:@wcf_snowman_buried_event_id, nil) if $game_temp
+    unless @wcf_snowman_followers_visible.nil?
+      followers = $game_player.followers
+      followers.visible = @wcf_snowman_followers_visible
+      followers.refresh
+      @wcf_snowman_followers_visible = nil
+    end
+  end
+
+  # Restore the authored Map038 free-roam composition after a snow-rescue
+  # cutscene. Coordinates come from the current map data, so editor changes to
+  # event positions remain authoritative. Call this only after the route's
+  # free-roam switch has been enabled and its event pages have refreshed.
+  def wcf_wanderer_restore_free_roam
+    return unless $game_map.map_id == 38
+    wcf_snowman_buried_hide
+    cast = {
+      3 => ["$Shylvie_giangsinh", 0],
+      4 => ["$Kohi_giangsinh", 0],
+      5 => ["$Leo_giangsinh", 0],
+      6 => ["$Hakasa_GiangSinh", 0]
+    }
+    cast.each do |id, graphic|
+      event = $game_map.events[id]
+      source = event && event.instance_variable_get(:@event)
+      next unless event && source
+      event.moveto(source.x, source.y)
+      event.set_graphic(graphic[0], graphic[1])
+      page = event.instance_variable_get(:@page)
+      if page
+        event.instance_variable_set(:@through, page.through)
+        event.instance_variable_set(:@direction_fix, page.direction_fix)
+        event.instance_variable_set(:@walk_anime, page.walk_anime)
+        event.instance_variable_set(:@step_anime, page.step_anime)
+        event.set_direction(page.graphic.direction)
+      end
+      event.opacity = 255
+      event.transparent = false
+    end
+    anchor = $game_map.events[2]
+    source = anchor && anchor.instance_variable_get(:@event)
+    if anchor && source
+      anchor.moveto(source.x, source.y)
+      anchor.set_graphic("", 0)
+      anchor.transparent = true
+      anchor.instance_variable_set(:@through, true)
+      $game_player.moveto(source.x, source.y)
+    end
+    $game_player.set_graphic("!$HaiQuy_GiangSinh", 0)
+    $game_player.transparent = false
+    $game_player.instance_variable_set(:@through, false)
+    $game_player.instance_variable_set(:@direction_fix, false)
+    $game_player.instance_variable_set(:@walk_anime, true)
+    $game_player.instance_variable_set(:@step_anime, false)
+    $game_player.set_direction(2)
+  end
+
+  def wcf_wanderer_layer_scene(kind)
+    return unless $game_map.map_id == 38
+    scene = WCF_WANDERER_LAYER_SCENES[kind.to_sym]
+    return unless scene
+    characters = [$game_player]
+    characters.concat((2..6).map {|id| $game_map.events[id] }.compact)
+    old_visibility = characters.map {|character| character.transparent }
+    $game_map.shadows.set_color(0, 0, 0)
+    $game_map.shadows.show
+    $game_map.shadows.set_opacity(255)
+    wcf_snowman_buried_hide if [:snowmeet, :snowkitchen].include?(kind.to_sym)
+    characters.each {|character| character.transparent = true }
+    ms_pro_cam_ignore_player(true)
+    ms_pro_cam_center_at(scene[:focus][0], scene[:focus][1], 20)
+    ms_pro_cam_wait_for_scrolling
+    begin
+      first = scene[:frames][0]
+      layer(38, 2, [first, 0, 0, 255, 180, 0, 0, 0])
+      refresh_layers
+      $game_map.shadows.set_opacity(0, 24)
+      24.times { Fiber.yield }
+      scene[:loops].times do |loop_index|
+        scene[:frames].each_with_index do |name, index|
+          unless loop_index == 0 && index == 0
+            layer(38, 2, [name, 0, 0, 255, 180, 0, 0, 0])
+            refresh_layers
+          end
+          scene[:holds][index].times { Fiber.yield }
+        end
+      end
+      $game_map.shadows.set_opacity(255, 24)
+      24.times { Fiber.yield }
+    ensure
+      $game_map.shadows.set_opacity(255)
+      del_layer(38, 2)
+      characters.each_with_index do |character, index|
+        character.transparent = old_visibility[index]
+      end
+      ms_pro_cam_center_at(14, 21, 20)
+      ms_pro_cam_wait_for_scrolling
+    end
+  end
+end
+
+# Hide the standard player/event renderers at the Sprite layer as well as at
+# the Game_Character layer. This closes the one-frame/page-refresh gap that
+# could expose normal Hải Quỳ underneath the custom snowman sprite.
+class Sprite_Character < Sprite_Base
+  alias wcf_snowman_guard_update update
+  def update
+    wcf_snowman_guard_update
+    event_id = $game_temp &&
+      $game_temp.instance_variable_get(:@wcf_snowman_buried_event_id)
+    event = event_id && $game_map ? $game_map.events[event_id] : nil
+    # Some saves/projects can still have a follower or compatibility sprite
+    # carrying Hải Quỳ's graphic. While the buried overlay is active, every
+    # standard Hải Quỳ character renderer must be hidden, not only the direct
+    # player and E2 instances.
+    name = @character ? @character.character_name.to_s : ""
+    hai_quy_graphic = !!(name =~ /HaiQuy|Hai_Quy|Base_HQ/i)
+    guarded = event_id &&
+      (@character.equal?($game_player) || (event && @character.equal?(event)) ||
+       hai_quy_graphic)
+    if guarded
+      @wcf_snowman_forced_hidden = true
+      self.visible = false
+    elsif @wcf_snowman_forced_hidden
+      @wcf_snowman_forced_hidden = false
+      self.visible = true
+    end
+  end
+end
+
 class Scene_WCFSnowballRhythm < Scene_Base
   PLAYER_X = 104
   ENEMY_X  = Graphics.width - 104

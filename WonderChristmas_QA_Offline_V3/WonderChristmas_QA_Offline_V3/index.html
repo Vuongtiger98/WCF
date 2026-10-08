@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Wonder Christmas Fiesta — Playtest</title>
+  <link rel="stylesheet" href="app/style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">WCF</span><div>Wonder Christmas Fiesta<small>Playtest checklist</small></div></div>
+      <nav class="nav">
+        <a href="#dashboard" data-nav="dashboard">Tổng quan</a>
+        <a href="#routes" data-nav="routes">Route <span id="navRoutesCount"></span></a>
+        <a href="#scenes" data-nav="scenes">Scene</a>
+        <a href="#maps" data-nav="maps">Map tương tác</a>
+        <a href="#minigames" data-nav="minigames">Minigame</a>
+        <a href="#dialogues" data-nav="dialogues">Toàn bộ thoại</a>
+        <a href="#issues" data-nav="issues">Kết quả gửi đi <span id="navIssuesCount"></span></a>
+      </nav>
+      <div class="sidebar-actions">
+        <button class="btn ghost wide" id="importBtn">Nhập báo cáo</button>
+        <button class="btn primary wide" id="exportBtn">Xuất báo cáo</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="search-wrap">
+          <input id="globalSearch" type="search" placeholder="Tìm route, Shylvie, Map43..." autocomplete="off">
+          <div id="searchResults" class="search-results hidden"></div>
+        </div>
+        <div class="top-actions">
+          <span id="saveIndicator" class="save-indicator">Đã lưu</span>
+          <button class="icon-btn" id="resetBtn" title="Xóa toàn bộ tiến độ">⋯</button>
+        </div>
+      </header>
+      <div id="content" class="content"></div>
+    </main>
+  </div>
+
+  <input id="importInput" type="file" accept=".html,.json,text/html,application/json" class="hidden">
+  <div id="modalWrap" class="hidden"></div>
+
+  <script src="data/checklist.js"></script>
+  <script src="data/frames.js"></script>
+  <script src="data/dialogues.js"></script>
+  <script src="app/app.js"></script>
+</body>
+</html>

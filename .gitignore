@@ -1,5 +1,12 @@
 # Local playtest/runtime data
 /Save/
+/Save*.rvdata2
+/Mapshots/
+/Screenshots/
+
+# Office temporary lock files
+~$*.docx
+**/~$*.docx
 
 # Local project archives
 /*.7z

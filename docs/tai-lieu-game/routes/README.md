@@ -26,19 +26,19 @@ Map047 vẫn là map chuẩn bị riêng. Map038 dùng page theo Switch 55/58/59
 
 ## Route sách dịch chuyển cho Shylvie
 
-Flow runtime: Map023 E012 chọn sách → E002/E003 mang sách ra quầy → Map049 chuẩn bị/ngủ quên → Map038 tiệc chung và free roam/ném tuyết → E119 trao sách → Map050 hậu truyện → Map036 ending hint ID 19 → Title.
+Flow runtime: Map023 E012 chọn sách → E002/E003 mang sách ra quầy → Map037 page `HQ_PREP_SCENE_VARIANT=49` chuẩn bị/ngủ quên → Map038 tiệc chung và free roam/ném tuyết → E119 trao sách → Map050 hậu truyện → Map036 ending hint ID 19 → Title. Map049 chỉ còn là map archive, không nằm trên runtime flow.
 
-Lighting của flow này là KUL-only: mọi điểm chuyển tối/sáng dùng `$game_map.shadows.set_opacity`; các page riêng của route không được dùng Event Fade In/Fade Out, Tint Screen, Common Event 3 hoặc tone của Map Effects.
+Map023 đóng KUL về opacity 255 trước khi transfer no-fade. Trên Map037, KUL kế thừa được hạ về 0 và hide trong lúc Fade Out native đầu tiên đang che việc dựng phòng. Ở cuối Map037, Fade Out native vẫn phủ được cả CG; trong lúc màn hình đã đen, event bật KUL opacity 255, ẩn CG rồi Fade In native lại dưới lớp KUL trước khi transfer. Vì vậy `Game_Screen` sang Map038 có brightness 255 nhưng khung hình vẫn được KUL che kín. Map038 dựng Player/NPC xong rồi mới reveal KUL `255 → 0`, chờ đủ 30 frame và sau đó mới hiện câu chào.
 
 Map023 chỉ khóa E036 sau khi `ATL_BOOK_ID = 2`, không thay đổi nhánh nói chuyện chủ tiệm trước. Vì Hải Quỳ tỉnh muộn, page riêng trên Map038 chỉ giữ câu chào `Quỳ!! Hello!` ở B3044 rồi mở free roam; không chạy lại đoạn đến sớm/lập trình Sierra/chuẩn bị tiệc của route khác. Switch 61/62/64 và E119 giữ tile, vị trí NPC, hệ cửa phòng/bếp, route siêu thị và route mì cay nguyên vẹn. Nội dung trao quà và hậu truyện dùng compact B3033–B3044, B3074–B3091 và B3131–B3149. Map036 dùng nguyên ending hint B2740–B2745 với `ENDING_HINT_ID = 19`; nguồn không chỉ định ending CG cho nhánh này nên không tự gán ảnh.
 
 ## Route Ma Vương Cổ Đại cho Hakase
 
-Flow runtime: Map023 E036 chọn sách → E002/E003 checkout → Map051 chuẩn bị/ngủ quên → Map038 free roam/ném tuyết → E120 trao sách → Map052 hậu truyện → Map036 ending hint ID 20 → Title.
+Flow runtime: Map023 E036 chọn sách → E002/E003 checkout → Map037 page `HQ_PREP_SCENE_VARIANT=51` chuẩn bị/ngủ quên → Map038 free roam/ném tuyết → E120 trao sách → Map052 hậu truyện → Map036 ending hint ID 20 → Title. Map051 chỉ còn là map archive, không nằm trên runtime flow.
 
 Route dùng state riêng: Switch 66/67/68/69 và Variable 53, không dùng chung state của sách Shylvie. Nội dung lấy từ B3027–B3032, B3037–B3044, B3045–B3073, B3110–B3130 và hint B2746–B2760. `VayCV` (Gallery/Picture 80) và `Oplung` (74) xuất hiện đúng lúc trong vòng trao quà. Không có asset Hakase dạng mới hoặc ending CG trong project, nên giữ graphic hiện hữu và không tự thay bằng tài nguyên khác.
 
-Toàn flow là KUL-only. Các page route không gọi Event Fade In/Fade Out, Tint Screen, CE03/CE05 hoặc tone của Map Effects. Nhánh nói chuyện chủ tiệm trước và ending Vực Sâu không bị nhập vào route tiêu chuẩn này.
+Quy tắc handoff ánh sáng giống route Shylvie: Map023 đóng KUL; Map037 dùng native fade để phủ cả lúc thay asset/CG, cài KUL đen khi native screen đang đen rồi Fade In native trước transfer; Map038 reveal KUL sau khi dựng nhân vật. Các page không dùng Tint Screen, CE03/CE05 hoặc tone của Map Effects. Nhánh nói chuyện chủ tiệm trước và ending Vực Sâu không bị nhập vào route tiêu chuẩn này.
 
 ## Route nói với chủ tiệm sách trước
 
@@ -56,7 +56,7 @@ Flow runtime: Map013 E097 tương tác lần ba → Map056 tin nhắn riêng v�
 
 Ba kết quả giữ đúng compact: áo choàng tàng hình cho Hakase, cà phê Luminous cho Kohi và viên đá nứt thành khiên huyền thoại cho Shylvie. `Datangcv`/Gallery 54 xuất hiện lúc mua viên đá; `Khienriset`/65 và CG15/32 chỉ xuất hiện khi đá vỡ ở tiệc. Áo choàng dùng Gallery 43, cà phê dùng 51.
 
-Map057 dùng `$VapeEden` tại quầy. Ba frame hàng đầu được điều khiển bằng custom Move Route theo nhịp 60 frame mỗi hình; không dùng stepping animation mặc định. `$Falling` chưa được dùng vì route này không có chỉ dẫn Hải Quỳ, Shylvie và Leo rơi tự do.
+Map057 dùng `$VapeEden` tại quầy. Ba frame hàng đầu được điều khiển bằng custom Move Route theo nhịp 60 frame mỗi hình; không dùng stepping animation mặc định. `!$Falling` được dành riêng cho hậu truyện sách dịch chuyển trên Map050, không dùng trong Map057.
 
 Toàn flow mới dùng KUL để tối/sáng và transfer no-fade sau khi KUL đã đen. Không dùng Fade Screen, Tint Screen hoặc tone của Map Effects. Các face/chân dung chưa có được ghi placeholder text thay vì mượn asset sai nhân vật.
 

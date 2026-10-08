@@ -15,13 +15,14 @@ Các file được script tham chiếu trong `Graphics/PhoneMenu/` gồm nền �
 ## Các hệ thống đồ họa
 
 - `Graphics/Layers/`: layer cho Galv Layer Graphics, bao gồm `Bathroom_top` ở Map015.
-- `Graphics/Lights/`: tài nguyên KUL Graphics.
+- `Graphics/Lights/`: tài nguyên KUL Graphics. Bộ mê cung Atlantis gồm `maze_amber_clear` 288×288, `maze_amber_clear_wide` 384×384, `maze_cyan_clear` 320×320, `maze_cyan_clear_wide` 384×384 và `maze_violet_clear` 320×320; giữ nền RGB đen đục vì KUL nén alpha khi cache light.
 - `Graphics/Fog/` hoặc thư mục fog cấu hình: KUL/Victor fog.
 - `Graphics/Parallaxes/`: animated/parallax lock.
 - `Graphics/Weather/`: MOG Weather EX.
 - `Graphics/System/`: weather, message và effect system.
 - `Graphics/Invaders/`: backdrop, alien0–4, alien4S, lazor/elazor, orbit bullet, powerup và player của BulletHell.
 - `Graphics/Catto/`, `Graphics/Pictures/`, `Graphics/Characters/`, `Graphics/Faces/`: asset gameplay, CG, sprite và portrait còn lại.
+- Bộ `Graphics/Pictures/falling_*.png` gồm 17 layer trong suốt 544×544 dùng riêng cho Map024: `falling_base`, `falling_path`, tám frame `falling_HQ_ded_1`–`ded_8` và bảy frame `falling_HQ_faint_1`–`faint_7`. Tất cả đã được artist canh chung gốc; không crop hoặc tự căn lại từng file. Trong cửa sổ game 640×480, cả bộ đặt tại `(48,32)` để vùng thiết kế 544×416 nằm giữa màn hình (không căn giữa toàn bitmap vuông). Z-order runtime là base (Picture 60), Hải Quỳ (61), path (62).
 
 ## Face còn thiếu sau lượt gắn portrait route
 
@@ -58,7 +59,7 @@ Các file được script tham chiếu trong `Graphics/PhoneMenu/` gồm nền �
 ## Route hỏi Leo
 
 - `$VapeEden`: chủ tiệm ma pháp trên Map057. Sheet 126×220; dùng ba frame hàng đầu, mỗi frame giữ 60 tick rồi lặp.
-- `!$Falling`: sheet 126×220; hai frame đầu của hàng 1/2/3 lần lượt là Hải Quỳ/Shylvie/Leo rơi tự do. Route hỏi Leo không có cảnh rơi phù hợp nên chưa sử dụng. Khi dùng về sau, MOG Character Effect cung cấp thuộc tính `angle` để nghiêng nhẹ event.
+- `!$Falling`: sheet 126×220, lưới single-character 3×4 với ô 42×55. Hai frame đầu của hàng 1/2/3 lần lượt là Hải Quỳ/Shylvie/Leo rơi tự do; cột thứ ba và hàng thứ tư trong suốt. Map050 lặp đúng hai frame/người bằng forced Move Route và dùng thuộc tính `angle` của MOG Character Effect để dao động độc lập trong khoảng ±8°.
 - Thiếu face Eden, chủ tiệm cà phê, chủ tiệm vũ khí và sprite/face Drosalya. Runtime hiện placeholder text tại đúng vị trí; không mượn face nhân vật khác.
 - `Magic_Store_Base/Top`, `Isekai_Caffe_Base/Top` và `Cuahangvukhi_bas3/Cuahangvukhi_top` là ba cặp nền/layer chính thức. `Crafting_Room_Base` không thuộc route này.
 
@@ -82,4 +83,5 @@ Tên được script gọi chưa chứng minh file tồn tại. Trước mỗi r
 
 - Chưa có ảnh bình Sting 20 lít. Map038 E118 hiện một dòng cảnh báo màu trong đúng nhịp Show Picture: `[ẢNH BÌNH STING 20 LÍT]` để artist xác định vị trí thay asset. Map048 chỉ giữ bản donor/rollback.
 - Chưa có sprite sheet nấu ăn riêng. Map014 E025 dùng sprite Giáng sinh hiện có cùng animation Cast Magic/Fire làm bản demo, rồi hiện `Mibullyquy` hoặc `Mihaiquy`.
+- Bộ layer Map038 đã có đủ: `Wanderer_Party_prepare`; `snowbuild_1..2`; `snowkitchen_1..5`; `snowmeet1..5`; `phuchoi` + `phuchoi_1..6`. Tất cả là PNG trong suốt 1440×1344 căn theo tọa độ Map038, không cắt như charset. Bếp Giáng sinh dùng parallax 1440×1344 `Map_Wanderer_Office_Kitchen__Chrismast_base`.
 
