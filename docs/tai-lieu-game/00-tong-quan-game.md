@@ -362,7 +362,7 @@ Kết quả kiểm kê hiện tại có bốn hướng đồng hạng 13 scene: 
 
 - Một số cameo không ảnh hưởng cốt truyện.
 - Tương tác lặp lại quá nhiều lần.
-- Các route phụ chưa hoàn chỉnh.
+- Các route chính và route phụ trong phạm vi 33 case QA đã có runtime flow; phần còn lại tập trung vào playtest, sửa bug và thay asset placeholder.
 - CG chỉ phục vụ một gag ngắn.
 - Voice không bắt buộc để hiểu cảnh.
 

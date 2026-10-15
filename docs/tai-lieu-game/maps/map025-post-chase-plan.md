@@ -1,5 +1,7 @@
 # Cảnh clone, truy đuổi và đối đầu Atlantis — Map034, Map029, Map025
 
+> **Tài liệu lịch sử.** Map025 hiện đã nối Map029 → Map025 → Map035 → Map036. Các đoạn “dừng trước hội tụ”, prototype và hướng chạy cũ bên dưới chỉ ghi lại quá trình thiết kế; `maps/README.md` và `routes/README.md` là tài liệu hiện hành.
+
 Trạng thái: đã duyệt và triển khai bản playtest vào Map029/Map025.
 
 ## 1. Nguồn và giới hạn

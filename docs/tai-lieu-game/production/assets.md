@@ -9,7 +9,7 @@ Các file được script tham chiếu trong `Graphics/PhoneMenu/` gồm nền �
 - `Graphics/Gallery/0`: thumbnail khóa.
 - Gallery đọc ảnh từ cả `Graphics/Gallery` và `Graphics/Pictures`; không copy cùng một bitmap sang hai thư mục. Bảng ID và trạng thái gắn scene nằm tại `../../gallery-assets.md`.
 - `Graphics/Gallery` dành cho thumbnail khóa, UI và ending art vốn chỉ dùng trong Gallery/Title. CG và hình vật phẩm dùng trực tiếp bản duy nhất trong `Graphics/Pictures`.
-- Gallery hiện dành 90 slot; ID 1–81 đã có tên/file ổn định, 82–90 để trống cho nội dung sau.
+- Gallery hiện dành 90 slot. ID 82–85 là `Album_1`–`Album_4`; ID 86–90 còn dự phòng. Bảng `../../gallery-assets.md` là registry có thẩm quyền khi phạm vi ID thay đổi.
 - `Save/GlobalGallery.rvdata2` là dữ liệu unlock toàn cục, không phải asset.
 
 ## Các hệ thống đồ họa
@@ -22,7 +22,7 @@ Các file được script tham chiếu trong `Graphics/PhoneMenu/` gồm nền �
 - `Graphics/System/`: weather, message và effect system.
 - `Graphics/Invaders/`: backdrop, alien0–4, alien4S, lazor/elazor, orbit bullet, powerup và player của BulletHell.
 - `Graphics/Catto/`, `Graphics/Pictures/`, `Graphics/Characters/`, `Graphics/Faces/`: asset gameplay, CG, sprite và portrait còn lại.
-- Bộ `Graphics/Pictures/falling_*.png` gồm 17 layer trong suốt 544×544 dùng riêng cho Map024: `falling_base`, `falling_path`, tám frame `falling_HQ_ded_1`–`ded_8` và bảy frame `falling_HQ_faint_1`–`faint_7`. Tất cả đã được artist canh chung gốc; không crop hoặc tự căn lại từng file. Trong cửa sổ game 640×480, cả bộ đặt tại `(48,32)` để vùng thiết kế 544×416 nằm giữa màn hình (không căn giữa toàn bitmap vuông). Z-order runtime là base (Picture 60), Hải Quỳ (61), path (62).
+- Bộ rơi Map024 không còn nằm trong `Graphics/Pictures`. `falling_base` là parallax của map; `falling_path`, tám frame `falling_HQ_ded_1`–`ded_8` và bảy frame `falling_HQ_faint_1`–`faint_7` nằm trong `Graphics/Layers`. Tất cả dùng chung gốc 544×544 và không được crop/căn lại từng file. Runtime tạm ẩn parallax trong shot sprite Hải Quỳ xoay, phục hồi `falling_base` trước chuỗi layer, rồi chỉ hiện `falling_path` sau khi kết thúc animation và hiện lại player tại `(8,6)`.
 
 ## Face còn thiếu sau lượt gắn portrait route
 
@@ -69,7 +69,7 @@ Các file được script tham chiếu trong `Graphics/PhoneMenu/` gồm nền �
 - `Meeting Room_MovieNight_base` — 1152×800, Map062 phòng họp trong các bản office Giáng sinh.
 - `Crafting_Room_Base` — 1088×768, Map063 phòng chế tạo; interaction lấy từ compact B2540–B2584.
 
-Tên được script gọi chưa chứng minh file tồn tại. Trước mỗi route cần checklist sprite/face/emote/CG/BG/BGM/SFX/voice; chỉ kiểm tra tree/tên file, không cần đọc bitmap.
+Tên được script gọi chưa chứng minh file tồn tại. Trước mỗi route cần checklist sprite/face/emote/CG/BG/BGM/SFX/voice; chỉ kiểm tra tree/tên file, không cần đọc bitmap. Phân bổ BGM hiện hành nằm tại `../systems/audio-map.md`; scene chưa có nhạc phải fade out thay vì kế thừa BGM map trước.
 
 ## Placeholder route siêu thị
 

@@ -42,7 +42,7 @@ Pin tại ngày 25 tăng trở lại vì đã có khoảng thời gian giữa ph
 - Map022 E001 → CE16.
 - Map023 E001 → CE17.
 
-CE18 chưa gắn vào map vì scene hội tụ trao quà chưa được dựng. Khi tạo event tặng quà, gọi CE18 ngay trước khi bắt đầu vòng trao quà, không gọi từ lúc bước vào Wanderer Office nếu nhân vật còn đang chuẩn bị tiệc.
+CE18 đã được gọi trong stage chuẩn bị/tiệc dùng chung, gồm Map037 và các page route tương ứng trên Map038. Mốc này chỉ được áp ở lúc hội tụ trao quà ngày 25/12 19:00; không gọi sớm khi nhân vật vẫn đang chuẩn bị tiệc.
 
 ## Quy tắc mở rộng route
 

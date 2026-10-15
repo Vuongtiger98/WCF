@@ -1,5 +1,7 @@
 # Kế hoạch tổng thể sau khi đọc lại toàn bộ `kich ban`
 
+> **Tài liệu lịch sử.** Đây là kế hoạch trước khi route Atlantis được triển khai đầy đủ. Flow runtime hiện hành nằm trong `routes/README.md`, inventory nằm trong `maps/README.md` và registry nằm trong `systems/flags-and-variables.md`. Không dùng các trạng thái “prototype/chưa dựng” bên dưới để sửa runtime.
+
 ## 1. Phạm vi đã kiểm kê
 
 Đã đọc toàn bộ 30 file DOCX trong thư mục `kich ban`, gồm:

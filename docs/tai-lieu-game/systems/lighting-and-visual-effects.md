@@ -130,7 +130,7 @@ Không bật nhiều hệ weather/fog cho cùng một hiệu ứng. Chúng cùng
 
 - Note map bật Khas Lighting với opacity 235 và nền tối trung tính.
 - Nếu Switch 39 OFF, E001 gắn light `player_small` vào Hải Quỳ; chỉ vùng nhỏ quanh Player nhìn thấy được.
-- E014/E015 bật Switch 39, bỏ light khỏi Player và fade darkness từ 235 về 0 trong 30 frame.
+- Chỉ E015 bật Switch 39, bỏ light khỏi Player và fade darkness từ 235 về 0 trong 30 frame. E014 đã được loại khỏi luồng bật đèn.
 - Nếu quay lại khi Switch 39 đã ON, E001 giữ phòng sáng và không gắn lại player light.
 - E002 và E020 page đọc thư dọn player light trước khi transfer để ánh sáng phòng kho không theo Hải Quỳ sang map khác.
 - Map Effects tại E001 được reset về tone trung tính; blur tua ngược của E002 vẫn được giữ nguyên vì đó là hậu kỳ chuyển cảnh, không phải ánh sáng gameplay.

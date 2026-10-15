@@ -43,7 +43,12 @@ flowchart TD
     GEM --> GC["Congo Tourmaline → Shylvie"]
     GEM --> GF["Rainbow Fluorite → Hakase"]
 
-    ATLANTIS --> OWNER{"Nói với chủ tiệm trước khi tìm sách?"}
+    ATLANTIS --> HOMEATL["Nhà Hải Quỳ"]
+    HOMEATL --> ATL_PATH{"Tiếp tục hướng nào?"}
+    ATL_PATH --> OWNER{"Nói với chủ tiệm trước khi tìm sách?"}
+    ATL_PATH --> STORAGE["Phòng kho → ký ức bãi rác"]
+    STORAGE --> MAZE["Mê cung gương → vòng vây → chase"]
+    MAZE --> PAULIE["Paulie khống chế Vực Sâu<br/>ending riêng"]
     OWNER -->|Không| BOOK{"Chọn sách"}
     BOOK --> ANCIENT["Ma Vương Cổ Đại → Hakase"]
     BOOK --> TELEPORT["Dịch chuyển nâng cao → Shylvie"]
@@ -64,7 +69,10 @@ flowchart TD
     GF --> PARTY
     ANCIENT --> PARTY
     TELEPORT --> PARTY
-    PARTY --> GIFTS["Vòng trao quà theo route"]
+    PARTY --> FREE["Free roam + ném tuyết"]
+    FREE -.-> RAM["Nhặt hoặc farm đủ 10 RAM"]
+    RAM --> DIANA["Diana xuất hiện một lần"]
+    FREE --> GIFTS["Vòng trao quà theo route"]
     GIFTS --> CALL["Silver Wing gọi khẩn"]
     CALL --> LEAVE["Omega D-13 rời tiệc"]
     LEAVE --> EPILOGUE["Epilogue theo món quà/người nhận"]

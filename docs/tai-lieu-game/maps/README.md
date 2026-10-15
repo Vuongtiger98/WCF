@@ -1,52 +1,72 @@
-# Map implementation audit
+# Map runtime inventory
 
-| Map | Tên | Kích thước | Events | Đối chiếu kế hoạch |
+Số liệu dưới đây được đối chiếu trực tiếp từ `MapInfos.rvdata2` và `MapXXX.rvdata2`. Khi editor thay đổi kích thước hoặc số event, phải cập nhật bảng này từ dữ liệu thay vì sao chép bảng cũ.
+
+| Map | Tên | Kích thước | Events | Vai trò hiện tại |
 |---:|---|---:|---:|---|
 | 3 | Văn phòng Silverwing | 22×23 | 65 | Mở đầu/hub |
 | 6 | Thành phố | 110×32 | 7 | Kết nối khu mua sắm |
-| 10 | Trong xe bus | 28×22 | 2 | Transit |
-| 13 | Văn phòng Wanderer | 45×43 | 90 | Hỏi Leo/Shylvie; cửa phòng họp/chế tạo |
-| 14 | Bếp | 45×43 | 25 | Route mì cay; E025 là cutscene nấu ăn riêng |
-| 15 | Phòng tắm | 26×22 | 18 | Exploration; đã xác nhận nội dung |
+| 10 | Trong xe bus | 28×22 | 2 | Transit và bốn lựa chọn route |
+| 13 | Văn phòng Wanderer | 45×43 | 90 | Hỏi Leo/Shylvie; cửa các phòng |
+| 14 | Bếp | 45×43 | 25 | Route mì cay và bếp dùng chung |
+| 15 | Phòng tắm | 26×22 | 18 | Exploration/gag |
+| 16 | Cảnh máy sấy | 20×15 | 21 | Gag/bad ending |
 | 17 | Hành lang Silverwing | 22×36 | 2 | Kết nối/lore |
-| 19 | Siêu thị | 50×50 | 45 | Route quà chính; E045 là montage nguyên liệu mì cay |
-| 20 | Quán mì cay | 35×30 | 1 | Tile map `MyCay`; lựa chọn Tin tưởng/Có cái nịt |
-| 21 | Điểm xuống Atlantis | 17×13 | 1 | Route gate Atlantis |
-| 22 | Nhà Hải Quỳ — bản thử | 22×43 | 48 | Nhà riêng; khám phá, chìa khóa, pha mì |
-| 23 | Tiệm sách phép Atlantis | 30×40 | 54 | `Old_Book_Shop_Base/Top`; cảnh đến tiệm và toàn bộ tương tác đã dựng |
-| 24 | Ký ức bãi rác | 20×14 | 1 | Mở đầu cảnh dí sau khi đọc thư |
-| 25 | Atlantis — Đối đầu Vực Sâu | 17×13 | 3 | Cảnh số 5: Dahria, Oni Onii và đòn kết liễu; visual placeholder |
-| 26 | Phòng kho nhà Hải Quỳ | 17×13 | 13 | `Storage_Base/Top`; băng, nhật ký, lá thư |
-| 28 | Mê cung gương Atlantis | 37×68 | 49 | Parallax `Dungeon`; 6 gương, 7 scare trigger, 6 clone, 7 thùng và 21 nguồn sáng môi trường có Region shadow |
-| 29 | Hành lang truy đuổi Atlantis | 20×40 | 22 | Parallax dọc; endless-runner QTE tối thiểu 60 giây, 11 clone và 9 nguồn sáng KUL |
-| 34 | Atlantis — Vòng vây bản thể | 20×20 | 17 | Cutscene parallax 11 clone, 4 nguồn sáng KUL, nối Map28 → Map34 → Map29 |
-| 35 | Phòng Hải Quỳ — Đêm muộn | 21×17 | 3 | Epilogue route rượt đuổi; Group Chat và mở khóa ending CG |
-| 36 | After Ending Hint | 17×13 | 2 | Hub hint dùng chung; Variable 41 chọn nội dung route |
-| 41 | Phòng Hải Quỳ ở nhà | 21×17 | 17 | `HQ_Room_Morning_Base/Top`; khám phá nối từ cầu thang Map022; compact B3331–B3376 |
-| 42 | Phòng Hải Quỳ — Wanderer | 20×14 | 14 | `HQ_Room_Normal`; compact B3236–B3258 |
-| 43 | Phòng Shylvie | 20×18 | 23 | `CV_Room_Lightoff/Lighton_Base`; compact B3536–B3557 |
-| 44 | Phòng Leo | 17×17 | 20 | `Leo_Room_Base`; compact B3495–B3516 |
-| 45 | Phòng Hakase | 17×17 | 17 | `MystRoom_Base`; compact B3377–B3401 |
-| 46 | Phòng Kohi | 17×18 | 13 | `Kohi_Room_Base`; compact B3517–B3535 |
-| 47 | Phòng Hải Quỳ — Chuẩn bị mì cay | 21×17 | 2 | Hai nhánh chuẩn bị/ngủ; `HQ_Room_Midnight_Base/Top` |
-| 48 | Wanderer Office — Tiệc mì cay | 45×43 | 8 | Donor/rollback; có cửa phòng họp/chế tạo |
-| 49 | Phòng Hải Quỳ — Sách tặng Shylvie | 21×17 | 2 | Chuẩn bị quà/ngủ/thay đồ; compact B3033–B3043 |
-| 50 | Hậu truyện — Sách dịch chuyển Shylvie | 45×43 | 16 | Hậu truyện phép hoán đổi; compact B3131–B3149 |
-| 51 | Phòng Hải Quỳ — Sách tặng Hakase | 21×17 | 2 | Chuẩn bị quà/ngủ/thay đồ; dùng shell KUL ổn định của Map049 |
-| 52 | Hậu truyện — Ma Vương Cổ Đại Hakase | 45×43 | 16 | Hakase hấp thụ ma lực Ma Vương; compact B3110–B3130 |
-| 54 | Wanderer Office — Tìm Hải Quỳ | 45×43 | 7 | Search cutscene; có cửa phòng họp/chế tạo |
-| 61 | Phòng họp | 36×25 | 2 | `Meeting_Room_Base`; dùng chung bởi office thường |
-| 62 | Phòng họp — Movie Night | 36×25 | 2 | `Meeting Room_MovieNight_base`; dùng chung bởi office Giáng sinh |
-| 63 | Phòng chế tạo | 34×24 | 61 | `Crafting_Room_Base`; 44 nhóm tương tác compact B2540–B2584 |
+| 19 | Siêu thị | 50×50 | 43 | Route quà; montage mì cay |
+| 20 | Quán mì cay | 35×30 | 1 | Hai nhánh Aira/Hải Quỳ |
+| 21 | Điểm xuống Atlantis | 17×13 | 1 | Transit Atlantis |
+| 22 | Nhà Hải Quỳ | 22×43 | 48 | Khám phá, chìa khóa, pha mì |
+| 23 | Tiệm sách phép Atlantis | 30×40 | 54 | Hai sách và route chủ tiệm |
+| 24 | Ký ức bãi rác | 17×14 | 2 | Layer rơi và free roam `falling_path` |
+| 25 | Đối đầu Vực Sâu | 17×13 | 3 | Paulie/Oni Onii và kết chase |
+| 26 | Phòng kho nhà Hải Quỳ | 17×13 | 12 | Nhật ký, thư và đường vào ký ức |
+| 28 | Mê cung gương Atlantis | 37×68 | 70 | Free roam, clone, bẫy và KUL |
+| 29 | Hành lang truy đuổi | 20×40 | 22 | Chase QTE 11 clone |
+| 34 | Vòng vây bản thể | 20×20 | 17 | Clone, jumpscare và chuyển sang chase |
+| 35 | Phòng Hải Quỳ — Đêm muộn | 21×17 | 2 | Epilogue chase |
+| 36 | After Ending Hint | 17×13 | 2 | Router hint bằng Variable 41 |
+| 37 | Phòng Hải Quỳ — Chuẩn bị quà | 21×17 | 3 | Stage dùng chung, Variable 83 chọn variant |
+| 38 | Wanderer Office — Giáng sinh | 45×43 | 33 | Tiệc, free roam, Snowball, RAM/Diana |
+| 39 | Wanderer Office — Sáng hôm sau | 45×43 | 16 | Epilogue siêu thị |
+| 40 | Atlantis — Quán cà phê | 17×13 | 1 | Cà phê thường/câu tôm |
+| 41 | Phòng Hải Quỳ ở nhà | 21×17 | 17 | Phòng ngủ khám phá |
+| 42 | Phòng Hải Quỳ — Wanderer | 20×14 | 13 | Phòng riêng Wanderer |
+| 43 | Phòng Shylvie | 20×18 | 23 | Phòng riêng Wanderer |
+| 44 | Phòng Leo | 17×17 | 20 | Phòng riêng Wanderer |
+| 45 | Phòng Hakase | 17×17 | 17 | Phòng riêng Wanderer |
+| 46 | Phòng Kohi | 17×18 | 14 | Phòng riêng Wanderer |
+| 47 | Chuẩn bị mì cay cũ | 21×17 | 3 | Archive; không có incoming transfer |
+| 48 | Tiệc mì cay cũ | 45×43 | 8 | Donor/rollback; không có incoming transfer |
+| 49 | Chuẩn bị sách Shylvie cũ | 21×17 | 2 | Archive |
+| 50 | Hậu truyện sách Shylvie | 45×43 | 16 | Runtime |
+| 51 | Chuẩn bị sách Hakase cũ | 21×17 | 2 | Archive |
+| 52 | Hậu truyện sách Hakase | 45×43 | 16 | Runtime |
+| 53 | Phong ấn Vực Sâu | 17×13 | 4 | Route chủ tiệm |
+| 54 | Wanderer tìm Hải Quỳ | 45×43 | 7 | Route chủ tiệm |
+| 55 | Atlantis giải cứu Hải Quỳ | 17×13 | 8 | Route chủ tiệm |
+| 56 | Trạm xe buýt — Tin nhắn Leo | 110×32 | 1 | Staging route hỏi Leo |
+| 57 | Tiệm dụng cụ ma pháp | 21×20 | 31 | Free roam/mua áo choàng |
+| 58 | Cà phê Luminous | 23×19 | 29 | Free roam, anchor/hitbox NPC |
+| 59 | Cửa hàng vũ khí | 21×28 | 4 | Free roam/mua khiên |
+| 60 | Chuẩn bị quà Leo cũ | 21×17 | 2 | Archive |
+| 61 | Phòng họp | 36×25 | 2 | Phòng dùng chung |
+| 62 | Phòng họp — Movie Night | 36×25 | 2 | Phòng dùng chung |
+| 63 | Phòng chế tạo | 34×24 | 61 | Phòng dùng chung |
+| 64 | Tiệm đá phong thủy | 18×28 | 5 | Free roam/chọn đá |
+| 65 | Chuẩn bị đá cũ | 21×17 | 2 | Archive |
+| 66 | Tiệc đá phong thủy | 45×43 | 1 | Cảnh trao đá |
+| 67 | Hậu truyện đá phong thủy | 45×43 | 6 | Bốn biến thể hậu truyện |
+| 68 | ARCHIVED — Map chuẩn bị cũ | 17×13 | 0 | Group trong cây map, không phải destination |
+| 69 | Route Checkpoint Hub | 44×32 | 40 | Playtest-only, không có production link |
 
-Map001/002/004/005/007/008/009/011/012/016/018 có event generic hoặc đang là map phụ/tạm. Map013 và Map019 vẫn còn nhiều event tên `EVxxx`, nên cần dựa vào event đã đặt tên khi trace route.
+Map001/002/004/005/007/008/009/011/012/018 là map phụ, generic hoặc không thuộc route chính. Map013 và Map019 vẫn còn event legacy tên `EVxxx`; chỉ đổi tên sau khi xác định chắc chức năng, không dựng lại map để đổi tên hàng loạt.
 
 ## Route mì cay cho Leo
 
 - Map010 có lựa chọn thứ tư `Mua mì cay`, bật Switch 55 rồi chuyển đen sang Map020.
 - Map020 dùng tile map gốc 35×30; không ép `MyCay.png` thành parallax. Hai lựa chọn ghi Variable 50: `1` Aira, `2` Hải Quỳ.
-- Nhánh Aira qua E045 Map019 dưới dạng montage không tương tác; nhánh Hải Quỳ đi thẳng Map047. Cả hai không ghi Variable 42–44 và không kích hoạt checkout siêu thị.
-- Map047 dùng Group Chat cố định Leo, chuẩn bị Sting, ngủ và CG11–CG14; Map014 E025 dùng animation 151/59 làm demo nấu ăn rồi hiện `Mibullyquy` hoặc `Mihaiquy`. E025 bật Self Switch A trước khi sang Map038, tránh phát lại nếu người chơi quay vào bếp trong free roam. Map014 dùng `Map_Wanderer_Office_Kitchen__Chrismast_base` khi route mì đang ở bước nấu ăn hoặc khi vào từ Map038/039; các lượt vào từ văn phòng thường vẫn dùng `Map_Wanderer_Office_Kitchen_base`.
+- Nhánh Aira qua E045 Map019 dưới dạng montage không tương tác; nhánh Hải Quỳ đi thẳng tới page chuẩn bị tương ứng trên Map037. Cả hai không ghi Variable 42–44 và không kích hoạt checkout siêu thị.
+- Map037 variant 47 dùng Group Chat cố định Leo, chuẩn bị Sting, ngủ và CG11–CG14; Map047 cũ đã archive. Map014 E025 dùng animation 151/59 làm demo nấu ăn rồi hiện `Mibullyquy` hoặc `Mihaiquy`. E025 bật Self Switch A trước khi sang Map038, tránh phát lại nếu người chơi quay vào bếp trong free roam. Map014 dùng `Map_Wanderer_Office_Kitchen__Chrismast_base` khi route mì đang ở bước nấu ăn hoặc khi vào từ Map038/039; các lượt vào từ văn phòng thường vẫn dùng `Map_Wanderer_Office_Kitchen_base`.
 - Map038 E001 có page riêng cho phần mở đầu route mì cay, sau đó mở free roam và bốn trận ném tuyết giống các route quà. Page riêng của Leo tiếp tục bằng E118, chứa CG6/CG7, CG19, CG22–CG24, hình vật phẩm và placeholder một dòng `[ẢNH BÌNH STING 20 LÍT]`.
 - Map048 giữ nguyên làm nguồn đối chiếu/rollback cho cutscene; không còn map nào transfer vào Map048.
 - Sau cuộc gọi Silver Wing, route chuyển thẳng Map036 với `ENDING_HINT_ID = 18`; không có epilogue sáng hôm sau.
@@ -76,10 +96,10 @@ Map003 đã có nội dung phù hợp với hub Silver Wing và POV Hải Quỳ,
 
 ## Map013 — Văn phòng Wanderer (đã review)
 
-- 45×43, 88 event; đây là hub Wanderer được mở từ Map010.
+- 45×43, 90 event; đây là hub Wanderer được mở từ Map010.
 - Event khởi tạo tạo hai layer `Map_Wanderer_Office_top` và `Map_Wanderer_Office_Lazer_On`, sau đó bật camera tự do và dừng weather. Layer laser được tắt bởi các event xác thực danh tính; các event này dùng Switch 8 làm điều kiện trang sau.
 - Có hai cổng sang Map014 (bếp), tại `(24,10)`, `(23,10)` và một cổng khác tại `(28,8)`. Event ở `(4,3)` chuyển sang Map019 `(20,28)` khi điều kiện tương tác đã đạt.
-- Leo (E097) và Shylvie (E098) là hai scene hội thoại POV quan trọng. Lần đầu dùng Variable 2/3 làm bộ đếm, zoom 130→100 và movement route `find_path`; lần sau mở các trang hội thoại tiếp theo. Đây là state riêng của map, chưa nên đổi thành route flag toàn cục.
+- Leo (E097) và Shylvie (E098) là hai scene hội thoại POV quan trọng. Variable 2/3 vẫn đếm số lần tương tác tại map; ở lần thứ ba, E097 khởi tạo route hỏi Leo bằng Switch 72/Variable 55–56 và E098 khởi tạo route đá phong thủy bằng Switch 76/Variable 57–58.
 - Đã chuẩn hóa tên các event chức năng theo cấu trúc `SCN/PUZZLE/TRANSFER/ITEM ... [E###]`. Các event trang trí chưa đổi tên vì không có logic route.
 - Camera của Leo/Shylvie đã chuyển sang Common Event 2 (Variable 40 làm event target) và Common Event 1 (trả focus về player), thay cho các lệnh `ms_pro_cam_focus_on` rải trực tiếp trong scene.
 - Event E101 tại `(21,16)` mở phép biến hình `TransformMagic.unlock(:riu)` và dùng Self Switch A để ẩn sau khi nhặt.
@@ -115,16 +135,16 @@ Map003 đã có nội dung phù hợp với hub Silver Wing và POV Hải Quỳ,
 
 - 50×50, 43 event; là nhánh trực tiếp từ Map010 khi chọn đi mua quà.
 - Event khởi tạo tạo layer `Sieu_Thi_Top_Fixed` và reset focus camera. Khu vực có nhiều điểm thoại khám phá về các mặt hàng và nhân vật.
-- Bốn điểm chọn quà chính là E033–E036. Mỗi choice bật một switch trạng thái (`4`, `5`, `7`, `6`) rồi gọi `turn_switches_off(...)` để vô hiệu các lựa chọn liên quan. Đây là nhóm logic mua quà dùng chung, cần giữ nguyên khi chưa xác định ý nghĩa route của từng switch.
-- E042 là điểm kết thúc mua quà; lựa chọn “Xong rồi” chuyển lại Map019 `(16,24)` với fade 8. Trang còn lại chỉ đóng choice, chưa có nhánh mới.
+- Bốn điểm chọn quà chính là E033–E036. Mỗi choice ghi Variable 42 `MKT_GIFT` và bật Switch 44 `MKT_ACTIVE`; không transfer ngay để người chơi có thể tiếp tục free roam.
+- E042 là checkout. Người chơi có thể thanh toán để mở Group Chat chọn Variable 43 `MKT_TARGET`, hoặc hủy để tiếp tục chọn đồ. E042 không dùng Event 42 trung gian cũ.
 - E003 mở minigame `Scene_Invaders`; nếu đạt Variable 20 = 1000, E004 mở phép biến hình `:gamemer`. E041 mở `Scene_CattoPetting`.
 - E043 phụ thuộc Switch 19 nhưng hiện không có nội dung đáng kể; cần kiểm tra đây là placeholder hay cờ kết thúc cũ.
 
 ### Vấn đề cần theo dõi ở Map019
 
-- Các switch 4/5/6/7 đang vừa đại diện lựa chọn quà vừa bị tắt bởi helper `turn_switches_off`; cần playtest toàn bộ thứ tự tương tác để chắc rằng người chơi không mất lựa chọn hợp lệ ngoài ý muốn.
-- Chưa thấy flag route Atlantis hoặc transfer rời siêu thị trong các event chính; Map019 hiện mới là scene mua quà/minigame.
-- Tên event vẫn là `EVxxx`; chưa đổi tên để tránh suy đoán sai các event trang trí và placeholder.
+- Playtest cả hai lựa chọn tại checkout: thanh toán phải sang đúng route; tiếp tục chọn phải trả đầy đủ quyền free roam.
+- E045 chỉ là montage route mì cay và không được ghi đè Variable 42–44 của route siêu thị.
+- Một số event trang trí vẫn tên `EVxxx`; không đổi tên hoặc dựng lại map nếu chưa xác định chắc chức năng.
 
 ## Map006 / Map007 / Map017 — transfer chain
 
@@ -155,7 +175,7 @@ Hai transfer cuối cùng đều ghi cùng đích Map006 `(94,11)`, nên destina
 - Map010 có choice `Xuống Atlantis`, phát nguyên văn B2827–B2828 rồi đưa Hải Quỳ về Map022 trước. Sau cảnh pha mì, Map022 chuyển qua Map021 và Map021 tiếp tục tới Map023.
 - Scene ghi Switch 30 (`ATL Route Chosen`) và tăng Variable 30 (`ATL Progress`) lên 1.
 - Switch 31–33 đã đặt tên sẵn cho các bước tiếp theo: tới Atlantis, gặp chủ tiệm và đủ điều kiện ending.
-- Map021 chưa chuyển sang khu vực Atlantis vì map tiếp theo chưa dựng; đây là điểm kiểm tra route, flag và camera trước khi xây map lớn.
+- Map021 chuyển tiếp tới Map023 sau khi state Atlantis đã được chuẩn bị; đây là transit map, không trả quyền free roam lâu dài.
 
 ## Map022 / Map026 — nhà và phòng kho Hải Quỳ
 
@@ -179,17 +199,22 @@ Hai transfer cuối cùng đều ghi cùng đích Map006 `(94,11)`, nên destina
 - Map040 là template nền đen của nhánh máy pha cà phê. Fade đầu cảnh phải gọi `screen.start_fadeout(1)` trong `Game_Interpreter`; không dùng `$game_screen` vì VX Ace không khởi tạo global đó. Lệnh `fix-invalid-game-screen-calls` rà và sửa cùng lỗi trong toàn bộ Map data.
 - `Tương tác phòng kho.docx` ghi hai nội dung tại `(11,7)`. E011 giữ thùng băng tại `(11,6)`; thùng bài tập/lá thư E020 được dời sang `(12,6)` để không chồng event.
 - Đọc thư E020 page 3 chuyển ngay sang Map024. Ngay trước chuỗi dọn Map Effects/KUL và transfer, E020 bật Transparency ON cho Player; Map024 giữ trạng thái này tới khi toàn bộ ký ức kết thúc. Việc ẩn từ map nguồn là bắt buộc vì Fadein của transfer chạy trước autorun map đích. Nếu rời kho trước lần 3, E002 dùng Map Effects tạo blur/tua ngược và đẩy player trở lại.
-- Map024 không còn diễn cảnh ký ức bãi rác bằng sprite đi từng ô. Autorun ghép ba lớp Picture đồng tọa độ: `falling_base` xuất hiện trước; `falling_HQ_ded_1`–`ded_8` nằm giữa; `falling_path` nằm trên cùng và được xóa ngay khi bắt đầu `falling_HQ_faint_1`–`faint_7`. Các hold đầu dài rồi ngắn dần để tạo cảm giác Hải Quỳ gượng dậy khó khăn; cú xuất hiện đầu có screen shake. `faint_7` được giữ qua toàn bộ thoại ký ức và mọi Show Text trong cảnh đều để face trống. Chỉ sau khi Fadeout mới xóa Picture, đổi Actor 3 sang `$HaiQuyAtHome_Base`, hiện lại Player và transfer không-fade sang Map028 rồi Fadein.
-- Map024 chuyển sang mê cung gương Map028 do người dùng remake, rồi qua Map034 và chase Map029.
+- Map024 là map `17×14`, dùng `falling_base` làm parallax và 16 ảnh còn lại bằng Galv Layers, không dùng Show Picture cho chuỗi rơi. Trong đoạn sprite Hải Quỳ xoay liên tục, parallax được ẩn để không lộ `falling_base`; chỉ phục hồi parallax ngay trước chuỗi layer.
+- Chuỗi `falling_HQ_ded_1`–`ded_8` và `falling_HQ_faint_1`–`faint_7` phát với hold time khác nhau. Các frame đầu chậm để tạo cảm giác Hải Quỳ gượng dậy; mọi thoại ký ức để face trống.
+- Kết thúc chuỗi layer: xóa các layer Hải Quỳ, đổi player sang `$HaiQuy_Badend`, đặt tại `(8,6)` rồi mới hiện layer `falling_path`. Người chơi được free roam trên đường này và E002 tại `(8,13)` chuyển sang Map028. `falling_path` không được xuất hiện trong cutscene trước lúc Hải Quỳ đứng dậy.
 
 ## Map028 / Map029 — mê cung gương và truy đuổi
 
 - Map024 chuyển tới Map028 sau cảnh ký ức bãi rác.
 - Map028 do người dùng tiếp quản và tự dựng lại; không tiếp tục coi layout được Codex sinh tự động là thiết kế được duyệt.
 - Map028 hiện là map `37×68`, Tileset 5, parallax `Dungeon` 1184×2144 và collision mask do người dùng dựng. Điểm vào là `(5,3)`; Event 2 tại `(14,66)` là lối ra có thẩm quyền. Không chạy lại generator mê cung cũ hoặc thay đổi parallax/collision khi cập nhật event.
-- Sáu event gương dùng trực tiếp `$Mirror1`–`$Mirror3`; mỗi frame được chọn bằng direction/pattern cố định thay vì walking animation. Bảy trigger `Player Touch` nằm trên tuyến đi, chạy đúng một lần bằng Self Switch A và đổi frame gương hoặc hiện clone trong thời gian ngắn.
-- Sáu anchor clone dùng `$Clone12`–`$Clone17` để không lặp pool `$Clone1`–`$Clone11` của Map034/Map029. Clone mặc định không có graphic, chỉ hiện kèm light `atlantis_clone` trong scare rồi xóa cả graphic/light. Tất cả đều `Through`; Map028 không có Game Over hay damage từ scare.
-- Bảy thùng `!$Barrel` là mốc sáng tĩnh dọc đường. Page đang cháy dùng hàng 2 (`direction=4`) và `maze_barrel_fire`; khi tương tác, thùng chuyển sang hàng 1 không lửa (`direction=2`), bỏ nguồn sáng tại chỗ và đổi đèn động trên Player từ `maze_player_amber` 288×288 sang `maze_player_amber_wide` 384×384. Cả hai có tâm vàng gần trắng, quầng cam và nhận Region height shadow. Hai mươi nguồn cyan/tím cố định đánh dấu các hành lang/khúc rẽ, nguồn thứ 21 đánh dấu lối ra. Darkness trở lại 235; collision từ `(5,3)` tới Event 2 vẫn thông.
+- Các gương có thể hiện Pop Message chỉ dẫn đúng hoặc sai. Trigger hù kiểu cũ đã bị loại bỏ; sensor hiện chỉ làm nhiệm vụ kích hoạt clone ở vị trí cạnh gương để không spawn trực tiếp lên player.
+- Clone dùng cả pursuer và watcher. Va chạm từ phía clone hoặc phía player đều tăng choáng. Camera phản ứng mạnh ngay khi trúng rồi giảm dần về ổn định; lần thứ tư giữ viền đỏ, xoay player như ngã xuống, làm màn hình tối, đưa player về `(5,3)`, reset mê cung và hồi điểm choáng trước khi reveal. Map028 không Game Over.
+- Bảy thùng `!$Barrel` là mốc sáng. Thùng đang cháy dùng hàng 2 và `maze_barrel_fire`; tương tác chuyển sang hàng 1 không lửa, bỏ nguồn sáng tại chỗ và tăng đèn vàng/cam trên player từ `maze_player_amber` lên `maze_player_amber_wide`.
+- Chín event gai dùng graphic `Other1` và nguồn sáng riêng. Chỉ frame hạ xuống hoàn toàn là an toàn; mọi frame còn nhô đều gây choáng khi player dẫm lên.
+- Event 28/29 kích hoạt đá lăn; đá có ánh sáng, chạy ngang tốc độ player và gây ngay bốn điểm choáng khi chạm. Khi đá tới event 37, nó phát animation vỡ và biến mất.
+- Event 38/39 là cửa, 47 là nút, 48/49 là trigger. Trigger đóng cửa, bật light trên cửa, reveal nút và chọn ngẫu nhiên một trong ba pattern gai khó. Nhấn nút đổi sprite nút, bỏ light, đưa camera về cửa rồi mở cửa. Light nút phải là ánh sáng thường, không dùng bitmap đen nhấp nháy.
+- Các nguồn cyan/tím môi trường, đèn gương, gai, đá và cửa soi đường trong darkness 235. Region shadow bật `true`; parallax không ngăn KUL phản ứng với Region.
 - Event 2 dọn Player/event light, đóng KUL về opacity 255 rồi transfer no-fade sang Map034 `(10,10)`. Map034 chịu trách nhiệm staging lại Player và đội hình vòng vây.
 - Map034 dùng đúng 11 câu clone trong B2961–B2974; E003–E013 lần lượt dùng `$Clone1`–`$Clone11`. Câu `Niềm hi vọng…` thuộc ký ức Map024 nên đã được loại khỏi cảnh vòng vây.
 - Map028 dùng KUL đóng đen rồi transfer không-fade sang Map034. Map034 ẩn quái vật và toàn bộ clone trước khi Fadein nên đội hình không bị lộ trong lúc chuyển map.
@@ -214,7 +239,7 @@ Hai transfer cuối cùng đều ghi cùng đích Map006 `(94,11)`, nên destina
 - Sau animation 147, atlas quái vật được cắt thành các mảnh nhỏ văng ra và mờ dần; camera đồng thời tăng blur/zoom nhẹ và tone tối dần để diễn tả Hải Quỳ kiệt sức. Khi màn hình đã đen, Map025 transfer no-fade sang Map035; Map035 reset Map Effects/KUL sau màn đen rồi mới Fade In.
 - Map035 E003 dùng `$OniOnii`; `$test` không còn được dùng cho Paulie trong cảnh phòng ngủ đêm muộn. Khi rời phòng, helper `atlantis_event_teleport` đặt Paulie opacity 0 trước, rồi phát animation 116 tại vị trí cuối và chờ hiệu ứng kết thúc. `GroupChat.start` chủ động ẩn BubbleTag/face còn lại của Pop Message trước khi gọi scene điện thoại, tránh mũi tên nổi trên giao diện chat.
 - Event thoát của Map028 chỉ được đổi destination từ Map029 sang Map034; tile, kích thước và các event khác của Map028 không bị chỉnh trong thay đổi này.
-- Đây là bản playtest dùng tile/monster RTP. Graphic và layout production sẽ thay sau khi duyệt cảm giác chơi.
+- Layout, parallax, collision và vị trí event do người dùng chỉnh trong RPG Maker là dữ liệu có thẩm quyền. Khi sửa cơ chế chỉ thay event/script liên quan, không chạy lại generator hoặc ghi đè tọa độ thủ công.
 
 ## Map023 — Tiệm Sách Thời Gian Lay Đọng
 
@@ -227,12 +252,11 @@ Hai transfer cuối cùng đều ghi cùng đích Map006 `(94,11)`, nên destina
 - Các cửa phòng bà lão, nhà vệ sinh và thư viện hiện mới là tương tác mô tả; tài liệu chưa chỉ định map đích nên không tự tạo transfer.
 - Cảnh chủ tiệm lần ba đã dựng đến chỉ dẫn “chuyển đến cảnh 12”, nhưng chưa transfer sang Map024 vì Map024 hiện là cảnh ký ức/chase từ lá thư, không phải đích cảnh 12 của vụ nổ tiệm sách.
 
-## Cần quyết định trước khi viết tiếp
+## Trạng thái triển khai
 
-1. Hai nhánh sách tiêu chuẩn đã hoàn chỉnh; tuyến nói chuyện chủ tiệm trước/ending Vực Sâu vẫn được giữ riêng.
-2. Map003, Map006, Map007 và Map017 đã được kiểm kê/đặt tên event; tiếp tục review map playable kế tiếp.
-3. Gắn scene ID cho event quan trọng ở Map013/Map019 sau khi map tuần tự được kiểm kê.
-4. Sau đó mới cấp flag/variable route chính thức.
+- Hai nhánh sách, route chủ tiệm, route phòng kho/chase, route siêu thị, mì cay, hỏi Leo và hỏi Shylvie đều đã có runtime flow.
+- Flag/variable chính thức nằm trong `systems/flags-and-variables.md`.
+- Việc còn lại là playtest, thay placeholder asset và sửa lỗi theo bằng chứng. Không tự mở rộng route hoặc dựng lại map khi chưa có yêu cầu.
 
 ## Map019 / Map037–039 — route siêu thị
 
@@ -241,6 +265,7 @@ Hai transfer cuối cùng đều ghi cùng đích Map006 `(94,11)`, nên destina
 - Map037 dùng `HQ_Room_Midnight_Base/Top` cho toàn bộ sáu biến thể chuẩn bị quà. Mỗi page đặt E003 với `$HaiQuy_Sleep_Night` tại `(11,7)`, một ô phía trên quà `(11,8)`; trước khi ngủ E003 phải đi tới `(8,5)`, Fade Out, đổi sang `HQ_Room_Sleep` và ẩn sprite. Parallax đã được tô màu đêm nên phần nhìn thấy của phòng không dùng KUL darkness hay event light. Riêng variant 49/51 nhận KUL opacity 255 từ Map023: ngay sau Fade Out đầu tiên phải đưa KUL về 0 rồi hide trước Fade In. Cuối cảnh giữ Fade Out native để phủ cả CG, bật KUL đen và ẩn CG khi native screen đang đen, rồi Fade In native dưới lớp KUL trước transfer để Map038 không nhận `Game_Screen` brightness 0.
 - Từ lúc CG11 đánh thức Hải Quỳ xuất hiện, CG11 phải được giữ tới khi CG12 thay thế; CG12 → CG13 → CG14 cũng nối liên tục. Không phục hồi cảnh phòng hoặc đổi sprite dưới nền trong đoạn này. CG14 được giữ qua lời nhắc cuối, rồi Fade Out hoàn tất mới ẩn CG và chuyển map.
 - Map038 là bản tiệc riêng 45×43 dùng `Map_Wanderer_Office_GiangSinh_Base/Top`; không sửa state cốt truyện của hub Map013. Tile, Tileset 7 và vị trí NPC hiện do người dùng chỉnh trong editor và là dữ liệu có thẩm quyền. E110–E117 là bản sao ổn định của năm cửa phòng riêng và ba lối bếp từ Map013.
+- Map038 E008–E017 là mười RAM nhặt một lần bằng Self Switch A; mỗi lần nhận gọi Common Event 20 và phát suy nghĩ của Hải Quỳ. Thắng Snowball Rhythm cũng gọi CE20 ở mọi lần thắng, cho phép farm thay cho việc tìm đủ vật phẩm. Khi kho đồ đạt ít nhất 10 Item 18 lần đầu, CE20 làm tối màn hình, bật Switch 82 để E018 chuyển sang page Diana, đặt Hải Quỳ tại `(14,37)`, reveal rồi focus/zoom camera vào Diana và phát đoạn hội thoại hoàn thành yêu cầu. Switch 82 giữ cutscene không lặp nhưng không chặn việc kiếm thêm RAM.
 - Các page mở cảnh trên Map038 dùng layer toàn map mới tại đúng nhịp thoại: `snowkitchen_1..5` cho nhánh nấu mì; `snowmeet1..5` cho các nhánh trang trí văn phòng; `phuchoi` + `_1..6` phát một lần khi Shylvie phục hồi đĩa; `snowbuild_1..2` lặp 10 chu kỳ khi Hải Quỳ và Leo đắp tuyết; `prepare` là vignette sáng cuối cùng trước đoạn thoại nền đen và free-roam. Mỗi vignette khóa camera vào vùng hình vẽ, dùng layer slot 2, tạm ẩn sprite E002–E006/player, mở KUL để chiếu layer, rồi đóng KUL trước khi dọn layer/phục hồi staging. Free-roam chỉ được mở sáng sau khi camera đã trả về người chơi và layer `Wanderer_Party_Before` (bàn tiệc hoàn tất) đã được đặt.
 - Với route siêu thị, E001 dừng sau khi bàn tiệc được chuẩn bị xong, chuyển từ event Hải Quỳ E002 sang player thật và bật Switch 48 để khám phá tự do. E003–E006 cho phép rủ Shylvie, Kohi, Leo hoặc Hakase chơi Snowball Rhythm; Leo có thêm lựa chọn tiếp tục và E007 chuyển sang Map039.
 - Với route mì cay, page Switch 55 của E001 chạy phần mở đầu rồi bật Switch 58 cùng Switch 48. E003/E004/E006 dùng nguyên minigame; page Switch 58 của Leo tránh kích hoạt nhầm `MKT_PARTY_CONTINUE`. Khi tiếp tục, E118 chạy phần mì cay/trao quà/cuộc gọi Silver Wing rồi chuyển thẳng Map036.
@@ -249,7 +274,7 @@ Hai transfer cuối cùng đều ghi cùng đích Map006 `(94,11)`, nên destina
 - Với route sách Ma Vương Cổ Đại, Map051 cũ đã được archive và phần chuẩn bị chạy ở page `HQ_PREP_SCENE_VARIANT=51` của Map037 theo sequence chung. Page Switch 66 của Map038 cũng dựng Player/NPC và reveal KUL đủ 30 frame trước câu chào. E120 trên Map038 dùng B3045–B3073, hiện/mở khóa `VayCV` và `Oplung`; Map052 dùng B3110–B3130 rồi đặt `ENDING_HINT_ID = 20`. Page 20 Map036 dùng B2746–B2760. Project chưa có sprite Hakase sau khi hấp thụ ma lực hoặc ending CG riêng, nên vẫn dùng graphic Hakase hiện tại và không gán ảnh thay thế sai.
 - Nhánh nói với chủ tiệm trước chạy độc lập qua Map023 → Map053 → Map054 → Map055 → Map036. Map053 là cầu nối hình ảnh không thêm thoại mới: tạo vật Vực Sâu chiếm hữu Hải Quỳ và lồng `$Cage_1` xuất hiện. Map054 dùng văn phòng Giáng sinh cho B3093–B3108 nhưng không mở free roam/ném tuyết. Map055 dùng B3152–B3186, atlas `Monster` và `$Cage_1`–`$Cage_3`; các frame nứt đầu giữ 42→7 frame rồi phần vỡ tăng tốc còn 6→2 frame. Cả ba map khởi đầu ở KUL opacity 255 để không lộ một frame sáng/sprite sớm. Page 21 Map036 dùng B2761–B2809.
 - Route hỏi Leo dùng Map056 làm bản sao staging riêng của khu trạm xe buýt Map006, không sửa event Map006. Preset `GroupChatPreset.leo_shop_choice` ghi Variable 55 và chuyển lần lượt tới Map058 cà phê, Map059 vũ khí hoặc Map057 ma pháp.
-- Khi Map060 chuyển tới page route hỏi Leo trên Map038, KUL giữ màn hình đen rồi hạ opacity `255 → 0` trong 30 tick. Trước khi bật Switch 73 để free roam, page gọi thêm một KUL reveal `0/30` nhằm bảo đảm lớp tối không bị giữ lại; page này không dùng Fade Screen hoặc Tint Screen.
+- Khi Map037 variant 60 chuyển tới page route hỏi Leo trên Map038, KUL giữ màn hình đen rồi hạ opacity `255 → 0` trong 30 tick. Trước khi bật Switch 73 để free roam, page gọi thêm một KUL reveal `0/30` nhằm bảo đảm lớp tối không bị giữ lại; page này không dùng Fade Screen hoặc Tint Screen. Map060 cũ không còn incoming transfer.
 - Map057 kích thước 21×20 dùng `Magic_Store_Base/Top`; parallax đã có màu tối nên KUL shadow phải được ẩn, không phủ tối thêm. `$VapeEden` ở `(14,11)` lặp ba frame hút thuốc, mỗi frame 60 tick. Map058 kích thước 23×19 dùng `Isekai_Caffe_Base/Top`. Map059 kích thước 21×28 dùng `Cuahangvukhi_bas3/Cuahangvukhi_top`, cùng `$Erufu_withbag` và `$traveller_sprite`.
 - Ba cửa hàng hội tụ vào page `HQ_PREP_SCENE_VARIANT=60` của Map037; nhánh đá theo gợi ý Shylvie dùng page `=65`. Cả hai phải chạy đầy đủ vị trí quà → đi tới giường → `HQ_Room_Sleep` → CG11–CG14 liên tục trước khi sang Map038. Map038 có page Switch 72/73/74 và continuation E121 riêng; các event/page route cũ cùng tile chỉnh tay không bị thay thế.
 - Map036 có page hint 22–24. Hint 24 hiện placeholder Drosalya vì chưa có sprite/face; không gán asset khác thay thế.

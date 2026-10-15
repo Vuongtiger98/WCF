@@ -190,7 +190,7 @@ Tại Map40 (Chuyến xuống Atlantis lấy cà phê), màn hình đang đen n�
 
 #### Đường đi
 
-Map10 (Trong xe bus) → Map20 (Tiệm mì cay) → Map47 (Phòng Hải Quỳ lúc chuẩn bị mì cay) → Map14 (Nhà bếp Wanderer) → Map38 (Văn phòng Wanderer trong tiệc Giáng sinh) → Map36 (Gợi ý sau ending).
+Map10 (Trong xe bus) → Map20 (Tiệm mì cay) → Map37 variant 47 (Phòng Hải Quỳ lúc chuẩn bị mì cay) → Map14 (Nhà bếp Wanderer) → Map38 (Văn phòng Wanderer trong tiệc Giáng sinh) → Map36 (Gợi ý sau ending). Map47 cũ đã archive.
 
 #### Hai cách hoàn thành
 
@@ -227,7 +227,7 @@ Tại Map13 (Văn phòng Wanderer), người chơi nói chuyện với Leo ba l�
 - Chọn tiệm cà phê hoặc cửa hàng vũ khí tuyệt đối không được đưa tới tiệm ma pháp.
 - Cảnh phải tự bắt đầu khi vừa tới đúng cửa hàng.
 - Chủ tiệm ma pháp lặp ba hình hút thuốc, mỗi hình giữ khoảng một giây.
-- Map60 (Phòng Hải Quỳ lúc chuẩn bị quà theo lời Leo) dùng đúng quà vừa mua, không phát thoại của route mua đá.
+- Map37 variant 60 dùng đúng quà vừa mua theo lời Leo, không phát thoại của route mua đá. Map60 cũ đã archive.
 - Hải Quỳ chỉ đổi sang trang phục Giáng sinh sau khi đã xem xong cảnh thử đồ.
 - Khi sang Map38 (Văn phòng Wanderer trong tiệc Giáng sinh), màn hình phải sáng trở lại và người chơi được tự do khám phá.
 
@@ -259,7 +259,7 @@ Tại Map13 (Văn phòng Wanderer), người chơi nói chuyện với Shylvie c
 
 #### Đường đi
 
-Map10 (Trong xe bus) → Map22 (Nhà Hải Quỳ) → Map21 (Điểm xuống Atlantis) → Map23 (Tiệm sách phép Atlantis) → Map49 (Phòng Hải Quỳ lúc chuẩn bị sách) → Map38 (Văn phòng Wanderer trong tiệc Giáng sinh) → Map50 (Đoạn sau khi tặng sách cho Shylvie) → Map36 (Gợi ý sau ending).
+Map10 (Trong xe bus) → Map22 (Nhà Hải Quỳ) → Map21 (Điểm xuống Atlantis) → Map23 (Tiệm sách phép Atlantis) → Map37 variant 49 (Phòng Hải Quỳ lúc chuẩn bị sách) → Map38 (Văn phòng Wanderer trong tiệc Giáng sinh) → Map50 (Đoạn sau khi tặng sách cho Shylvie) → Map36 (Gợi ý sau ending). Map49 cũ đã archive và không còn là destination runtime.
 
 #### Diễn biến đúng
 
@@ -275,7 +275,7 @@ Map10 (Trong xe bus) → Map22 (Nhà Hải Quỳ) → Map21 (Điểm xuống Atl
 
 #### Đường đi
 
-Map10 (Trong xe bus) → Map22 (Nhà Hải Quỳ) → Map21 (Điểm xuống Atlantis) → Map23 (Tiệm sách phép Atlantis) → Map51 (Phòng Hải Quỳ lúc chuẩn bị sách) → Map38 (Văn phòng Wanderer trong tiệc Giáng sinh) → Map52 (Đoạn sau khi tặng sách cho Hakase) → Map36 (Gợi ý sau ending).
+Map10 (Trong xe bus) → Map22 (Nhà Hải Quỳ) → Map21 (Điểm xuống Atlantis) → Map23 (Tiệm sách phép Atlantis) → Map37 variant 51 (Phòng Hải Quỳ lúc chuẩn bị sách) → Map38 (Văn phòng Wanderer trong tiệc Giáng sinh) → Map52 (Đoạn sau khi tặng sách cho Hakase) → Map36 (Gợi ý sau ending). Map51 cũ đã archive và không còn là destination runtime.
 
 #### Diễn biến đúng
 
@@ -343,7 +343,7 @@ Web app cần cho phép tìm scene độc lập với route. Một scene đã đ
 
 ### 5.2. Scene chuẩn bị quà và ngủ dậy
 
-Phạm vi gồm Map37 (Chuẩn bị quà siêu thị), Map47 (Chuẩn bị mì cay), Map49 (Chuẩn bị sách cho Shylvie), Map51 (Chuẩn bị sách cho Hakase), Map60 (Chuẩn bị quà theo lời Leo) và map chuẩn bị của route mua đá.
+Toàn bộ cảnh chuẩn bị chạy trên Map37. Variable 83 chọn variant 37 (siêu thị), 47 (mì cay), 49 (sách Shylvie), 51 (sách Hakase), 60 (quà theo lời Leo) hoặc 65 (đá theo lời Shylvie). Các con số variant giữ mã lịch sử nhưng không còn là map destination.
 
 Mỗi trang scene cần mô tả:
 
@@ -427,7 +427,7 @@ Mỗi trang map trên web app có ảnh thu nhỏ của địa điểm, cách đ
 | Map20 (Tiệm mì cay) | Hội thoại mua mì và hai lựa chọn tin/không tin Aira. |
 | Map21 (Điểm xuống Atlantis) | Đoạn nối từ nhà Hải Quỳ tới tiệm sách phải liền mạch, không để người chơi ở lại một nơi trống hoặc tối vĩnh viễn. |
 | Map23 (Tiệm sách phép Atlantis) | Hai vị trí trước cùng một quầy phải nói chuyện với cùng một bà chủ và dùng chung tiến độ; có hai sách route, quả địa cầu, giá sách, cửa phụ và các vật thể lore. Hộp thoại của bà chủ phải trỏ đúng hình bà đứng sau quầy. |
-| Map28 (Mê cung gương Atlantis) | Các gương, cảnh hù dọa, va chạm và đường đi tới vòng vây clone; camera và ánh sáng phải luôn cho người chơi biết Hải Quỳ đang ở đâu. |
+| Map28 (Mê cung gương Atlantis) | Gương chỉ dẫn đúng/sai, clone spawn cạnh gương và chủ động đuổi, choáng/reset, gai, đá lăn, thùng lửa, cửa/nút và đường tới vòng vây clone; camera và nguồn sáng KUL phải luôn cho người chơi biết Hải Quỳ đang ở đâu. |
 | Map57 (Tiệm ma pháp) | Chủ tiệm hút thuốc, các vật thể cửa hàng và cảnh mua áo choàng. |
 | Map58 (Tiệm cà phê) | Hội thoại mua cà phê, nhân vật gần giữa màn hình và hộp thoại trỏ đúng vị trí. |
 | Map59 (Cửa hàng vũ khí) | Chủ tiệm/NPC, vật phẩm, va chạm và cảnh mua món quà cho Shylvie. |
@@ -507,6 +507,17 @@ Web app cần có trang riêng cho từng route đi vào Map38 (Văn phòng Wand
 | Bốn nhánh hỏi Shylvie | Mỗi loại đá giữ đúng người nhận, hiệu ứng của đá và đoạn sau bữa tiệc. |
 
 Trong thời gian khám phá tự do, người chơi phải vào được nhà bếp, năm phòng riêng, phòng họp, phòng chế tạo và có thể thách đấu ném tuyết với Shylvie, Kohi, Leo và Hakase. Chọn chưa tiếp tục phải trả quyền đi lại; chọn tiếp tục chỉ chạy cảnh một lần.
+
+Map38 còn có cơ chế Item 18 `Ram`:
+
+- E008–E017 cho mười RAM nhặt một lần; mỗi event tự khóa bằng Self Switch A.
+- Mỗi lần thắng Snowball Rhythm, kể cả đấu lại cùng một người, nhận thêm một RAM. Đây là lựa chọn farm có chủ ý.
+- Khi có ít nhất 10 RAM và Switch 82 chưa bật, màn hình chuyển đen, E018 sang page Diana, Hải Quỳ được đặt cạnh Diana rồi camera focus/zoom và phát đúng ba câu thoại hoàn thành yêu cầu.
+- Cutscene Diana chỉ chạy một lần; sau đó người chơi vẫn có thể kiếm thêm RAM.
+
+### 6.8. Map69 (Route Checkpoint Hub)
+
+Test Hub là công cụ playtest, không phải nội dung production. Mỗi checkpoint phải phục hồi đầy đủ route flags, sprite player, KUL, camera, timeline và tin nhắn điện thoại trước khi teleport. Các event lựa chọn preparation, party và epilogue phải cho chọn đủ biến thể và luôn có phương án Hủy. Không kiểm tra F8 quay lại hub vì chức năng đó đã được loại bỏ.
 
 ## 7. Nội dung Minigame
 

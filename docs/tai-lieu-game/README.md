@@ -8,7 +8,7 @@ Bộ tài liệu mới không thay thế hoặc chỉnh sửa tài liệu nguồ
 
 ## Trạng thái hiện tại
 
-> **Giai đoạn: Bản nháp để duyệt cấu trúc và cách diễn giải**
+> **Giai đoạn: Runtime đã có đủ route chính; tài liệu đang được duy trì theo dữ liệu game và kết quả playtest**
 
 Bộ tài liệu hiện gồm các tài liệu tổng quan đánh số `00`–`05` và các nhóm chuyên môn `routes/`, `maps/`, `systems/`, `production/`, `archive/`. Đây là vị trí chuẩn duy nhất cho các nhóm này; không tạo bản song song trực tiếp dưới `docs/`.
 
@@ -95,19 +95,21 @@ Tên và cách chia file dưới đây là cấu trúc đang được sử dụn
 
 | Tài liệu | Nội dung | Trạng thái |
 |---|---|---|
-| `README.md` | Mục lục, quy ước, trạng thái tài liệu | Bản nháp |
+| `README.md` | Mục lục, quy ước, trạng thái tài liệu | Hiện hành |
 | `00-tong-quan-game.md` | Tầm nhìn, premise, gameplay loop, phạm vi | Bản nháp |
 | `01-world-bible.md` | Thế giới, tổ chức, đa chiều, ma pháp, thuật ngữ | Bản nháp |
 | `02-nhan-vat.md` | Hồ sơ, quan hệ và giọng thoại nhân vật | Bản nháp |
 | `03-timeline-cot-truyen.md` | Trình tự sự kiện và các cảnh dùng chung | Bản nháp |
-| `04-route-map.md` | Cây lựa chọn, nhánh, hội tụ và ending | Bản nháp |
-| `route-diagrams.md` | Mã Mermaid của sơ đồ route | Bản nháp |
-| `routes/` | Kịch bản chi tiết theo món quà/route | Bản đối chiếu kỹ thuật ban đầu |
-| `maps/` | Nội dung và tương tác theo từng map | Bản kiểm kê map hiện có |
-| `systems/flags-and-variables.md` | Switch, variable, region, terrain tag và điều kiện event | Bản registry tạm |
-| `production/assets.md` | Sprite, CG, BG, BGM, SFX, voice và trạng thái | Checklist ban đầu |
+| `04-route-map.md` | Cây lựa chọn, nhánh, hội tụ và ending | Đang duy trì |
+| `route-diagrams.md` | Mã Mermaid của sơ đồ route | Đang duy trì |
+| `routes/README.md` | Flow runtime có thẩm quyền | Hiện hành |
+| `maps/README.md` | Inventory và hành vi map runtime | Hiện hành |
+| `systems/flags-and-variables.md` | Switch, variable, item và điều kiện event | Registry runtime |
+| `systems/audio-map.md` | Phân bổ BGM và quy tắc fade/stop | Hiện hành |
+| `production/assets.md` | Sprite, CG, BG, BGM, SFX, voice và trạng thái | Đang duy trì |
 | `production/open-issues.md` | Mâu thuẫn và câu hỏi cần quyết định | Đang mở |
 | `production/tester-web-app-content-spec.md` | Đặc tả nội dung web app theo dõi playtest dành cho người chơi | Đang sử dụng |
+| `production/test-hub.md` | Quy tắc Map069 và state checkpoint | Hiện hành |
 | `archive/source-map.md` | Ánh xạ từ tài liệu cũ sang tài liệu mới | Bản ánh xạ ban đầu |
 
 ## Mô hình nội dung
@@ -155,13 +157,15 @@ Mô tả hành động và nhịp cảnh.
 - SFX: ...
 ```
 
-Mã định danh chính thức sẽ chỉ được đặt sau khi cây route và danh sách map được duyệt.
+Các scene chưa có mã chính thức vẫn có thể dùng Map/Event ID. Không tự cấp lại Switch/Variable đã có trong registry runtime.
 
-## Các quyết định cần duyệt sớm
+## Trạng thái triển khai
 
-1. Route triển khai đầu tiên đã chốt là ending Atlantis.
-2. Kiểm kê tuần tự các map playable, bắt đầu từ Map003 Văn phòng Silver Wing; map generic/test được bỏ qua.
-3. Xác định map Atlantis và hoàn thiện logic route trước khi dựng event route.
+- Các route siêu thị, mì cay, hỏi Leo, hỏi Shylvie, hai sách Atlantis, chủ tiệm Vực Sâu và phòng kho/rượt đuổi đều đã có flow runtime.
+- Map037 là stage chuẩn bị dùng chung; Map047/049/051/060/065 là archive.
+- Map038 là hub tiệc/free roam chung và có Snowball Rhythm cùng cơ chế RAM/Diana.
+- Map069 là Test Hub playtest-only, phục hồi cả state route và điện thoại.
+- Công việc hiện tại tập trung vào playtest, sửa bug, đồng bộ tài liệu và thay asset placeholder.
 
 ## Nguồn tài liệu
 
@@ -174,7 +178,4 @@ Nguồn chính hiện nằm trong thư mục `../kich ban`, bao gồm:
 - Các phiên bản tin nhắn mở đầu game.
 - Gói tài nguyên voice và hình ảnh Giáng sinh.
 
-Danh sách ánh xạ chi tiết giữa từng file nguồn và nội dung canon sẽ được lập trong `archive/source-map.md` ở giai đoạn sau.
-# Cập nhật thiết kế chờ duyệt
-
-Các DOCX ngày 27–30/07/2026 đã mở rộng route Atlantis và lore gia đình. Bản thiết kế hiện đã ghi nhận thay đổi, nhưng Map021 chưa redesign và chưa dựng các map Atlantis tiếp theo. Cần duyệt cấu trúc mới trước khi chỉnh binary map.
+Danh sách ánh xạ giữa tài liệu nguồn và nội dung đã tổng hợp nằm trong `archive/source-map.md`. Khi nguồn mâu thuẫn với runtime, ghi nhận vấn đề thay vì tự sửa DOCX nguồn.

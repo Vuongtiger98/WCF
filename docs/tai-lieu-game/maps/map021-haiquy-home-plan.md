@@ -1,5 +1,7 @@
 # Kế hoạch Map021 — Nhà và kho của Hải Quỳ
 
+> **Tài liệu lịch sử.** Map022/026/041 và tuyến Atlantis đã được triển khai. Giữ file này để truy nguồn quyết định ban đầu; không dùng các transfer tạm hoặc ghi chú “Map022 chưa dựng” làm runtime spec.
+
 ## 1. Vai trò trong route Atlantis
 
 Map021 không còn chỉ là route gate. Đây là cảnh chuyển tiếp sau khi Hải Quỳ chọn “Xuống Atlantis” trên xe bus, trước khi tới tiệm sách phép.

@@ -1,6 +1,6 @@
-# Flags and variables
+# Flags and variables runtime
 
-Switch/Variable là global. Các tên route dưới đây chỉ là tên tài liệu, chưa phải ID runtime.
+Switch/Variable là global. Các tên trong bảng “runtime hiện tại” là tên đang lưu trong Database; tên đề xuất cũ không được dùng thay ID thật.
 
 | Loại | ID | Sử dụng |
 |---|---:|---|
@@ -26,7 +26,7 @@ Region/terrain:
 - Terrain/region effects đọc note tag `<terrain N se>` và `<region N se>`.
 - Mog Event Sensor Range dùng self switch B.
 
-Flag route đề xuất, chưa ghi vào Database: `WCF_ROUTE_GROUP`, `WCF_GIFT_ID`, `WCF_RECIPIENT_ID`, `WCF_TALKED_LEO`, `WCF_TALKED_SHYLVIE`, `WCF_ATLANTIS_OWNER`, `WCF_GIFT_WRAPPED`, `WCF_PARTY_STARTED`.
+Các tên thiết kế cũ `WCF_ROUTE_GROUP`, `WCF_GIFT_ID`, `WCF_RECIPIENT_ID`, `WCF_TALKED_LEO`, `WCF_TALKED_SHYLVIE`, `WCF_ATLANTIS_OWNER`, `WCF_GIFT_WRAPPED`, `WCF_PARTY_STARTED` chưa từng trở thành ID runtime. Không dùng chúng trong event mới; dùng registry bên dưới.
 
 ## Route Atlantis — trạng thái thiết kế mới
 
@@ -74,7 +74,7 @@ Flag route đề xuất, chưa ghi vào Database: `WCF_ROUTE_GROUP`, `WCF_GIFT_I
 | Switch | 48 | `MKT_FREE_EXPLORE` | Cho phép điều khiển Hải Quỳ và tương tác NPC trong tiệc Giáng sinh |
 | Variable | 45 | `SNOWBALL_RESULT` | Kết quả gần nhất: `-1` thua, `0` bỏ trận, `1` thắng |
 | Variable | 46 | `SNOWBALL_WINS` | Bitmask đối thủ đã thắng: `1` Shylvie, `2` Kohi, `4` Leo, `8` Hakase; đủ bốn người = `15` |
-| Switch | 49 | `SNOWBALL_ALL_CLEAR` | Tự bật khi `SNOWBALL_WINS == 15`; dùng làm điều kiện nhận phần thưởng sau này |
+| Switch | 49 | `SNOWBALL_ALL_CLEAR` | Tự bật khi `SNOWBALL_WINS == 15`; chỉ ghi nhận đã thắng đủ bốn đối thủ, không giới hạn phần thưởng RAM |
 | Switch | 50 | `MKT_BUS_ARRIVAL` | Map010 chỉ bật ở lựa chọn tới siêu thị; Map019 E044 dùng để chạy cảnh xe bus rời sang trái rồi tự tắt |
 | Switch | 51 | `MKT_BULLY_ACTIVE` | Map037 bật khi Aira/Bully Quỳ tiếp quản; Map038 dùng để chọn CG7 thay CG6 trong cảnh bị vùi tuyết rồi tự tắt trước free explore |
 | Switch | 52 | `MKT_COFFEE_READY` | ON = đã câu đủ 10 tôm vàng và lấy cà phê Atlantis; OFF = chọn mang cà phê thường về chuẩn bị quà |
@@ -113,7 +113,7 @@ Variable 40 vẫn chỉ dùng làm target Event ID cho Common Event camera. Swit
 | Loại | ID | Tên runtime | Ý nghĩa |
 |---|---:|---|---|
 | Variable | 52 | `ATL_BOOK_SHY_STAGE` | `1` checkout; `2` chuẩn bị xong; `3` free roam; `4` tiếp tục tiệc; `5` trao quà xong; `6` hoàn tất |
-| Switch | 61 | `ATL_BOOK_SHY_ACTIVE` | Route sách Shylvie đang chạy; điều kiện Map049/038/050 |
+| Switch | 61 | `ATL_BOOK_SHY_ACTIVE` | Route sách Shylvie đang chạy; preparation ở Map037 variant 49, sau đó Map038/050 |
 | Switch | 62 | `ATL_BOOK_SHY_FREE_EXPLORE` | Page free roam riêng trên Map038 |
 | Switch | 64 | `ATL_BOOK_SHY_PARTY_CONTINUE` | Leo kết thúc free roam và kích hoạt Map038 E119 |
 | Switch | 65 | `ATL_BOOK_SHY_DONE` | Đã hoàn tất hậu truyện |
@@ -125,7 +125,7 @@ Switch 63 thuộc `Grid Coords`; route này cố ý bỏ qua ID 63 và không d�
 | Loại | ID | Tên runtime | Ý nghĩa |
 |---|---:|---|---|
 | Variable | 53 | `ATL_BOOK_HAK_STAGE` | `1` checkout; `2` chuẩn bị xong; `3` free roam; `4` tiếp tục tiệc; `5` trao quà xong; `6` hoàn tất |
-| Switch | 66 | `ATL_BOOK_HAK_ACTIVE` | Route sách Hakase đang chạy; điều kiện Map051/038/052 |
+| Switch | 66 | `ATL_BOOK_HAK_ACTIVE` | Route sách Hakase đang chạy; preparation ở Map037 variant 51, sau đó Map038/052 |
 | Switch | 67 | `ATL_BOOK_HAK_FREE_EXPLORE` | Page free roam riêng trên Map038 |
 | Switch | 68 | `ATL_BOOK_HAK_PARTY_CONTINUE` | Leo kết thúc free roam và kích hoạt Map038 E120 |
 | Switch | 69 | `ATL_BOOK_HAK_DONE` | Đã hoàn tất hậu truyện |
@@ -152,6 +152,48 @@ Switch 63 thuộc `Grid Coords`; route này cố ý bỏ qua ID 63 và không d�
 | Switch | 75 | `LEO_SHOP_DONE` | Đã hoàn tất nhánh hỏi Leo |
 | Variable | 41 | `ENDING_HINT_ID` | `22` cà phê; `23` khiên; `24` áo choàng/Drosalya |
 
+## Route hỏi Shylvie — đá phong thủy
+
+| Loại | ID | Tên runtime | Ý nghĩa |
+|---|---:|---|---|
+| Variable | 57 | `SHY_JEWEL_BRANCH` | `1` Leo/Purple Garnet; `2` Kohi/kim cương cà phê; `3` Shylvie/Congo Tourmaline; `4` Hakase/Rainbow Fluorite |
+| Variable | 58 | `SHY_JEWEL_STAGE` | Tiến độ từ tiệm đá, preparation, party tới epilogue |
+| Switch | 76 | `SHY_JEWEL_ACTIVE` | Route đá phong thủy đang chạy |
+| Switch | 77 | `SHY_JEWEL_FREE_EXPLORE` | Mở free roam/ném tuyết tại Map038 |
+| Switch | 78 | `SHY_JEWEL_PARTY_CONTINUE` | Leo kết thúc free roam và kích hoạt phần trao đá |
+| Switch | 79 | `SHY_JEWEL_DONE` | Đã hoàn tất hậu truyện đá |
+| Variable | 41 | `ENDING_HINT_ID` | `25` Leo; `26` Kohi; `27` Shylvie; `28` Hakase |
+
+Preparation của route này dùng Map037 variant 65. Map065 cũ chỉ là archive.
+
+## State tương tác cửa hàng Leo
+
+| Loại | ID | Tên runtime | Ý nghĩa |
+|---|---:|---|---|
+| Switch | 80 | `LEO_CAFE_PANCAKE_SEEN` | Đã xem tương tác pancake tại Map058 |
+| Switch | 81 | `LEO_CAFE_KARIN_MET` | Đã gặp Karin tại Map058 |
+| Variable | 80 | `LEO_MAGIC_CROW_TALK` | Tiến độ chuỗi thoại quạ tại Map057 |
+| Variable | 81 | `LEO_MAGIC_SKULL_RANDOM` | Kết quả/ngữ cảnh ngẫu nhiên của đầu lâu tại Map057 |
+| Variable | 82 | `LEO_CAFE_KARIN_MEMORY` | Tiến độ các page hội thoại Karin tại Map058 |
+| Variable | 84 | `LEO_CAFE_VAN_MAY_TALK` | Tiến độ năm page hội thoại dùng chung Vân Phượng/Huyền Mây |
+
+Các NPC vẽ sẵn trong parallax Map058 dùng event anchor và hitbox riêng; không biến mỗi hitbox thành một chuỗi hội thoại độc lập.
+
+## Stage chuẩn bị dùng chung
+
+| Loại | ID | Tên runtime | Ý nghĩa |
+|---|---:|---|---|
+| Variable | 83 | `HQ_PREP_SCENE_VARIANT` | `37` siêu thị; `47` mì cay; `49` sách Shylvie; `51` sách Hakase; `60` quà hỏi Leo; `65` đá hỏi Shylvie |
+
+Giá trị của Variable 83 là mã variant lịch sử, không phải destination map. Tất cả các giá trị trên đều được xử lý bằng page của Map037.
+
+## Vật phẩm RAM tại tiệc Giáng sinh
+
+| Loại | ID | Tên runtime | Ý nghĩa |
+|---|---:|---|---|
+| Item | 18 | `Ram` | Nhặt từ E008–E017 trên Map038 hoặc nhận sau mỗi lần thắng Snowball Rhythm |
+| Switch | 82 | `WCF_RAM_DIANA_COMPLETE` | Diana đã xuất hiện và cutscene đủ 10 RAM đã chạy; giữ E018 ở page 2 và ngăn cutscene lặp |
+
 Map056 chỉ route ba giá trị tường minh: `1 → Map058`, `2 → Map059`, `3 → Map057`; trạng thái khác sẽ mở lại lựa chọn thay vì mặc định sang ma thuật. Map057/058/059 lần lượt chuẩn hóa Variable 55 thành `3/1/2` ngay đầu autorun. Không đặt điều kiện Variable 55 trên page autorun của các map này: bản thân map đích đã xác định duy nhất nhánh, còn điều kiện lặp lại có thể làm cutscene bị khóa nếu dữ liệu lựa chọn chưa kịp ghi.
 
-Các state mới khác cần cấp ID riêng sau khi map được tách: `ATL_READ_LETTER`, `ATL_BOOK_ID`, `ATL_CHASE_STARTED`, `ATL_CHASE_CLEARED`. Không dùng lại Variable 2/3/4/20/40 cho các state này.
+`ATL_READ_LETTER`, `ATL_BOOK_ID`, `ATL_CHASE_STARTED` và `ATL_CHASE_CLEARED` đã có ID chính thức ở bảng Atlantis. Không cấp lại ID và không dùng Variable 2/3/4/20/40 cho các state route mới.

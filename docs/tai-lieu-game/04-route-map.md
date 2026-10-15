@@ -202,7 +202,7 @@ Map010 xe bus
 
 Không gộp nhánh chọn sách, nhánh chủ tiệm và nhánh đọc thư thành một đường bắt buộc. Các trạng thái cần theo dõi độc lập: đã chọn Atlantis, đã đọc thư, đã vào tiệm sách, sách đã chọn, chase đã kích hoạt và ending đã đạt.
 
-## 10. Tổng số đường đi
+## 10. Tổng số kết quả và đường test
 
 | Nhóm | Số đường đi |
 |---|---:|
@@ -215,16 +215,25 @@ Không gộp nhánh chọn sách, nhánh chủ tiệm và nhánh đọc thư th�
 | Ending Atlantis đặc biệt | **1** |
 | Tổng đường đi lớn có kết quả riêng | **28** |
 
-## 11. Kiểm kê scene để chọn route làm trước
+Con số 28 ở đây đếm kết quả nội dung lớn. Phạm vi QA là **33 đường test** vì:
 
-Các nguồn sau có 13 tiêu đề scene, cao nhất trong tài liệu hiện có:
+- 16 tổ hợp siêu thị được tách thành 20 lượt test khi bốn route máy pha cà phê có thêm biến thể cà phê thường/cà phê Atlantis.
+- Route phòng kho → ký ức → mê cung → chase → Paulie được theo dõi như một đường test riêng.
+
+Không dùng 28 và 33 thay thế nhau nếu không ghi rõ đang đếm ending nội dung hay case QA.
+
+## 11. Trạng thái triển khai
+
+Toàn bộ nhóm route trong bảng đã có runtime flow. Thứ tự “chọn route sản xuất đầu tiên” không còn là quyết định mở. Khi sửa tiếp, ưu tiên bug playtest và asset placeholder thay vì mở rộng route.
+
+Các nguồn sau từng có 13 tiêu đề scene và được giữ làm thông tin lịch sử:
 
 - Bộ phá khóa.
 - Dao và chảo.
 - Xuống Atlantis mua sách phép.
 - Nhắn tin/hỏi Shylvie.
 
-Chúng đồng hạng về số scene. Việc chọn route sản xuất đầu tiên sẽ được quyết định sau khi tài liệu `01–04` được duyệt.
+Chúng đồng hạng về số scene trong tài liệu nguồn; số scene không còn dùng để quyết định route nào đã/ chưa được triển khai.
 
 ## 12. Ghi chú lỗi copy–paste
 

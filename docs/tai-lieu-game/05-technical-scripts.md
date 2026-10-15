@@ -159,6 +159,7 @@ Event command vẫn là Show Balloon chuẩn của VX Ace (`213`): target `-1` l
 - Scene tự đọc `Balloon1/2`: đối thủ báo hiệu chuẩn bị ném, Hải Quỳ phản ứng với Perfect/Miss/phản công, và đối thủ phản ứng khác nhau khi trúng quả Good/Perfect hoặc khi bước vào finisher. Đối thủ đồng thời có pose lấy đà khi ném và pose bật lùi/nghiêng người theo lực của cú ném trúng.
 - Phase phản công dùng cơ chế riêng theo đối thủ. Chỉ Kohi dùng giao diện chuỗi phím kiểu Audition: hoàn thành toàn bộ nhận `Perfect`, đạt ít nhất 50% nhận `Good`, dưới 50% nhận `Miss`. Shylvie dùng phản cầu liên tục, Leo dùng QTE né nhát chém không gian, còn Hakase dùng cơ chế giữ phím để đấu lực ma thuật.
 - Trận kết thúc khi một bên hết HP hoặc người chơi bấm `X/Esc`. Kết quả gần nhất ghi Variable 45 và Scene trả về Map038; BGM trước trận được phát lại. Mỗi chiến thắng được ghi vào bitmask Variable 46; khi đủ Shylvie/Kohi/Leo/Hakase (`15`), Switch 49 tự bật để event phần thưởng kiểm tra. Script call hỗ trợ `WCF_SNOWBALL.defeated?(ID)` và `WCF_SNOWBALL.all_cleared?`.
+- Mỗi chiến thắng, kể cả đấu lại cùng một thành viên, reserve Common Event 20 sau khi trở về Map038 và trao thêm một Item 18 (`Ram`). Phần thưởng cố ý có thể farm; bitmask Variable 46 chỉ ghi tiến độ thắng từng đối thủ và không giới hạn số RAM.
 - Graphic hiện tại chỉ hỗ trợ pose prototype bằng offset/scale sprite. Animation né hoàn chỉnh cần spritesheet riêng trong giai đoạn polish.
 
 ### Picture/layer/parallax — rủi ro Z-order
