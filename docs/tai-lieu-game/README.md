@@ -106,6 +106,7 @@ Tên và cách chia file dưới đây là cấu trúc đang được sử dụn
 | `maps/README.md` | Inventory và hành vi map runtime | Hiện hành |
 | `systems/flags-and-variables.md` | Switch, variable, item và điều kiện event | Registry runtime |
 | `systems/audio-map.md` | Phân bổ BGM và quy tắc fade/stop | Hiện hành |
+| `scripts/README.md` | Danh mục script, tác giả/nguồn, dependency, audit và đề xuất RGSS3 | Đối chiếu runtime 30/10/2026 |
 | `production/assets.md` | Sprite, CG, BG, BGM, SFX, voice và trạng thái | Đang duy trì |
 | `production/open-issues.md` | Mâu thuẫn và câu hỏi cần quyết định | Đang mở |
 | `production/tester-web-app-content-spec.md` | Đặc tả nội dung web app theo dõi playtest dành cho người chơi | Đang sử dụng |

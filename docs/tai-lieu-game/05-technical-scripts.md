@@ -2,6 +2,10 @@
 
 Tài liệu này là bản tra cứu kỹ thuật cho các script đang có trong `Data/Scripts.rvdata2` và bản export tương ứng trong `Scripts/`. Runtime là nguồn quyết định; thư mục export chỉ dùng để đọc, review và chỉnh sửa có kiểm soát.
 
+Danh mục theo từng slot, tác giả/nguồn, dependency và báo cáo sửa lỗi mới nhất nằm trong [scripts/README.md](scripts/README.md). Ưu tiên snapshot runtime và kết luận có bằng chứng ở đó khi một ghi chú kiểm kê cũ bên dưới chưa phản ánh lần sửa mới.
+
+Lượt tối ưu chung 15/11/2026 sửa redraw điện thoại, cache mask KUL, truy vấn event và cleanup nhãn/weather. Số thao tác trước/sau, giới hạn kiểm chứng và cách đo trên laptop nằm trong [báo cáo hiệu năng](scripts/performance-audit-2026-11-15.md).
+
 Checklist các lỗi runtime đặc thù RGSS3 và transfer/viewport được lưu tại [production/rgss3-runtime-pitfalls.md](production/rgss3-runtime-pitfalls.md). Phải kiểm tra checklist này khi thêm overlay, camera, lighting hoặc hiệu ứng tồn tại qua chuyển map.
 
 ## Quy ước quan trọng
@@ -89,7 +93,7 @@ KUL Graphics còn diễn giải region/height theo cấu hình riêng trong KUL 
 - `Fixed Pictures`: picture cố định; Switch 98, Variable 6.
 - `Picture bug`, `Pictures under characters`, `Yanfly Flip Pictures`: viewport/Z-order/flip picture.
 - `Galv Char effect`: phản chiếu theo Region 1.
-- `Galv's Region Effects`: hiệu ứng theo region; Switch 94 để tắt.
+- `Galv's Region Effects`: phần code hiện nằm trong comment, không tham gia runtime; Switch 94 là cấu hình lịch sử của script.
 - `Terrain and Region Effects`: âm thanh/hiệu ứng bước chân qua note tag terrain/region.
 - `KUL Graphics`, `KUL Graphics Menu Add-on`, `KUL Item Lantern Add-on`, `KUL Fog Add-on`: lighting/fog/lantern; dùng Switch 17, 18, 19, 4.
 - `victor fog`, `Map effects`, `Particles`, `Particles Weather`, `MOG_Weather_EX`, `anti-animation lag`: fog, weather, particle và tối ưu animation.
@@ -133,9 +137,9 @@ KUL Graphics còn diễn giải region/height theo cấu hình riêng trong KUL 
 
 ## Nhóm script có khả năng conflict
 
-### Camera — cần quyết định một script làm chủ
+### Camera — giữ đúng alias chain hiện có
 
-`Lune Smooth Camera Sliding`, `Galv Cam Slide Control` và `Enhanced Camera` đều chạm vào update/scroll camera. Map015 đang phụ thuộc Enhanced Camera. Không nên sửa tự động lúc này vì cần xác định camera nào được dùng ở từng route; khuyến nghị giữ Enhanced Camera làm camera chính và chỉ bật slide của Galv nếu đã kiểm tra alias chain.
+`Enhanced Camera` load sau `Lune Smooth Camera Sliding`: nhánh Enhanced xử lý camera khi strength bật, nhánh còn lại gọi alias về Lune. `Galv Cam Slide Control` đã bị comment toàn bộ nên không tham gia chuỗi runtime. Không gỡ Lune hoặc bật lại Galv chỉ vì ba file cùng có tên camera; xem [compatibility audit](scripts/compatibility-audit.md) trước khi thay chính sách camera.
 
 ### Message/UI — cần test thứ tự load
 

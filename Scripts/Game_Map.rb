@@ -353,13 +353,17 @@ class Game_Map
   # * Get Array of Events at Designated Coordinates
   #--------------------------------------------------------------------------
   def events_xy(x, y)
-    @events.values.select {|event| event.pos?(x, y) }
+    result = []
+    @events.each_value { |event| result << event if event.pos?(x, y) }
+    result
   end
   #--------------------------------------------------------------------------
   # * Get Array of Events at Designated Coordinates (Except Pass-Through)
   #--------------------------------------------------------------------------
   def events_xy_nt(x, y)
-    @events.values.select {|event| event.pos_nt?(x, y) }
+    result = []
+    @events.each_value { |event| result << event if event.pos_nt?(x, y) }
+    result
   end
   #--------------------------------------------------------------------------
   # * Get Array of Tile-Handling Events at Designated Coordinates
@@ -686,16 +690,20 @@ class Game_Map
   # * Determine Existence of Starting Map Event
   #--------------------------------------------------------------------------
   def any_event_starting?
-    @events.values.any? {|event| event.starting }
+    @events.each_value { |event| return true if event.starting }
+    false
   end
   #--------------------------------------------------------------------------
   # * Detect/Set Up Starting Map Event
   #--------------------------------------------------------------------------
   def setup_starting_map_event
-    event = @events.values.find {|event| event.starting }
-    event.clear_starting_flag if event
-    @interpreter.setup(event.list, event.id) if event
-    event
+    @events.each_value do |event|
+      next unless event.starting
+      event.clear_starting_flag
+      @interpreter.setup(event.list, event.id)
+      return event
+    end
+    nil
   end
   #--------------------------------------------------------------------------
   # * Detect/Set Up Autorun Common Event

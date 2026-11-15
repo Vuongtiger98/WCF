@@ -1,5 +1,7 @@
 # RGSS3 runtime pitfalls
 
+Bổ sung ngày 30/10/2026: các lỗi sở hữu bitmap dùng chung của layer/particle, hàng đợi animation và lỗi ghép slot của công cụ export đã được ghi cùng bằng chứng kiểm tra tại [scripts/compatibility-audit.md](../scripts/compatibility-audit.md).
+
 Tài liệu này ghi lại các lỗi đã thực sự xuất hiện trong dự án. Đây là checklist bắt buộc khi sửa script hình ảnh, camera, lighting và transfer; `ruby -c` chỉ kiểm tra cú pháp, không chứng minh API RGSS3 sẽ chạy được.
 
 ## 1. Không giả định mọi đối tượng đồ họa đều có `disposed?`

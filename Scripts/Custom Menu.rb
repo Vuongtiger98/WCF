@@ -30,67 +30,79 @@ module PhoneMenu
 
   SELECT_SE = "Decision1"
 
-  PHONE_WIDTH = 350
-  PHONE_HEIGHT = 450
+  # Match the 350x480 phone artwork without stretching its proportions.
+  PHONE_WIDTH = 336
+  PHONE_HEIGHT = 460
   PHONE_X = (Graphics.width - PHONE_WIDTH) / 2
   PHONE_Y = (Graphics.height - PHONE_HEIGHT) / 2
 
-  BLACK_RECT_WIDTH = 330
-  BLACK_RECT_HEIGHT = 430
+  BLACK_RECT_WIDTH = PHONE_WIDTH - 24
+  BLACK_RECT_HEIGHT = PHONE_HEIGHT - 32
   BLACK_RECT_X = PHONE_X + (PHONE_WIDTH - BLACK_RECT_WIDTH) / 2
   BLACK_RECT_Y = PHONE_Y + (PHONE_HEIGHT - BLACK_RECT_HEIGHT) / 2
 
   ICON_WIDTH = 64
   ICON_HEIGHT = 64
-  ICON_SPACING_X = 26
-  ICON_SPACING_Y = 22
-  ICON_START_X = PHONE_X + 54
-  ICON_START_Y = PHONE_Y + 232
-  ICON_SCALE = 1.10
+  ICON_SPACING_X = 32
+  ICON_SPACING_Y = 28
+  ICON_START_X = PHONE_X + 72
+  ICON_START_Y = PHONE_Y + 270
+  ICON_DISPLAY_SIZE = 50
+  ICON_SCALE = 1.06
   ICON_IDLE_OPACITY = 235
+  APP_CARD_W = 84
+  APP_CARD_H = 84
+  APP_LABELS = ["Túi đồ", "Lưu game", "Tải game", "Cài đặt", "Tin nhắn", "Thư viện"]
+  UI_FONT = ["Segoe UI", "Arial"]
+  UI_WORDS = {
+    "Cloudy"=>"Nhiều mây", "Clear"=>"Trời quang", "Indoors"=>"Trong nhà", "Snowy"=>"Tuyết rơi",
+    "Calendar"=>"Lịch", "Status"=>"Pin", "Battery"=>"còn lại", "December"=>"Tháng 12",
+    "Christmas"=>"Giáng sinh", "Home"=>"Ở nhà", "Old Book Shop"=>"Tiệm sách cũ",
+    "Christmas Party"=>"Tiệc Giáng sinh"
+  }
 
-  MAIN_OVERLAY_OPACITY = 58
-  SUB_OVERLAY_OPACITY = 108
-  MESSAGE_OVERLAY_OPACITY = 52
-  GALLERY_OVERLAY_OPACITY = 72
+  MAIN_OVERLAY_OPACITY = 172
+  SUB_OVERLAY_OPACITY = 218
+  MESSAGE_OVERLAY_OPACITY = 224
+  GALLERY_OVERLAY_OPACITY = 218
 
-  CONTACT_ICON_X = PHONE_X + 34
-  CONTACT_ICON_Y = PHONE_Y + 124
-  CONTACT_SPACING = 92
-  CONTACT_NAME_X_OFFSET = 76
-  CONTACT_NAME_Y_OFFSET = 8
-  CONTACT_INFO_X = 18
-  CONTACT_INFO_Y = PHONE_Y + 14
+  CONTACT_ICON_X = PHONE_X + 36
+  CONTACT_ICON_Y = PHONE_Y + 104
+  CONTACT_SPACING = 94
+  CONTACT_NAME_X_OFFSET = 56
+  CONTACT_NAME_Y_OFFSET = 4
+  CONTACT_INFO_X = PHONE_X
+  CONTACT_INFO_Y = PHONE_Y
   MAX_CONTACTS_DISPLAYED = 3
 
   # Message layout
-  CONTACT_MESSAGE_Y = PHONE_Y + 86
-  MESSAGE_BOTTOM_LIMIT = PHONE_Y + PHONE_HEIGHT - 18
+  CONTACT_MESSAGE_Y = PHONE_Y + 96
+  MESSAGE_BOTTOM_LIMIT = PHONE_Y + PHONE_HEIGHT - 46
   MESSAGE_SPACING = 10
   MESSAGE_LINE_SPACING = 22
   MESSAGE_ICON_SIZE = 28
-  MESSAGE_MAX_WIDTH = 178
+  MESSAGE_MAX_WIDTH = 218
   MESSAGE_MIN_WIDTH = 76
-  MESSAGE_PADDING_X = 14
+  MESSAGE_PADDING_X = 12
   MESSAGE_PADDING_Y = 10
-  MESSAGE_LEFT_ICON_X = PHONE_X + 18
-  MESSAGE_LEFT_BUBBLE_X = PHONE_X + 50
-  MESSAGE_RIGHT_ICON_X = PHONE_X + PHONE_WIDTH - 18 - MESSAGE_ICON_SIZE
+  MESSAGE_LEFT_ICON_X = PHONE_X + 24
+  MESSAGE_LEFT_BUBBLE_X = PHONE_X + 60
+  MESSAGE_RIGHT_ICON_X = PHONE_X + PHONE_WIDTH - 24 - MESSAGE_ICON_SIZE
   MESSAGE_RIGHT_BUBBLE_RIGHT = MESSAGE_RIGHT_ICON_X - 8
   MAX_MESSAGE_CHARS_PER_LINE = 21
 
   # Gallery layout
   GALLERY_MAX_PICTURES = ($imported && $imported[:mog_picture_gallery]) ? MOG_PICTURE_GALLERY::MAX_PICTURES : 40
   GALLERY_COLUMNS = 2
-  GALLERY_ROWS = 3
+  GALLERY_ROWS = 2
   GALLERY_PER_PAGE = GALLERY_COLUMNS * GALLERY_ROWS
-  GALLERY_THUMB_W = 124
-  GALLERY_THUMB_H = 70
-  GALLERY_START_X = PHONE_X + 34
-  GALLERY_START_Y = PHONE_Y + 96
-  GALLERY_SPACING_X = 22
-  GALLERY_SPACING_Y = 26
-  GALLERY_LABEL_H = 18
+  GALLERY_THUMB_W = 128
+  GALLERY_THUMB_H = 84
+  GALLERY_START_X = PHONE_X + 30
+  GALLERY_START_Y = PHONE_Y + 100
+  GALLERY_SPACING_X = 20
+  GALLERY_SPACING_Y = 24
+  GALLERY_LABEL_H = 36
 
   ANIMATION_DURATION = 20
   SLIDE_DURATION = 30
@@ -322,6 +334,7 @@ class Scene_Menu < Scene_MenuBase
   alias phone_menu_return_scene return_scene
 
   def start
+    @phone_menu_disposed = false
     super
     @animation_frame = 0
     @selected_index = $phone_menu_selected_index || 0
@@ -339,7 +352,6 @@ class Scene_Menu < Scene_MenuBase
 
     @animation_state = :opening
     @animation_timer = 0
-    @from_external_scene = true
 
     create_overlay
     create_black_rectangle
@@ -362,6 +374,11 @@ class Scene_Menu < Scene_MenuBase
   # Background
   #--------------------------------------------------------------------------
   def create_background
+    @phone_backdrop = Sprite.new
+    source = SceneManager.background_bitmap
+    @phone_backdrop.bitmap = source ? source.clone : Bitmap.new(Graphics.width, Graphics.height)
+    @phone_backdrop.color.set(8, 12, 24, 190)
+    @phone_backdrop.z = 10
     @background_sprite = Sprite.new
     @background_sprite.x = PhoneMenu::PHONE_X
     @background_sprite.y = Graphics.height
@@ -396,8 +413,8 @@ class Scene_Menu < Scene_MenuBase
   def set_overlay_opacity(value)
     return unless @overlay && @overlay.bitmap
     @overlay.bitmap.clear
-    @overlay.bitmap.fill_rect(0, 0, PhoneMenu::PHONE_WIDTH, PhoneMenu::PHONE_HEIGHT,
-      Color.new(0, 0, 0, value))
+    fill_round_rect(@overlay.bitmap, 12, 16, PhoneMenu::PHONE_WIDTH - 24,
+      PhoneMenu::PHONE_HEIGHT - 32, 18, Color.new(9, 14, 28, value))
   end
 
   #--------------------------------------------------------------------------
@@ -410,7 +427,8 @@ class Scene_Menu < Scene_MenuBase
     @black_rectangle.x = PhoneMenu::BLACK_RECT_X
     @black_rectangle.y = PhoneMenu::BLACK_RECT_Y
     @black_rectangle.z = 300
-    @black_rectangle.opacity = 255
+    @black_rectangle.opacity = 0
+    @black_rectangle.visible = false
   end
 
   #--------------------------------------------------------------------------
@@ -434,11 +452,16 @@ class Scene_Menu < Scene_MenuBase
   end
 
   def simple_text_width(text, size = 20)
-    temp = Bitmap.new(1, 1)
+    # A menu measures many lines while scrolling. Reuse the measuring surface.
+    if !@phone_measure_bitmap || @phone_measure_bitmap.disposed?
+      @phone_measure_bitmap = Bitmap.new(1, 1)
+    end
+    temp = @phone_measure_bitmap
+    temp.font.name = PhoneMenu::UI_FONT
+    temp.font.bold = false
     temp.font.size = size
     temp.font.outline = false
     w = temp.text_size(text.to_s).width
-    temp.dispose
     w
   end
 
@@ -481,6 +504,66 @@ class Scene_Menu < Scene_MenuBase
       end
     end
     bmp
+  end
+
+  def phone_text(bitmap, x, y, width, height, text, size = 16, color = nil, align = 0, bold = false)
+    bitmap.font.name = PhoneMenu::UI_FONT
+    bitmap.font.size = size
+    bitmap.font.bold = bold
+    bitmap.font.italic = false
+    bitmap.font.shadow = false
+    bitmap.font.outline = false
+    bitmap.font.color = color || Color.new(245, 246, 255)
+    value = text.to_s
+    if bitmap.text_size(value).width > width
+      clusters = value.scan(/\P{M}\p{M}*/)
+      clusters.pop while !clusters.empty? && bitmap.text_size(clusters.join + "…").width > width
+      value = clusters.join + "…"
+    end
+    bitmap.draw_text(x, y, width, height, value, align)
+  end
+
+  def phone_widget_label(value)
+    text = value.to_s
+    return PhoneMenu::UI_WORDS[text] if PhoneMenu::UI_WORDS.has_key?(text)
+    text = text.sub(/\A(\d+) Dec\b/, '\\1/12')
+    text.sub(/\AWind (\d+) km\/h\z/, 'Gió \\1 km/h')
+  end
+
+  def phone_card(bitmap, x, y, width, height, selected = false)
+    edge = selected ? Color.new(174, 186, 255, 235) : Color.new(119, 140, 181, 65)
+    fill_round_rect(bitmap, x, y, width, height, 12, edge)
+    fill_round_rect(bitmap, x + 1, y + 1, width - 2, height - 2, 11,
+      selected ? Color.new(53, 66, 111, 240) : Color.new(18, 28, 47, 220))
+  end
+
+  def phone_footer(bitmap, text)
+    bitmap.fill_rect(28, PhoneMenu::PHONE_HEIGHT - 42, PhoneMenu::PHONE_WIDTH - 56, 1,
+      Color.new(183, 198, 231, 44))
+    phone_text(bitmap, 24, PhoneMenu::PHONE_HEIGHT - 35, PhoneMenu::PHONE_WIDTH - 48, 18,
+      text, 12, Color.new(202, 212, 235), 1)
+  end
+
+  def phone_fit_bitmap(target, source, available_height = nil, upscale = true)
+    target.clear
+    target.fill_rect(target.rect, Color.new(10, 16, 28))
+    available_height ||= target.height
+    scale = [target.width.to_f / source.width, available_height.to_f / source.height].min
+    scale = [scale, 1.0].min unless upscale
+    width = [(source.width * scale).round, 1].max
+    height = [(source.height * scale).round, 1].max
+    rect = Rect.new((target.width - width) / 2, (available_height - height) / 2, width, height)
+    target.stretch_blt(rect, source, source.rect)
+  end
+
+  def phone_locked_thumbnail(bitmap)
+    bitmap.fill_rect(bitmap.rect, Color.new(13, 21, 36))
+    x, y = bitmap.width / 2, bitmap.height / 2
+    fill_round_rect(bitmap, x - 11, y - 23, 22, 29, 10, Color.new(151, 170, 214))
+    fill_round_rect(bitmap, x - 7, y - 19, 14, 22, 7, Color.new(13, 21, 36))
+    fill_round_rect(bitmap, x - 18, y - 6, 36, 28, 6, Color.new(102, 124, 176))
+    draw_filled_circle(bitmap, x, y + 5, 3, Color.new(17, 27, 46))
+    bitmap.fill_rect(x - 1, y + 6, 3, 8, Color.new(17, 27, 46))
   end
 
   #--------------------------------------------------------------------------
@@ -547,6 +630,12 @@ class Scene_Menu < Scene_MenuBase
   def create_foreground
     @icon_sprites = []
     @highlight_sprites = []
+    # All six highlights have identical pixels; opacity belongs to each sprite.
+    @phone_highlight_bitmap = Bitmap.new(PhoneMenu::APP_CARD_W, PhoneMenu::APP_CARD_H)
+    fill_round_rect(@phone_highlight_bitmap, 0, 0, PhoneMenu::APP_CARD_W, PhoneMenu::APP_CARD_H,
+      12, Color.new(179, 191, 255, 235))
+    fill_round_rect(@phone_highlight_bitmap, 2, 2, PhoneMenu::APP_CARD_W - 4, PhoneMenu::APP_CARD_H - 4,
+      10, Color.new(148, 162, 250, 30))
 
     PhoneMenu::MENU_COMMANDS.each_with_index do |sym, index|
       col = index % 3
@@ -555,18 +644,21 @@ class Scene_Menu < Scene_MenuBase
       y = PhoneMenu::ICON_START_Y + row * (PhoneMenu::ICON_HEIGHT + PhoneMenu::ICON_SPACING_Y)
 
       highlight = Sprite.new
-      highlight.bitmap = make_circle_highlight(76)
-      highlight.x = x - 6
-      highlight.y = y - 6
+      highlight.bitmap = @phone_highlight_bitmap
+      highlight.x = x - PhoneMenu::APP_CARD_W / 2
+      highlight.y = y - 32
       highlight.z = 89
       highlight.opacity = 0
       highlight.visible = false
       @highlight_sprites << highlight
 
       sprite = Sprite.new
-      sprite.bitmap = Cache.load_bitmap("Graphics/PhoneMenu/", icon_bitmap_name(sym))
+      sprite.bitmap = Cache.load_bitmap("Graphics/PhoneMenu/", icon_bitmap_name(sym)).clone
+      sprite.ox = sprite.bitmap.width / 2
+      sprite.oy = sprite.bitmap.height / 2
       sprite.x = x
       sprite.y = y
+      sprite.zoom_x = sprite.zoom_y = PhoneMenu::ICON_DISPLAY_SIZE.to_f / sprite.bitmap.width
       sprite.z = 100
       sprite.opacity = PhoneMenu::ICON_IDLE_OPACITY
       sprite.visible = false
@@ -602,58 +694,55 @@ class Scene_Menu < Scene_MenuBase
   def draw_main_panel
     bmp = @main_panel.bitmap
     bmp.clear
+    muted = Color.new(187, 201, 226)
+    phone_text(bmp, 24, 26, 194, 28, "Điện thoại", 22, nil, 0, true)
+    phone_text(bmp, 214, 30, 98, 20, "WANDERER", 11, Color.new(186, 193, 244), 2)
 
-    fill_round_rect(bmp, 18, 20, 314, 66, 14, Color.new(0, 0, 0, 110))
-    bmp.font.size = 18
-    bmp.font.bold = true
-    bmp.font.color = Color.new(255, 255, 255)
-    bmp.font.outline = false
-    bmp.draw_text(32, 26, 150, 24, $game_config.phone_widget_weather_title)
+    phone_card(bmp, 24, 64, 288, 82)
+    phone_text(bmp, 38, 74, 156, 24, phone_widget_label($game_config.phone_widget_weather_title), 17, nil, 0, true)
+    phone_text(bmp, 38, 106, 166, 20, phone_widget_label($game_config.phone_widget_weather_time), 13, muted)
+    phone_text(bmp, 212, 72, 84, 34, $game_config.phone_widget_weather_temp, 30, nil, 2, true)
+    phone_text(bmp, 198, 112, 100, 18, phone_widget_label($game_config.phone_widget_weather_sub), 11, muted, 2)
 
-    bmp.font.bold = false
-    bmp.font.size = 14
-    bmp.font.color = Color.new(220, 220, 220)
-    bmp.draw_text(32, 48, 150, 20, $game_config.phone_widget_weather_time)
+    phone_card(bmp, 24, 156, 138, 58)
+    phone_card(bmp, 174, 156, 138, 58)
+    phone_text(bmp, 36, 162, 114, 18, phone_widget_label($game_config.phone_widget_small_left_title), 12, muted)
+    phone_text(bmp, 36, 180, 40, 28, $game_config.phone_widget_small_left_big, 24, nil, 0, true)
+    phone_text(bmp, 80, 188, 70, 18, phone_widget_label($game_config.phone_widget_small_left_sub), 12, muted)
+    phone_text(bmp, 186, 162, 114, 18, phone_widget_label($game_config.phone_widget_small_right_title), 12, muted)
+    phone_text(bmp, 186, 180, 62, 28, $game_config.phone_widget_small_right_big, 24, nil, 0, true)
+    phone_text(bmp, 248, 188, 52, 18, phone_widget_label($game_config.phone_widget_small_right_sub), 12, muted, 2)
 
-    bmp.font.size = 28
-    bmp.font.bold = true
-    bmp.font.color = Color.new(255, 255, 255)
-    bmp.draw_text(210, 26, 94, 28, $game_config.phone_widget_weather_temp, 2)
+    phone_text(bmp, 28, 218, 280, 18, "ỨNG DỤNG", 11, muted)
+    PhoneMenu::MENU_COMMANDS.each_with_index do |command, index|
+      x = PhoneMenu::ICON_START_X - PhoneMenu::PHONE_X +
+        (index % 3) * (PhoneMenu::ICON_WIDTH + PhoneMenu::ICON_SPACING_X)
+      y = PhoneMenu::ICON_START_Y - PhoneMenu::PHONE_Y +
+        (index / 3) * (PhoneMenu::ICON_HEIGHT + PhoneMenu::ICON_SPACING_Y)
+      phone_card(bmp, x - PhoneMenu::APP_CARD_W / 2, y - 32,
+        PhoneMenu::APP_CARD_W, PhoneMenu::APP_CARD_H)
+      phone_text(bmp, x - 42, y + 27, 84, 20, PhoneMenu::APP_LABELS[index], 13, nil, 1)
+    end
+    phone_footer(bmp, "Mũi tên: chọn   Enter: mở   Esc: đóng")
+    @phone_panel_snapshot = phone_panel_values.map { |value| value.dup }
+    @phone_panel_bitmap = bmp
+  end
 
-    bmp.font.bold = false
-    bmp.font.size = 13
-    bmp.font.color = Color.new(225, 225, 225)
-    bmp.draw_text(186, 54, 124, 18, $game_config.phone_widget_weather_sub, 2)
-
-    fill_round_rect(bmp, 18, 96, 150, 62, 14, Color.new(0, 0, 0, 96))
-    bmp.font.size = 14
-    bmp.font.color = Color.new(230, 230, 230)
-    bmp.draw_text(30, 104, 110, 18, $game_config.phone_widget_small_left_title)
-    bmp.font.size = 24
-    bmp.font.bold = true
-    bmp.font.color = Color.new(255, 255, 255)
-    bmp.draw_text(28, 120, 52, 26, $game_config.phone_widget_small_left_big)
-    bmp.font.bold = false
-    bmp.font.size = 13
-    bmp.draw_text(74, 124, 78, 18, $game_config.phone_widget_small_left_sub)
-
-    fill_round_rect(bmp, 182, 96, 150, 62, 14, Color.new(0, 0, 0, 96))
-    bmp.font.size = 14
-    bmp.font.color = Color.new(230, 230, 230)
-    bmp.draw_text(194, 104, 110, 18, $game_config.phone_widget_small_right_title)
-    bmp.font.size = 24
-    bmp.font.bold = true
-    bmp.font.color = Color.new(255, 255, 255)
-    bmp.draw_text(194, 120, 56, 26, $game_config.phone_widget_small_right_big)
-    bmp.font.bold = false
-    bmp.font.size = 13
-    bmp.draw_text(246, 124, 68, 18, $game_config.phone_widget_small_right_sub)
-
-    fill_round_rect(bmp, 28, 206, 294, 170, 18, Color.new(0, 0, 0, 86))
+  def phone_panel_values
+    config = $game_config
+    values = [config.phone_widget_weather_title, config.phone_widget_weather_time,
+     config.phone_widget_weather_temp, config.phone_widget_weather_sub,
+     config.phone_widget_small_left_title, config.phone_widget_small_left_big,
+     config.phone_widget_small_left_sub, config.phone_widget_small_right_title,
+     config.phone_widget_small_right_big, config.phone_widget_small_right_sub]
+    values.map { |value| value.to_s }
   end
 
   def refresh_main_panel
-    draw_main_panel if @main_panel && @main_panel.bitmap
+    return unless @main_panel && @main_panel.bitmap
+    return if @phone_panel_bitmap.equal?(@main_panel.bitmap) &&
+      @phone_panel_snapshot == phone_panel_values
+    draw_main_panel
   end
 
   #--------------------------------------------------------------------------
@@ -692,18 +781,13 @@ class Scene_Menu < Scene_MenuBase
   end
 
   def update_opening_animation
-    return unless @from_external_scene
     @animation_timer += 1
-    @background_sprite.visible = true
-    @overlay.visible = true
 
     progress = [@animation_timer.to_f / PhoneMenu::SLIDE_DURATION, 1.0].min
     eased = 1.0 - (1.0 - progress) ** 3
     phone_apply_slide_offset((Graphics.height - PhoneMenu::PHONE_Y) * (1.0 - eased))
 
-    fade = [@animation_timer.to_f / PhoneMenu::FADE_DURATION, 1.0].min
-    @black_rectangle.opacity = 255 * (1.0 - fade)
-    if progress >= 1.0 && fade >= 1.0
+    if progress >= 1.0
       phone_apply_slide_offset(0)
       @black_rectangle.opacity = 0
       @black_rectangle.visible = false
@@ -716,7 +800,6 @@ class Scene_Menu < Scene_MenuBase
       end
       @animation_state = :idle
       @animation_timer = 0
-      @from_external_scene = false
     end
   end
 
@@ -747,7 +830,7 @@ class Scene_Menu < Scene_MenuBase
   def phone_visual_sprites
     sprites = []
     instance_variables.each do |name|
-      next if name == :@black_rectangle
+      next if name == :@black_rectangle || name == :@phone_backdrop
       phone_collect_sprites(instance_variable_get(name), sprites)
     end
     sprites.uniq
@@ -780,18 +863,13 @@ class Scene_Menu < Scene_MenuBase
 
   def update_icon_animation
     @icon_sprites.each_with_index do |sprite, index|
-      highlight = @highlight_sprites[index]
-      if index == @selected_index
-        progress = (@animation_frame % PhoneMenu::ANIMATION_DURATION).to_f / PhoneMenu::ANIMATION_DURATION
-        scale = 1.0 + (PhoneMenu::ICON_SCALE - 1.0) * Math.sin(progress * Math::PI)
-        sprite.zoom_x = sprite.zoom_y = scale
-        sprite.opacity = 255
-        highlight.opacity = 190
-      else
-        sprite.zoom_x = sprite.zoom_y = 1.0
-        sprite.opacity = PhoneMenu::ICON_IDLE_OPACITY
-        highlight.opacity = 70
-      end
+      selected = index == @selected_index
+      progress = (@animation_frame % PhoneMenu::ANIMATION_DURATION).to_f / PhoneMenu::ANIMATION_DURATION
+      pulse = selected ? 1.0 + (PhoneMenu::ICON_SCALE - 1.0) * Math.sin(progress * Math::PI) : 1.0
+      scale = PhoneMenu::ICON_DISPLAY_SIZE.to_f / [sprite.bitmap.width, sprite.bitmap.height].max
+      sprite.zoom_x = sprite.zoom_y = scale * pulse
+      sprite.opacity = selected ? 255 : PhoneMenu::ICON_IDLE_OPACITY
+      @highlight_sprites[index].opacity = selected ? 255 : 0
     end
   end
 
@@ -849,7 +927,6 @@ class Scene_Menu < Scene_MenuBase
     $phone_menu_selected_index = @selected_index
     hide_phone_base_sprites
     dispose_phone_menu_sprites
-    @from_external_scene = false
     SceneManager.call(scene_class)
   end
 
@@ -887,27 +964,17 @@ class Scene_Menu < Scene_MenuBase
   def post_start
     super
     @selected_index = $phone_menu_selected_index || 0
-    prev_scene = SceneManager.instance_variable_get(:@stack).last
-    @from_external_scene = prev_scene && ![Scene_Item, Scene_Save, Scene_Load, Scene_System, Scene_Map].include?(prev_scene.class)
-
-    if @from_external_scene
-      @animation_state = :opening
-      @animation_timer = 0
-      phone_apply_slide_offset(Graphics.height - PhoneMenu::PHONE_Y)
-      @background_sprite.visible = false
-      @black_rectangle.opacity = 255
-      @black_rectangle.visible = true
-      hide_menu_sprites
-    else
-      @animation_state = :idle
-      @animation_timer = 0
-      phone_apply_slide_offset(0)
-      @background_sprite.visible = true
-      @overlay.visible = true
-      @black_rectangle.opacity = 0
-      @black_rectangle.visible = false
-      show_menu_sprites
-    end
+    # Every scene entry opens the phone, including a return from a phone app.
+    # The top of SceneManager's stack is the caller, not the scene just left.
+    @animation_state = :opening
+    @animation_timer = 0
+    phone_apply_slide_offset(Graphics.height - PhoneMenu::PHONE_Y)
+    @background_sprite.visible = true
+    @overlay.visible = true
+    @black_rectangle.opacity = 0
+    @black_rectangle.visible = false
+    show_menu_sprites
+    update_icon_animation
   end
 
   #--------------------------------------------------------------------------
@@ -1136,13 +1203,10 @@ class Scene_Menu < Scene_MenuBase
 
   def draw_contacts_header
     bmp = @contact_info.bitmap
-    fill_round_rect(bmp, 12, 12, PhoneMenu::PHONE_WIDTH - 24, 34, 10, Color.new(0, 0, 0, 136))
-    bmp.font.size = 22
-    bmp.font.bold = true
-    bmp.font.color = Color.new(255, 255, 255)
-    bmp.font.outline = false
-    bmp.draw_text(0, 15, PhoneMenu::PHONE_WIDTH, 26, "Contacts", 1)
-    bmp.font.bold = false
+    phone_text(bmp, 24, 26, 222, 30, "Tin nhắn", 22, nil, 0, true)
+    entries = @pmgc_entries || []
+    phone_text(bmp, 24, 60, 288, 20, "#{entries.size} cuộc trò chuyện", 13, Color.new(187, 201, 226))
+    phone_footer(bmp, "↑↓: chọn   Enter: xem   Esc: quay lại")
   end
 
   def get_sender_icon(sender, contact_id)
@@ -1293,6 +1357,20 @@ class Scene_Menu < Scene_MenuBase
   def dispose_phone_menu_sprites
     return if @phone_menu_disposed
     @phone_menu_disposed = true
+
+    if @phone_measure_bitmap && !@phone_measure_bitmap.disposed?
+      @phone_measure_bitmap.dispose
+    end
+    @phone_measure_bitmap = nil
+    @phone_panel_snapshot = nil
+    @phone_panel_bitmap = nil
+    @phone_wrap_cache = nil
+
+    if @phone_backdrop
+      @phone_backdrop.bitmap.dispose if @phone_backdrop.bitmap && !@phone_backdrop.bitmap.disposed?
+      @phone_backdrop.dispose unless @phone_backdrop.disposed?
+      @phone_backdrop = nil
+    end
 
     dispose_sprite_array(@icon_sprites)
     dispose_sprite_array(@highlight_sprites)
@@ -1796,7 +1874,7 @@ class Scene_Menu < Scene_MenuBase
   # Gallery helpers
   #--------------------------------------------------------------------------
   def gallery_picture_name(picture_id)
-    PhoneMenu::GALLERY_PICTURE_NAMES[picture_id] || "Picture #{picture_id}"
+    PhoneMenu::GALLERY_PICTURE_NAMES[picture_id] || "Ảnh #{picture_id}"
   end
 
   def gallery_page_max
@@ -1930,53 +2008,40 @@ class Scene_Menu < Scene_MenuBase
 
   def rebuild_gallery_grid
     dispose_gallery_grid_sprites
-
     start_id = @gallery_page * PhoneMenu::GALLERY_PER_PAGE + 1
-    0.upto(PhoneMenu::GALLERY_PER_PAGE - 1) do |i|
-      picture_id = start_id + i
+    PhoneMenu::GALLERY_PER_PAGE.times do |index|
+      picture_id = start_id + index
       break if picture_id > PhoneMenu::GALLERY_MAX_PICTURES
-
-      col = i % PhoneMenu::GALLERY_COLUMNS
-      row = i / PhoneMenu::GALLERY_COLUMNS
-      x = PhoneMenu::GALLERY_START_X + col * (PhoneMenu::GALLERY_THUMB_W + PhoneMenu::GALLERY_SPACING_X)
-      y = PhoneMenu::GALLERY_START_Y + row * (PhoneMenu::GALLERY_THUMB_H + PhoneMenu::GALLERY_LABEL_H + PhoneMenu::GALLERY_SPACING_Y)
-
+      x = PhoneMenu::GALLERY_START_X + (index % PhoneMenu::GALLERY_COLUMNS) *
+        (PhoneMenu::GALLERY_THUMB_W + PhoneMenu::GALLERY_SPACING_X)
+      y = PhoneMenu::GALLERY_START_Y + (index / PhoneMenu::GALLERY_COLUMNS) *
+        (PhoneMenu::GALLERY_THUMB_H + PhoneMenu::GALLERY_LABEL_H + PhoneMenu::GALLERY_SPACING_Y)
       panel = Sprite.new
-      panel.bitmap = make_round_rect_bitmap(
-        PhoneMenu::GALLERY_THUMB_W + 8,
-        PhoneMenu::GALLERY_THUMB_H + PhoneMenu::GALLERY_LABEL_H + 22,
-        10,
-        Color.new(0, 0, 0, 98)
-      )
-      panel.x = x - 4
-      panel.y = y - 4
-      panel.z = 96
-      panel.visible = false
+      panel.bitmap = Bitmap.new(PhoneMenu::GALLERY_THUMB_W + 12,
+        PhoneMenu::GALLERY_THUMB_H + PhoneMenu::GALLERY_LABEL_H + 16)
+      phone_card(panel.bitmap, 0, 0, panel.bitmap.width, panel.bitmap.height, index == @gallery_index)
+      panel.x, panel.y, panel.z, panel.visible = x - 6, y - 6, 96, false
       @gallery_panels << panel
 
       thumb = Sprite.new
-      source = gallery_thumbnail_bitmap(picture_id)
       thumb.bitmap = Bitmap.new(PhoneMenu::GALLERY_THUMB_W, PhoneMenu::GALLERY_THUMB_H)
-      thumb.bitmap.stretch_blt(thumb.bitmap.rect, source, source.rect)
-      source.dispose unless source.disposed?
-      thumb.x = x
-      thumb.y = y
-      thumb.z = 100
-      thumb.visible = false
+      if gallery_picture_unlocked?(picture_id)
+        source = gallery_thumbnail_bitmap(picture_id)
+        phone_fit_bitmap(thumb.bitmap, source)
+        source.dispose unless source.disposed?
+      else
+        phone_locked_thumbnail(thumb.bitmap)
+      end
+      thumb.x, thumb.y, thumb.z, thumb.visible = x, y, 100, false
       @gallery_thumbs << thumb
 
       label = Sprite.new
-      label.bitmap = create_text_bitmap(PhoneMenu::GALLERY_THUMB_W, 36, 16, Color.new(255,255,255))
-      label.bitmap.font.bold = true
-      text = gallery_picture_unlocked?(picture_id) ? gallery_picture_name(picture_id) : "Locked"
-      label.bitmap.draw_text(0, 0, PhoneMenu::GALLERY_THUMB_W, 18, text, 1)
-      label.bitmap.font.bold = false
-      label.bitmap.font.size = 14
-      label.bitmap.draw_text(0, 18, PhoneMenu::GALLERY_THUMB_W, 18, "ID #{picture_id}", 1)
-      label.x = x
-      label.y = y + PhoneMenu::GALLERY_THUMB_H + 2
-      label.z = 101
-      label.visible = false
+      label.bitmap = Bitmap.new(PhoneMenu::GALLERY_THUMB_W, PhoneMenu::GALLERY_LABEL_H)
+      text = gallery_picture_unlocked?(picture_id) ? gallery_picture_name(picture_id) : "Chưa mở khóa"
+      phone_text(label.bitmap, 2, 0, PhoneMenu::GALLERY_THUMB_W - 4, 18, text, 13, nil, 1, true)
+      phone_text(label.bitmap, 2, 18, PhoneMenu::GALLERY_THUMB_W - 4, 16,
+        "#%02d" % picture_id, 11, Color.new(177, 192, 221), 1)
+      label.x, label.y, label.z, label.visible = x, y + PhoneMenu::GALLERY_THUMB_H + 4, 101, false
       @gallery_labels << label
     end
   end
@@ -1986,33 +2051,19 @@ class Scene_Menu < Scene_MenuBase
   #--------------------------------------------------------------------------
   def create_gallery_cursor
     dispose_gallery_cursor
-
-    image = Cache.load_bitmap("Graphics/PhoneMenu/", PhoneMenu::GALLERY_CURSOR_FILE)
-    cw = image.width / 2
-    ch = image.height
-
-    @gallery_cursor_bitmap_left = Bitmap.new(cw, ch)
-    @gallery_cursor_bitmap_left.blt(0, 0, image, Rect.new(cw, 0, cw, ch))
-
-    @gallery_cursor_bitmap_right = Bitmap.new(cw, ch)
-    @gallery_cursor_bitmap_right.blt(0, 0, image, Rect.new(0, 0, cw, ch))
-
+    @gallery_cursor_bitmap_left = Bitmap.new(16, 22)
+    @gallery_cursor_bitmap_right = Bitmap.new(16, 22)
+    phone_text(@gallery_cursor_bitmap_left, 0, 0, 16, 22, "‹", 22, Color.new(190, 201, 255), 1)
+    phone_text(@gallery_cursor_bitmap_right, 0, 0, 16, 22, "›", 22, Color.new(190, 201, 255), 1)
     @gallery_cursor_left = Sprite.new
     @gallery_cursor_left.bitmap = @gallery_cursor_bitmap_left
-    @gallery_cursor_left.x = PhoneMenu::PHONE_X + 6
-    @gallery_cursor_left.y = PhoneMenu::PHONE_Y + (PhoneMenu::PHONE_HEIGHT / 2) - (ch / 2)
-    @gallery_cursor_left.z = 220
-    @gallery_cursor_left.visible = false
-
+    @gallery_cursor_left.x, @gallery_cursor_left.y = PhoneMenu::PHONE_X + 26, PhoneMenu::PHONE_Y + 56
+    @gallery_cursor_left.z, @gallery_cursor_left.visible = 220, false
     @gallery_cursor_right = Sprite.new
     @gallery_cursor_right.bitmap = @gallery_cursor_bitmap_right
-    @gallery_cursor_right.x = PhoneMenu::PHONE_X + PhoneMenu::PHONE_WIDTH - cw - 6
-    @gallery_cursor_right.y = PhoneMenu::PHONE_Y + (PhoneMenu::PHONE_HEIGHT / 2) - (ch / 2)
-    @gallery_cursor_right.z = 220
-    @gallery_cursor_right.visible = false
-
+    @gallery_cursor_right.x, @gallery_cursor_right.y = PhoneMenu::PHONE_X + PhoneMenu::PHONE_WIDTH - 42, PhoneMenu::PHONE_Y + 56
+    @gallery_cursor_right.z, @gallery_cursor_right.visible = 220, false
     @gallery_cursor_anim = 0
-    image.dispose
   end
 
   def dispose_gallery_cursor
@@ -2035,31 +2086,9 @@ class Scene_Menu < Scene_MenuBase
   end
 
   def update_gallery_cursor_animation
-    return unless @gallery_cursor_left && @gallery_cursor_right
-    return unless @gallery_screen
-    return if @gallery_full_view
-    return if @gallery_transition_mode
-
-    @gallery_cursor_anim += 1
-    offset = 0
-    case @gallery_cursor_anim
-    when 1..20
-      offset = 1
-    when 21..40
-      offset = 0
-    else
-      @gallery_cursor_anim = 0
-    end
-
-    left_base = PhoneMenu::PHONE_X + 6
-    right_base = PhoneMenu::PHONE_X + PhoneMenu::PHONE_WIDTH - @gallery_cursor_right.bitmap.width - 6
-
-    @gallery_cursor_left.x = left_base - offset
-    @gallery_cursor_right.x = right_base + offset
-
-    visible = gallery_page_max > 1
-    @gallery_cursor_left.visible = visible
-    @gallery_cursor_right.visible = visible
+    return unless @gallery_cursor_left && @gallery_cursor_right && @gallery_screen
+    return if @gallery_full_view || @gallery_transition_mode
+    @gallery_cursor_left.visible = @gallery_cursor_right.visible = gallery_page_max > 1
   end
 
   #--------------------------------------------------------------------------
@@ -2067,19 +2096,13 @@ class Scene_Menu < Scene_MenuBase
   #--------------------------------------------------------------------------
   def create_gallery_button
     dispose_gallery_button
-
-    @gallery_button_image = Cache.load_bitmap("Graphics/PhoneMenu/", PhoneMenu::GALLERY_BUTTON_FILE)
-    @gallery_button_cw = @gallery_button_image.width
-    @gallery_button_ch = @gallery_button_image.height / 2
-
+    @gallery_button_cw = Graphics.width
+    @gallery_button_ch = 32
     @gallery_button_bitmap = Bitmap.new(@gallery_button_cw, @gallery_button_ch)
     @gallery_button = Sprite.new
     @gallery_button.bitmap = @gallery_button_bitmap
-    @gallery_button.x = 2
-    @gallery_button.y = Graphics.height - @gallery_button_ch - 2
-    @gallery_button.z = 420
-    @gallery_button.visible = false
-    @gallery_button.opacity = 255
+    @gallery_button.x, @gallery_button.y = 0, Graphics.height - @gallery_button_ch
+    @gallery_button.z, @gallery_button.visible = 420, false
     refresh_gallery_button(false)
   end
 
@@ -2099,68 +2122,35 @@ class Scene_Menu < Scene_MenuBase
   end
 
   def refresh_gallery_button(scroll_mode = false)
-    return unless @gallery_button_bitmap && @gallery_button_image
-    @gallery_button_bitmap.clear
-    sy = scroll_mode ? @gallery_button_ch : 0
-    src = Rect.new(0, sy, @gallery_button_cw, @gallery_button_ch)
-    @gallery_button_bitmap.blt(0, 0, @gallery_button_image, src)
+    return unless @gallery_button_bitmap
+    bitmap = @gallery_button_bitmap
+    bitmap.clear
+    bitmap.fill_rect(bitmap.rect, Color.new(9, 14, 28, 230))
+    text = scroll_mode ? "Mũi tên: di chuyển   Q/W: thu nhỏ   Enter/Esc: quay lại" :
+      "Q/W: phóng to   Enter/Esc: quay lại"
+    phone_text(bitmap, 16, 4, bitmap.width - 32, 24, text, 13, nil, 1)
   end
 
   #--------------------------------------------------------------------------
   # Refresh gallery
   #--------------------------------------------------------------------------
   def refresh_gallery
-    create_gallery_sprites if @gallery_info.nil? || @gallery_info.disposed?
+    return if @gallery_info.nil? || @gallery_info.disposed?
     rebuild_gallery_grid
-
     bmp = @gallery_info.bitmap
     bmp.clear
-
-    fill_round_rect(bmp, 12, 12, PhoneMenu::PHONE_WIDTH - 24, 34, 10, Color.new(0, 0, 0, 136))
-    bmp.font.size = 22
-    bmp.font.bold = true
-    bmp.font.color = Color.new(255, 255, 255)
-    bmp.font.outline = false
-    bmp.draw_text(0, 15, PhoneMenu::PHONE_WIDTH, 26, "Gallery", 1)
-
-    bmp.font.bold = false
-    bmp.font.size = 16
-    bmp.draw_text(18, 50, PhoneMenu::PHONE_WIDTH - 36, 20,
-      "Page #{@gallery_page + 1} / #{gallery_page_max}")
-    bmp.draw_text(18, 70, PhoneMenu::PHONE_WIDTH - 36, 20,
-      "Unlocked #{gallery_enabled_count} / #{PhoneMenu::GALLERY_MAX_PICTURES}")
-
-    @gallery_panels.each_with_index do |panel, index|
-      panel.bitmap.dispose if panel.bitmap && !panel.bitmap.disposed?
-      color = (index == @gallery_index) ? Color.new(110, 150, 255, 96) : Color.new(0, 0, 0, 98)
-      panel.bitmap = make_round_rect_bitmap(
-        PhoneMenu::GALLERY_THUMB_W + 8,
-        PhoneMenu::GALLERY_THUMB_H + PhoneMenu::GALLERY_LABEL_H + 22,
-        10,
-        color
-      )
-      panel.visible = true
+    phone_text(bmp, 24, 26, 190, 30, "Thư viện", 22, nil, 0, true)
+    phone_text(bmp, 212, 32, 100, 20, "#{gallery_enabled_count}/#{PhoneMenu::GALLERY_MAX_PICTURES} ảnh",
+      12, Color.new(187, 201, 226), 2)
+    phone_text(bmp, 44, 56, PhoneMenu::PHONE_WIDTH - 88, 22,
+      "Trang #{@gallery_page + 1} / #{gallery_page_max}", 13, Color.new(187, 201, 226), 1)
+    [@gallery_panels, @gallery_thumbs, @gallery_labels].each do |sprites|
+      sprites.each { |sprite| sprite.visible = true }
     end
-
-    @gallery_thumbs.each_with_index do |thumb, index|
-      thumb.zoom_x = thumb.zoom_y = (index == @gallery_index ? 1.03 : 1.0)
-      thumb.visible = true
-    end
-
-    @gallery_labels.each_with_index do |label, index|
-      label.opacity = (index == @gallery_index ? 255 : 220)
-      label.visible = true
-    end
-
-    selected_picture_id = gallery_picture_id_from_index(@gallery_page, @gallery_index)
-    if selected_picture_id <= PhoneMenu::GALLERY_MAX_PICTURES
-      txt = gallery_picture_unlocked?(selected_picture_id) ?
-        gallery_picture_name(selected_picture_id) :
-        "This picture is locked"
-      bmp.font.size = 18
-      bmp.draw_text(18, PhoneMenu::PHONE_HEIGHT - 34, PhoneMenu::PHONE_WIDTH - 36, 20, txt, 0)
-    end
-
+    picture_id = gallery_picture_id_from_index(@gallery_page, @gallery_index)
+    title = gallery_picture_unlocked?(picture_id) ? gallery_picture_name(picture_id) : "Khám phá câu chuyện để mở ảnh"
+    phone_text(bmp, 24, 388, 288, 24, title, 13, nil, 1)
+    phone_footer(bmp, "Mũi tên: chọn   Enter: xem   Esc: quay lại")
     @gallery_info.visible = true
     @gallery_full_sprite.visible = false if @gallery_full_sprite
     @gallery_button.visible = false if @gallery_button
@@ -2172,23 +2162,12 @@ class Scene_Menu < Scene_MenuBase
   def prepare_gallery_full_bitmap(picture_id)
     bitmap = gallery_picture_bitmap(picture_id)
     return if bitmap.nil?
-
-    @gallery_full_sprite.bitmap.clear
-    @gallery_full_sprite.zoom_x = 1.0
-    @gallery_full_sprite.zoom_y = 1.0
-    @gallery_full_sprite.x = PhoneMenu::GALLERY_VIEW_X
-    @gallery_full_sprite.y = PhoneMenu::GALLERY_VIEW_Y
-
-    @gallery_full_sprite.bitmap.stretch_blt(
-      Rect.new(0, 0, PhoneMenu::GALLERY_VIEW_W, PhoneMenu::GALLERY_VIEW_H),
-      bitmap,
-      bitmap.rect
-    )
+    @gallery_full_sprite.zoom_x = @gallery_full_sprite.zoom_y = 1.0
+    @gallery_full_sprite.x, @gallery_full_sprite.y = PhoneMenu::GALLERY_VIEW_X, PhoneMenu::GALLERY_VIEW_Y
+    phone_fit_bitmap(@gallery_full_sprite.bitmap, bitmap, Graphics.height - 32, false)
     bitmap.dispose unless bitmap.disposed?
-
     @gallery_zoomed = false
-    @gallery_zoom_x = 0
-    @gallery_zoom_y = 0
+    @gallery_zoom_x = @gallery_zoom_y = 0
   end
 
   #--------------------------------------------------------------------------
@@ -2775,98 +2754,60 @@ class Scene_Menu < Scene_MenuBase
 
   def create_contacts_sprites
     @pmgc_entries = pmgc_entries
-
     dispose_sprite_array(@contact_sprites)
     dispose_sprite_array(@contact_names)
     dispose_sprite_array(@contact_panels)
     dispose_sprite_array(@contact_messages)
-
     if @contact_info
       @contact_info.bitmap.dispose if @contact_info.bitmap && !@contact_info.bitmap.disposed?
       @contact_info.dispose unless @contact_info.disposed?
     end
-
-    @contact_sprites = []
-    @contact_names = []
-    @contact_panels = []
-    @contact_messages = []
-
+    @contact_sprites, @contact_names, @contact_panels, @contact_messages = [], [], [], []
     @contact_info = Sprite.new
     @contact_info.bitmap = Bitmap.new(PhoneMenu::PHONE_WIDTH, PhoneMenu::PHONE_HEIGHT)
-    @contact_info.x = PhoneMenu::PHONE_X
-    @contact_info.y = PhoneMenu::PHONE_Y
-    @contact_info.z = 150
+    @contact_info.x, @contact_info.y, @contact_info.z = PhoneMenu::PHONE_X, PhoneMenu::PHONE_Y, 150
     @contact_info.visible = false
-
-    start_index = [@contact_index, 0].max
-    end_index = [start_index + PhoneMenu::MAX_CONTACTS_DISPLAYED - 1, @pmgc_entries.size - 1].min
-    contacts = @pmgc_entries[start_index..end_index] || []
-
-    contacts.each_with_index do |entry, index|
+    entries = @pmgc_entries[[@contact_index, 0].max, PhoneMenu::MAX_CONTACTS_DISPLAYED] || []
+    entries.each_with_index do |entry, index|
+      y = PhoneMenu::CONTACT_ICON_Y + index * PhoneMenu::CONTACT_SPACING
       panel = Sprite.new
-      panel.bitmap = make_round_rect_bitmap(282, 64, 12, Color.new(0, 0, 0, 86))
-      panel.x = PhoneMenu::PHONE_X + 24
-      panel.y = PhoneMenu::CONTACT_ICON_Y + index * PhoneMenu::CONTACT_SPACING - 4
-      panel.z = 96
-      panel.visible = false
+      panel.bitmap = Bitmap.new(288, 84)
+      phone_card(panel.bitmap, 0, 0, 288, 84, index == @selected_contact)
+      panel.x, panel.y, panel.z, panel.visible = PhoneMenu::PHONE_X + 24, y, 96, false
       @contact_panels << panel
 
       sprite = Sprite.new
-      sprite.bitmap = Cache.load_bitmap("Graphics/PhoneMenu/", entry[:avatar])
-      sprite.x = PhoneMenu::CONTACT_ICON_X
-      sprite.y = PhoneMenu::CONTACT_ICON_Y + index * PhoneMenu::CONTACT_SPACING
-      sprite.z = 100
-      sprite.visible = false
+      sprite.bitmap = Cache.load_bitmap("Graphics/PhoneMenu/", entry[:avatar]).clone
+      sprite.zoom_x = sprite.zoom_y = 44.0 / [sprite.bitmap.width, sprite.bitmap.height].max
+      sprite.x, sprite.y, sprite.z, sprite.visible = PhoneMenu::CONTACT_ICON_X, y + 20, 100, false
       @contact_sprites << sprite
 
       name_sprite = Sprite.new
-      name_sprite.bitmap = create_text_bitmap(220, 32, 24, Color.new(255, 255, 255))
-      name_sprite.bitmap.font.bold = true
-      name_sprite.bitmap.draw_text(0, 0, 220, 32, entry[:name])
-      name_sprite.x = PhoneMenu::CONTACT_ICON_X + PhoneMenu::CONTACT_NAME_X_OFFSET
-      name_sprite.y = sprite.y + PhoneMenu::CONTACT_NAME_Y_OFFSET
-      name_sprite.z = 101
+      name_sprite.bitmap = Bitmap.new(208, 76)
+      phone_text(name_sprite.bitmap, 0, 0, 200, 25, entry[:name], 18, nil, 0, true)
+      phone_text(name_sprite.bitmap, 0, 26, 200, 18, entry[:info], 12, Color.new(183, 197, 225))
+      last = (entry[:messages] || []).last
+      last = pmgc_normal_message_to_hash(last) if last
+      preview = !last ? "Chưa có tin nhắn" : last[:type] == :image ? "[Hình ảnh]" : last[:text]
+      phone_text(name_sprite.bitmap, 0, 47, 200, 20, preview.to_s.gsub(/\s+/, " "), 13, Color.new(220, 228, 246))
+      name_sprite.x, name_sprite.y, name_sprite.z = PhoneMenu::PHONE_X + 92, y + 4, 101
       name_sprite.visible = false
       @contact_names << name_sprite
     end
   end
 
   def refresh_contacts
-    @pmgc_entries = pmgc_entries
-
     restore_current_background
     set_overlay_opacity(PhoneMenu::SUB_OVERLAY_OPACITY)
     create_contacts_sprites
-
     @contact_info.bitmap.clear
     draw_contacts_header
-
-    if @selected_contact && !@in_message_view && !@pmgc_entries.empty?
-      entry = @pmgc_entries[@selected_contact + @contact_index]
-      @contact_info.bitmap.font.size = 18
-      @contact_info.bitmap.font.color = Color.new(242, 242, 242)
-      @contact_info.bitmap.font.outline = false
-      @contact_info.bitmap.draw_text(18, 56, PhoneMenu::PHONE_WIDTH - 36, 24,
-        "Information: #{entry[:info]}")
+    if @pmgc_entries.empty?
+      phone_text(@contact_info.bitmap, 24, 180, 288, 30, "Chưa có cuộc trò chuyện", 17, nil, 1)
     end
-
-    @contact_panels.each_with_index do |sprite, index|
-      sprite.bitmap.dispose if sprite.bitmap && !sprite.bitmap.disposed?
-      color = (index == @selected_contact) ? Color.new(110, 150, 255, 96) : Color.new(0, 0, 0, 86)
-      sprite.bitmap = make_round_rect_bitmap(282, 64, 12, color)
-      sprite.visible = true
+    [@contact_panels, @contact_sprites, @contact_names].each do |sprites|
+      sprites.each { |sprite| sprite.visible = true }
     end
-
-    @contact_sprites.each_with_index do |sprite, index|
-      sprite.zoom_x = sprite.zoom_y = (index == @selected_contact ? 1.05 : 1.0)
-      sprite.visible = true
-    end
-
-    @contact_names.each_with_index do |sprite, index|
-      sprite.opacity = (index == @selected_contact ? 255 : 220)
-      sprite.visible = true
-    end
-
     @contact_info.visible = true
   end
 
@@ -2908,24 +2849,35 @@ class Scene_Menu < Scene_MenuBase
     entry = pmgc_current_entry
     return unless entry
     messages = entry[:messages] || []
-    last_start_index = [messages.size - 1, 0].max
-
-    if Input.repeat?(:UP) && @message_index > 0
-      @message_index -= 1
-      RPG::SE.new(PhoneMenu::SELECT_SE).play
+    current = messages[@message_index]
+    current = pmgc_normal_message_to_hash(current) if current
+    offset = @message_line_offset || 0
+    if Input.repeat?(:UP)
+      if offset > 0 && current
+        @message_line_offset = [offset - pmgc_page_lines(current), 0].max
+      elsif @message_index > 0
+        @message_index -= 1
+        @message_line_offset = 0
+      else
+        return
+      end
+      Sound.play_cursor
       show_contact_details
     elsif Input.repeat?(:DOWN)
-      next_index = @message_index + 1
-      if next_index <= last_start_index
-        @message_index = next_index
-        RPG::SE.new(PhoneMenu::SELECT_SE).play
-        show_contact_details
+      if current && current[:type] != :image &&
+          offset + pmgc_page_lines(current) < pmgc_wrap_text(current[:text], 0).size
+        @message_line_offset = offset + pmgc_page_lines(current)
+      elsif @message_index < messages.size - 1
+        @message_index += 1
+        @message_line_offset = 0
+      else
+        return
       end
+      Sound.play_cursor
+      show_contact_details
     elsif Input.trigger?(:B)
       @in_message_view = false
-      @message_index = 0
-      set_overlay_opacity(PhoneMenu::SUB_OVERLAY_OPACITY)
-      restore_current_background
+      @message_index = @message_line_offset = 0
       refresh_contacts
       show_contacts_sprites
     end
@@ -2944,9 +2896,8 @@ class Scene_Menu < Scene_MenuBase
 
   def pmgc_sender_name(entry, sender)
     return "Quỳ" if sender == :main || sender == :quy
-    if entry[:members] && entry[:members][sender]
-      return entry[:members][sender][0]
-    end
+    return entry[:members][sender][0] if entry[:members] && entry[:members][sender]
+    return entry[:name] if entry[:kind] == :normal
     sender.to_s
   end
 
@@ -2974,76 +2925,118 @@ class Scene_Menu < Scene_MenuBase
   end
 
   def pmgc_wrap_text(text, max_chars)
-    wrap_text(text.to_s, max_chars)
+    # Fit the actual font, including Vietnamese accents, rather than a character count.
+    width = PhoneMenu::MESSAGE_MAX_WIDTH - PhoneMenu::MESSAGE_PADDING_X * 2
+    @phone_wrap_cache ||= {}
+    key = [text.to_s.dup, width]
+    return @phone_wrap_cache[key] if @phone_wrap_cache.has_key?(key)
+    lines = []
+    text.to_s.split("\n", -1).each do |paragraph|
+      current = ""
+      paragraph.split(/[ \t]+/).each do |word|
+        candidate = current.empty? ? word : current + " " + word
+        if simple_text_width(candidate, 17) <= width
+          current = candidate
+          next
+        end
+        lines << current unless current.empty?
+        current = ""
+        word.scan(/\P{M}\p{M}*/).each do |cluster|
+          if !current.empty? && simple_text_width(current + cluster, 17) > width
+            lines << current
+            current = ""
+          end
+          current += cluster
+        end
+      end
+      lines << current
+    end
+    result = lines.empty? ? [""] : lines
+    @phone_wrap_cache.shift if @phone_wrap_cache.size >= 32
+    @phone_wrap_cache[key] = result
   end
 
   def pmgc_message_height(message)
+    return 146 if message[:type] == :image
+    lines = message[:_phone_lines] || pmgc_wrap_text(message[:text], 0)
     case message[:type]
     when :system, :choice, :choice_result
-      34
-    when :image
-      150
+      lines.size * 20 + 16
     else
-      lines = pmgc_wrap_text(message[:text], PhoneMenu::MAX_MESSAGE_CHARS_PER_LINE)
-      lines.size * PhoneMenu::MESSAGE_LINE_SPACING + PhoneMenu::MESSAGE_PADDING_Y * 2 + 34
+      lines.size * PhoneMenu::MESSAGE_LINE_SPACING + PhoneMenu::MESSAGE_PADDING_Y * 2 + 22
     end
+  end
+
+  def pmgc_page_lines(message)
+    height = PhoneMenu::MESSAGE_BOTTOM_LIMIT - PhoneMenu::CONTACT_MESSAGE_Y
+    notice = [:system, :choice, :choice_result].include?(message[:type])
+    [(height - (notice ? 16 : 42)) / (notice ? 20 : PhoneMenu::MESSAGE_LINE_SPACING), 1].max
   end
 
   def pmgc_visible_messages(messages, start_index)
     result = []
     y = PhoneMenu::CONTACT_MESSAGE_Y
     i = start_index
-
     while i < messages.size
       msg = pmgc_normal_message_to_hash(messages[i])
-      h = pmgc_message_height(msg)
-      break if y + h > PhoneMenu::MESSAGE_BOTTOM_LIMIT && !result.empty?
-      break if y + h > PhoneMenu::MESSAGE_BOTTOM_LIMIT
+      if i == start_index && msg[:type] != :image
+        lines = pmgc_wrap_text(msg[:text], 0)
+        limit = pmgc_page_lines(msg)
+        if lines.size > limit
+          msg = msg.dup
+          msg[:_phone_lines] = lines[(@message_line_offset || 0), limit] || [""]
+          msg[:_phone_continued] = true
+        end
+      end
+      height = pmgc_message_height(msg)
+      break if y + height > PhoneMenu::MESSAGE_BOTTOM_LIMIT
       result << [msg, y]
-      y += h + PhoneMenu::MESSAGE_SPACING
+      break if msg[:_phone_continued]
+      y += height + PhoneMenu::MESSAGE_SPACING
       i += 1
     end
-
     result
   end
 
   def show_contact_details
     entry = pmgc_current_entry
     return unless entry
-
+    cursor = [@selected_contact + @contact_index, @message_index]
+    @message_line_offset = 0 unless @phone_message_cursor == cursor
+    @phone_message_cursor = cursor
     set_overlay_opacity(PhoneMenu::MESSAGE_OVERLAY_OPACITY)
     refresh_phone_background(PhoneMenu::MESSAGE_BACKGROUND)
-
-    @contact_panels.each { |s| s.visible = false } if @contact_panels
-    @contact_sprites.each { |s| s.visible = false } if @contact_sprites
-    @contact_names.each { |s| s.visible = false } if @contact_names
-
-    @contact_info.bitmap.clear
-    @contact_info.visible = true
-
+    [@contact_panels, @contact_sprites, @contact_names].each do |sprites|
+      sprites.each { |sprite| sprite.visible = false } if sprites
+    end
     bmp = @contact_info.bitmap
-    fill_round_rect(bmp, 8, 8, PhoneMenu::PHONE_WIDTH - 16, 48, 10, Color.new(0, 0, 0, 135))
-    bmp.font.size = 24
-    bmp.font.bold = true
-    bmp.font.color = Color.new(255, 255, 255)
-    bmp.font.outline = false
-    bmp.draw_text(0, 10, PhoneMenu::PHONE_WIDTH, 24, entry[:name], 1)
-    bmp.font.bold = false
-    bmp.font.size = 16
-    bmp.draw_text(0, 32, PhoneMenu::PHONE_WIDTH, 18, "Messages", 1)
-
+    bmp.clear
+    phone_card(bmp, 24, 24, 288, 54)
+    phone_text(bmp, 36, 28, 264, 27, entry[:name], 20, nil, 1, true)
+    subtitle = "Lịch sử trò chuyện"
+    current = (entry[:messages] || [])[@message_index]
+    if current
+      current = pmgc_normal_message_to_hash(current)
+      if current[:type] != :image
+        count = pmgc_wrap_text(current[:text], 0).size
+        limit = pmgc_page_lines(current)
+        subtitle = "Tin nhắn dài · phần #{@message_line_offset / limit + 1}/#{(count.to_f / limit).ceil}" if count > limit
+      end
+    end
+    phone_text(bmp, 36, 55, 264, 18, subtitle, 12, Color.new(187, 201, 226), 1)
+    phone_footer(bmp, "↑↓: cuộn   Esc: danh bạ")
+    @contact_info.visible = true
     dispose_sprite_array(@contact_messages)
     @contact_messages = []
-
     messages = entry[:messages] || []
+    if messages.empty?
+      phone_text(bmp, 24, 180, 288, 30, "Chưa có tin nhắn", 17, nil, 1)
+    end
     pmgc_visible_messages(messages, @message_index).each do |message, y|
       case message[:type]
-      when :system
-        pmgc_draw_center_notice("Notice: #{message[:text]}", y, Color.new(235, 235, 235))
-      when :choice
-        pmgc_draw_center_notice("Choice: #{message[:text]}", y, Color.new(255, 230, 160))
-      when :choice_result
-        pmgc_draw_center_notice(message[:text], y, Color.new(255, 230, 160))
+      when :system, :choice, :choice_result
+        color = message[:type] == :system ? Color.new(209, 220, 245) : Color.new(255, 224, 164)
+        pmgc_draw_center_notice(message[:text], y, color, message[:_phone_lines])
       when :image
         pmgc_draw_image_message(entry, message, y)
       else
@@ -3052,16 +3045,15 @@ class Scene_Menu < Scene_MenuBase
     end
   end
 
-  def pmgc_draw_center_notice(text, y, color)
+  def pmgc_draw_center_notice(text, y, color, lines = nil)
+    lines ||= pmgc_wrap_text(text, 0)
     sprite = Sprite.new
-    sprite.bitmap = Bitmap.new(PhoneMenu::PHONE_WIDTH, 28)
-    sprite.bitmap.font.size = 18
-    sprite.bitmap.font.bold = true
-    sprite.bitmap.font.color = color
-    pmgc_shadow_text(sprite.bitmap, 0, 0, PhoneMenu::PHONE_WIDTH, 28, text, 1)
-    sprite.x = PhoneMenu::PHONE_X
-    sprite.y = y
-    sprite.z = 110
+    sprite.bitmap = Bitmap.new(272, lines.size * 20 + 16)
+    fill_round_rect(sprite.bitmap, 0, 0, sprite.bitmap.width, sprite.bitmap.height, 10, Color.new(26, 37, 58, 230))
+    lines.each_with_index do |line, index|
+      phone_text(sprite.bitmap, 12, 8 + index * 20, 248, 20, line, 14, color, 1)
+    end
+    sprite.x, sprite.y, sprite.z = PhoneMenu::PHONE_X + 32, y, 110
     @contact_messages << sprite
   end
 
@@ -3081,7 +3073,7 @@ class Scene_Menu < Scene_MenuBase
     img_x = is_main ? PhoneMenu::MESSAGE_RIGHT_BUBBLE_RIGHT - img_w : PhoneMenu::MESSAGE_LEFT_BUBBLE_X
     icon_x = is_main ? PhoneMenu::MESSAGE_RIGHT_ICON_X : PhoneMenu::MESSAGE_LEFT_ICON_X
 
-    name_sprite = pmgc_name_sprite(name, img_x, y, is_main)
+    name_sprite = pmgc_name_sprite(name, img_x, y, is_main, img_w)
     @contact_messages << name_sprite
 
     img_sprite = Sprite.new
@@ -3099,74 +3091,43 @@ class Scene_Menu < Scene_MenuBase
   def pmgc_draw_text_message(entry, message, y)
     sender = message[:sender]
     is_main = pmgc_main_message?(message)
-    avatar = pmgc_sender_avatar(entry, sender, entry[:id])
-    name = pmgc_sender_name(entry, sender)
-    text = message[:text].to_s
-
-    lines = pmgc_wrap_text(text, PhoneMenu::MAX_MESSAGE_CHARS_PER_LINE)
-    longest = 0
-    lines.each do |line|
-      w = simple_text_width(line, 20)
-      longest = w if w > longest
-    end
-
+    lines = message[:_phone_lines] || pmgc_wrap_text(message[:text], 0)
+    longest = lines.map { |line| simple_text_width(line, 17) }.max || 0
     bubble_w = [[longest + PhoneMenu::MESSAGE_PADDING_X * 2, PhoneMenu::MESSAGE_MIN_WIDTH].max,
-                PhoneMenu::MESSAGE_MAX_WIDTH].min
+      PhoneMenu::MESSAGE_MAX_WIDTH].min
     bubble_h = lines.size * PhoneMenu::MESSAGE_LINE_SPACING + PhoneMenu::MESSAGE_PADDING_Y * 2
-
     bubble_x = is_main ? PhoneMenu::MESSAGE_RIGHT_BUBBLE_RIGHT - bubble_w : PhoneMenu::MESSAGE_LEFT_BUBBLE_X
     icon_x = is_main ? PhoneMenu::MESSAGE_RIGHT_ICON_X : PhoneMenu::MESSAGE_LEFT_ICON_X
-
-    @contact_messages << pmgc_name_sprite(name, bubble_x, y, is_main)
-
-    bubble_sprite = Sprite.new
-    bubble_color = is_main ? Color.new(42, 155, 255, 222) : Color.new(248, 248, 248, 228)
-    bubble_sprite.bitmap = make_round_rect_bitmap(bubble_w, bubble_h, 14, bubble_color)
-    bubble_sprite.x = bubble_x
-    bubble_sprite.y = y + 22
-    bubble_sprite.z = 99
-    @contact_messages << bubble_sprite
-
-    @contact_messages << pmgc_icon_sprite(avatar, icon_x, bubble_sprite.y + bubble_h - PhoneMenu::MESSAGE_ICON_SIZE)
-
-    text_color = is_main ? Color.new(255, 255, 255) : Color.new(25, 25, 25)
-    lines.each_with_index do |line, i|
-      text_sprite = Sprite.new
-      text_sprite.bitmap = Bitmap.new(bubble_w - PhoneMenu::MESSAGE_PADDING_X * 2, 24)
-      text_sprite.bitmap.font.size = 20
-      text_sprite.bitmap.font.color = text_color
-      text_sprite.bitmap.font.outline = false
-      text_sprite.bitmap.draw_text(0, 0, text_sprite.bitmap.width, 24, line, is_main ? 2 : 0)
-      text_sprite.x = bubble_x + PhoneMenu::MESSAGE_PADDING_X
-      text_sprite.y = bubble_sprite.y + PhoneMenu::MESSAGE_PADDING_Y + i * PhoneMenu::MESSAGE_LINE_SPACING
-      text_sprite.z = 102
-      @contact_messages << text_sprite
+    @contact_messages << pmgc_name_sprite(pmgc_sender_name(entry, sender), bubble_x, y, is_main, bubble_w)
+    bubble = Sprite.new
+    bubble.bitmap = make_round_rect_bitmap(bubble_w, bubble_h, 12,
+      is_main ? Color.new(78, 96, 159, 248) : Color.new(230, 236, 249, 248))
+    bubble.x, bubble.y, bubble.z = bubble_x, y + 22, 99
+    lines.each_with_index do |line, index|
+      phone_text(bubble.bitmap, PhoneMenu::MESSAGE_PADDING_X,
+        PhoneMenu::MESSAGE_PADDING_Y + index * PhoneMenu::MESSAGE_LINE_SPACING,
+        bubble_w - PhoneMenu::MESSAGE_PADDING_X * 2, 22, line, 17,
+        is_main ? Color.new(255, 255, 255) : Color.new(25, 37, 59))
     end
+    @contact_messages << bubble
+    @contact_messages << pmgc_icon_sprite(pmgc_sender_avatar(entry, sender, entry[:id]),
+      icon_x, bubble.y + bubble_h - PhoneMenu::MESSAGE_ICON_SIZE)
   end
 
-  def pmgc_name_sprite(name, x, y, is_main)
+  def pmgc_name_sprite(name, x, y, is_main, width = PhoneMenu::MESSAGE_MAX_WIDTH)
     sprite = Sprite.new
-    sprite.bitmap = Bitmap.new(180, 22)
-    sprite.bitmap.font.size = 18
-    sprite.bitmap.font.bold = true
-    sprite.bitmap.font.color = Color.new(255, 255, 255)
-    pmgc_shadow_text(sprite.bitmap, 0, 0, 180, 22, name, is_main ? 2 : 0)
-    sprite.x = x
-    sprite.y = y
-    sprite.z = 102
+    sprite.bitmap = Bitmap.new(width, 22)
+    phone_text(sprite.bitmap, 0, 0, width, 20, name, 13, Color.new(199, 211, 237), is_main ? 2 : 0, true)
+    sprite.x, sprite.y, sprite.z = x, y, 102
     sprite
   end
 
   def pmgc_icon_sprite(filename, x, y)
-    icon = Cache.load_bitmap("Graphics/PhoneMenu/", filename)
     sprite = Sprite.new
-    sprite.bitmap = icon
-    sprite.x = x
-    sprite.y = y
-    sprite.z = 101
-    scale = PhoneMenu::MESSAGE_ICON_SIZE.to_f / [icon.width, icon.height].max
-    sprite.zoom_x = scale
-    sprite.zoom_y = scale
+    sprite.bitmap = Cache.load_bitmap("Graphics/PhoneMenu/", filename).clone
+    sprite.x, sprite.y, sprite.z = x, y, 101
+    scale = PhoneMenu::MESSAGE_ICON_SIZE.to_f / [sprite.bitmap.width, sprite.bitmap.height].max
+    sprite.zoom_x = sprite.zoom_y = scale
     sprite
   end
 end

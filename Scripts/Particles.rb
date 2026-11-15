@@ -475,8 +475,10 @@ class Particle_Core < Sprite
   # 
   #-----------------------------------------------------------------------------
   def dispose
+    return if disposed?
+    # Cache.particle shares bitmaps across particles and weather sprites.
+    self.bitmap = nil
     super
-    self.bitmap.dispose
   end  
   #-----------------------------------------------------------------------------
   # 

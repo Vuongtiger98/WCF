@@ -408,7 +408,8 @@ class Weather_EX
   #--------------------------------------------------------------------------      
   def dispose_weather
       return if @wp == nil
-      @wp.bitmap.dispose
+      # Cache.weather owns the texture shared by all weather sprites.
+      @wp.bitmap = nil
       @wp.dispose
       @wp = nil
   end
@@ -664,7 +665,6 @@ module Module_Weather_EX
           i.dispose_weather
           index += 1
       end
-      @weather_ex.each {|sprite| sprite.dispose_weather}  
       @weather_ex = nil
   end
   

@@ -270,9 +270,11 @@ class Layer_Graphic < Plane
     self.bitmap = Cache.layers(@name)
     @width = self.bitmap.width
     @height = self.bitmap.height
-    if @layers[0] && @layers[0][@id]
-      @movedx = @layers[0][@id][0].to_f  # stored x
-      @movedy = @layers[0][@id][1].to_f  # stored y
+    # Movement is saved in the map-0 scratch array, not in this map's layer 0.
+    stored = $game_map.layers[0] && $game_map.layers[0][@id]
+    if stored
+      @movedx = stored[0].to_f  # stored x
+      @movedy = stored[1].to_f  # stored y
     else
       @movedx = 0.to_f
       @movedy = 0.to_f
@@ -307,7 +309,7 @@ class Layer_Graphic < Plane
     $game_map.display_x * @layers[@id][6]
   end
   def yoffset
-    $game_map.display_x * @layers[@id][7]
+    $game_map.display_y * @layers[@id][7]
   end
  
   def update_opacity
@@ -315,8 +317,11 @@ class Layer_Graphic < Plane
   end
    
   def dispose
+    return if disposed?
+    $game_map.layers[0] ||= []
     $game_map.layers[0][@id] = [@movedx,@movedy]
-    self.bitmap.dispose if self.bitmap
+    # Cache.layers owns this bitmap; another layer may still be displaying it.
+    self.bitmap = nil
     super
   end
 end # Layer_Graphic < Plane

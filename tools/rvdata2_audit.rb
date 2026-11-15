@@ -102,7 +102,9 @@ module RVData2Audit
       code = Zlib::Inflate.inflate(entry[2])
       next if code.empty?
 
-      filename = script_filename(order_name || entry[1])
+      # The CSV can be stale after adding a slot in RPG Maker. Runtime names,
+      # not positional CSV entries, identify the exported file to compare.
+      filename = script_filename(entry[1])
       path = File.join("Scripts", filename)
       unless File.file?(path)
         missing << [index, entry[1], filename]
@@ -142,10 +144,8 @@ module RVData2Audit
 
   def diff_script(index)
     scripts = load_data("Data/Scripts.rvdata2")
-    order = File.readlines("Scripts/!script_order.csv", chomp: true, encoding: "UTF-8")
     entry = scripts.fetch(index)
-    name = order.fetch(index - 1).sub(/~blank\z/, "")
-    path = File.join("Scripts", script_filename(name))
+    path = File.join("Scripts", script_filename(entry[1]))
     data_lines = Zlib::Inflate.inflate(entry[2]).lines
     file_lines = File.binread(path).lines
     max = [data_lines.size, file_lines.size].max
@@ -21405,12 +21405,233 @@ module RVData2Audit
     errors.each {|error| puts "TEST_HUB_ERROR|#{error}" }
     raise "Route test hub audit failed" unless errors.empty?
   end
+
+  # Install the optional RAM collectible sequence on the editor-authored
+  # Christmas office map.  The user owns all map coordinates and graphics;
+  # this routine only fills the command lists on E008..E017, conditions the
+  # already-authored Diana page on E018, and adds Common Event 20.
+  def install_christmas_ram_collectibles
+    map_path = "Data/Map038.rvdata2"
+    common_path = "Data/CommonEvents.rvdata2"
+    system_path = "Data/System.rvdata2"
+    item_path = "Data/Items.rvdata2"
+    map = load_data(map_path)
+    common_events = load_data(common_path)
+    system = load_data(system_path)
+    events = map.instance_variable_get(:@events) || {}
+    pickup_ids = (8..17).to_a
+    missing = (pickup_ids + [18]).reject { |id| events[id] }
+    raise "Map038 RAM events missing: #{missing.join(',')}" unless missing.empty?
+    raise "Common Event 20 is already occupied" if common_events[20] &&
+      !common_events[20].instance_variable_get(:@name).to_s.include?("RAM")
+
+    item_digest = Digest::SHA256.hexdigest(File.binread(item_path))
+    tile_dump = Marshal.dump(map.instance_variable_get(:@data))
+    positions = events.transform_values do |event|
+      [event.instance_variable_get(:@x), event.instance_variable_get(:@y)]
+    end
+    untouched = events.reject { |id, _event| (8..18).include?(id) }
+      .transform_values { |event| Marshal.dump(event) }
+    graphics = (pickup_ids + [18]).to_h do |id|
+      pages = events.fetch(id).instance_variable_get(:@pages) || []
+      [id, pages.map { |page| Marshal.dump(page.instance_variable_get(:@graphic)) }]
+    end
+
+    pickup_ids.each do |id|
+      event = events.fetch(id)
+      pages = event.instance_variable_get(:@pages) || []
+      raise "Map038 E%03d has no page" % id if pages.empty?
+      page = pages.first
+      commands = page.instance_variable_get(:@list) || []
+      meaningful = commands.reject { |command| command_code(command).zero? }
+      installed = meaningful.any? do |command|
+        command_code(command) == 117 && command_parameters(command)[0].to_i == 20
+      end
+      raise "Map038 E%03d contains editor commands; refusing to overwrite" % id unless
+        meaningful.empty? || installed
+      page.instance_variable_set(:@list, [
+        event_command(117, 0, [20]),
+        event_command(123, 0, ["A", 0]),
+        event_command(0, 0, [])
+      ])
+
+      if pages.length == 1
+        blank = Marshal.load(Marshal.dump(page))
+        condition = reset_page_condition(blank.instance_variable_get(:@condition))
+        condition.instance_variable_set(:@self_switch_valid, true)
+        condition.instance_variable_set(:@self_switch_ch, "A")
+        graphic = blank.instance_variable_get(:@graphic)
+        graphic.instance_variable_set(:@tile_id, 0)
+        graphic.instance_variable_set(:@character_name, "")
+        graphic.instance_variable_set(:@character_index, 0)
+        blank.instance_variable_set(:@list, [event_command(0, 0, [])])
+        pages << blank
+      elsif pages.length == 2
+        condition = pages.last.instance_variable_get(:@condition)
+        unless condition.instance_variable_get(:@self_switch_valid) &&
+               condition.instance_variable_get(:@self_switch_ch) == "A"
+          raise "Map038 E%03d second page is not the installed pickup page" % id
+        end
+      else
+        raise "Map038 E%03d has unexpected extra pages" % id
+      end
+      event.instance_variable_set(:@pages, pages)
+    end
+
+    diana_pages = events.fetch(18).instance_variable_get(:@pages) || []
+    raise "Map038 E018 needs the two editor-authored Diana pages" unless diana_pages.length == 2
+    diana_condition = reset_page_condition(diana_pages[1].instance_variable_get(:@condition))
+    diana_condition.instance_variable_set(:@switch1_valid, true)
+    diana_condition.instance_variable_set(:@switch1_id, 82)
+
+    template = common_events.compact.last
+    raise "No Common Event template available" unless template
+    common = Marshal.load(Marshal.dump(template))
+    common.instance_variable_set(:@id, 20)
+    common.instance_variable_set(:@name, "ITEM — Receive RAM and Diana cutscene [CE20]")
+    common.instance_variable_set(:@trigger, 0)
+    common.instance_variable_set(:@switch_id, 1)
+    common.instance_variable_set(:@list, [
+      event_command(126, 0, [18, 0, 0, 1]),
+      event_command(101, 0, ["HaiQuy_Giangsinh_Emote", 1, 0, 2]),
+      event_command(401, 0, ["Cái gì thế này? một thanh ram?"]),
+      event_command(111, 0, [12, "$game_map.map_id == 38 && $game_party.item_number($data_items[18]) >= 10 && !$game_switches[82]"]),
+      event_command(221, 1, []),
+      event_command(121, 1, [82, 82, 0]),
+      event_command(355, 1, ["$game_map.refresh; $game_player.moveto(14,37); $game_player.set_direction(8); $game_map.events[18].set_direction(2) # WCF_RAM_DIANA_STAGE"]),
+      event_command(230, 1, [12]),
+      event_command(222, 1, []),
+      event_command(355, 1, ["ms_pro_cam_ignore_player(true); ms_pro_cam_center_at_char(18,20); ms_pro_cam_wait_for_scrolling; map_effects.set_zoom(130,20,false) # WCF_RAM_DIANA_CAMERA"]),
+      event_command(230, 1, [20]),
+      event_command(101, 1, ["HaiQuy_Giangsinh_Emote", 1, 0, 2]),
+      event_command(401, 1, ["Hải Quỳ: Thật không ngờ"]),
+      event_command(401, 1, ["Giáng sinh vẫn có khách tới"]),
+      event_command(401, 1, ["văn phòng"]),
+      event_command(101, 1, ["", 0, 0, 2]),
+      event_command(401, 1, ["Diana: Cảm ơn chị đã tặng em"]),
+      event_command(401, 1, ["chỗ Ram này, đủ cho em ăn no"]),
+      event_command(401, 1, ["rồi"]),
+      event_command(101, 1, ["HaiQuy_Giangsinh_Emote", 1, 0, 2]),
+      event_command(401, 1, ["Hải Quỳ: Vậy cũng coi như yêu"]),
+      event_command(401, 1, ["cầu hoàn thành nhỉ"]),
+      event_command(355, 1, ["map_effects.set_zoom(100,20,false); ms_pro_cam_ignore_player(false); ms_pro_cam_focus_on(-1); ms_pro_cam_wait_for_scrolling # WCF_RAM_DIANA_CAMERA_RESET"]),
+      event_command(412, 0, []),
+      event_command(0, 0, [])
+    ])
+    common_events[20] = common
+
+    switches = system.instance_variable_get(:@switches)
+    switches.fill("", switches.length..82) if switches.length <= 82
+    switches[82] = "WCF_RAM_DIANA_COMPLETE"
+
+    save_data(map_path, map)
+    save_data(common_path, common_events)
+    save_data(system_path, system)
+    replace_runtime_script("WCF Snowball Rhythm", "Scripts/WCF Snowball Rhythm.rb")
+
+    verify = load_data(map_path)
+    verify_events = verify.instance_variable_get(:@events) || {}
+    raise "Map038 tile data changed" unless Marshal.dump(verify.instance_variable_get(:@data)) == tile_dump
+    raise "Map038 event positions changed" unless verify_events.transform_values { |event|
+      [event.instance_variable_get(:@x), event.instance_variable_get(:@y)]
+    } == positions
+    untouched.each do |id, dump|
+      raise "Map038 E%03d changed outside RAM scope" % id unless
+        Marshal.dump(verify_events[id]) == dump
+    end
+    (pickup_ids + [18]).each do |id|
+      verify_pages = verify_events.fetch(id).instance_variable_get(:@pages) || []
+      before = graphics.fetch(id)
+      before.each_with_index do |dump, index|
+        raise "Map038 E%03d P%d graphic changed" % [id, index + 1] unless
+          Marshal.dump(verify_pages[index].instance_variable_get(:@graphic)) == dump
+      end
+    end
+    raise "Item 18 changed" unless Digest::SHA256.hexdigest(File.binread(item_path)) == item_digest
+    puts "RAM_COLLECTIBLES_INSTALLED|item=18|pickups=8-17|common=20|switch=82|diana=E18P2|snowball=every-win"
+  end
+
+  def audit_christmas_ram_collectibles
+    errors = []
+    map = load_data("Data/Map038.rvdata2")
+    events = map.instance_variable_get(:@events) || {}
+    (8..17).each do |id|
+      event = events[id]
+      unless event
+        errors << "Map038 E%03d missing" % id
+        next
+      end
+      pages = event.instance_variable_get(:@pages) || []
+      errors << "Map038 E%03d page count=#{pages.length}" % id unless pages.length == 2
+      first = pages[0]
+      second = pages[1]
+      first_list = first && (first.instance_variable_get(:@list) || [])
+      errors << "Map038 E%03d does not call CE20" % id unless first_list && first_list.any? do |command|
+        command_code(command) == 117 && command_parameters(command)[0].to_i == 20
+      end
+      errors << "Map038 E%03d does not erase through Self Switch A" % id unless first_list && first_list.any? do |command|
+        command_code(command) == 123 && command_parameters(command) == ["A", 0]
+      end
+      condition = second && second.instance_variable_get(:@condition)
+      errors << "Map038 E%03d pickup completion page invalid" % id unless condition &&
+        condition.instance_variable_get(:@self_switch_valid) &&
+        condition.instance_variable_get(:@self_switch_ch) == "A"
+    end
+    diana = events[18]
+    diana_pages = diana && (diana.instance_variable_get(:@pages) || [])
+    condition = diana_pages && diana_pages[1] && diana_pages[1].instance_variable_get(:@condition)
+    errors << "Map038 E018 Diana page is not controlled by S82" unless condition &&
+      condition.instance_variable_get(:@switch1_valid) &&
+      condition.instance_variable_get(:@switch1_id).to_i == 82
+
+    common_events = load_data("Data/CommonEvents.rvdata2")
+    common = common_events[20]
+    list = common && (common.instance_variable_get(:@list) || [])
+    errors << "Common Event 20 missing" unless common
+    errors << "CE20 does not grant Item 18" unless list && list.any? do |command|
+      command_code(command) == 126 && command_parameters(command) == [18, 0, 0, 1]
+    end
+    scripts = Array(list).select { |command| [355, 655].include?(command_code(command)) }
+      .map { |command| command_parameters(command)[0].to_s }.join("\n")
+    errors << "CE20 ten-RAM one-time condition missing" unless Array(list).any? do |command|
+      command_code(command) == 111 && command_parameters(command)[0].to_i == 12 &&
+        command_parameters(command)[1].to_s.include?("item_number($data_items[18]) >= 10") &&
+        command_parameters(command)[1].to_s.include?("!$game_switches[82]")
+    end
+    errors << "CE20 Diana staging missing" unless scripts.include?("WCF_RAM_DIANA_STAGE")
+    errors << "CE20 camera sequence missing" unless scripts.include?("WCF_RAM_DIANA_CAMERA") &&
+      scripts.include?("WCF_RAM_DIANA_CAMERA_RESET")
+    text = Array(list).select { |command| command_code(command) == 401 }
+      .map { |command| command_parameters(command)[0].to_s }.join(" ")
+    ["Cái gì thế này? một thanh ram?", "Thật không ngờ", "Cảm ơn chị", "yêu cầu hoàn thành"].each do |phrase|
+      errors << "CE20 dialogue missing #{phrase.inspect}" unless text.include?(phrase)
+    end
+    system = load_data("Data/System.rvdata2")
+    errors << "Switch 82 is not named" unless
+      system.instance_variable_get(:@switches)[82] == "WCF_RAM_DIANA_COMPLETE"
+    source = File.binread("Scripts/WCF Snowball Rhythm.rb")
+    errors << "Snowball repeatable RAM reward missing" unless
+      source.include?("$game_temp.reserve_common_event(20)") &&
+      !source.include?("reserve_common_event(20) if first_win")
+    runtime = load_data("Data/Scripts.rvdata2").find do |entry|
+      entry[1].to_s.strip == "WCF Snowball Rhythm"
+    end
+    errors << "Runtime snowball script differs" unless runtime &&
+      Zlib::Inflate.inflate(runtime[2]) == source
+    puts "RAM_COLLECTIBLES_AUDIT|errors=#{errors.length}|pickups=10|snowball_reward=repeatable|cutscene_once=S82|diana=E18P2"
+    errors.each { |error| puts "RAM_COLLECTIBLES_ERROR|#{error}" }
+    raise "RAM collectible audit failed" unless errors.empty?
+  end
 end
 
 command = ARGV.shift
 case command
 when "compare-scripts"
   RVData2Audit.compare_scripts
+when "install-christmas-ram-collectibles"
+  RVData2Audit.install_christmas_ram_collectibles
+when "audit-christmas-ram-collectibles"
+  RVData2Audit.audit_christmas_ram_collectibles
 when "audit-writer-dialogue"
   RVData2Audit.apply_writer_dialogue_feedback(ARGV.fetch(0), write: false)
 when "apply-writer-dialogue"

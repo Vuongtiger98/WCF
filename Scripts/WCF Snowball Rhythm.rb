@@ -52,6 +52,11 @@ module WCF_SNOWBALL
       bit = 1 << (opponent_id - 3)
       $game_variables[WINS_VARIABLE] |= bit
       $game_switches[ALL_CLEAR_SWITCH] = all_cleared?
+      # Every victory awards one RAM, including rematches, so the player may
+      # farm snowball fights instead of finding all ten pickups. The reserved
+      # common event runs after this scene returns to Map038, where messages
+      # and the one-time ten-RAM cutscene use the normal map interpreter.
+      $game_temp.reserve_common_event(20)
     end
 
     def defeated?(opponent_id)

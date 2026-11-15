@@ -943,6 +943,7 @@ class Light_Source
   end
   
   def dispose
+    wcf_invalidate_shadow_cache
     return if @bitmap.nil?
     @bitmap.dispose
     @bitmap = nil
@@ -1029,7 +1030,9 @@ class Light_Source
     @cy = @y + @half_height
     @screen_x = $game_map.adjust_x(@char.real_x)*32-@width_offset + @offset[@char.direction][0] - $game_map.screen.shake
     @screen_y = $game_map.adjust_y(@char.real_y)*32-@height_offset + @offset[@char.direction][1]
-    @h = ($game_map.local_height(@char.real_x + 0.4, @char.real_y + 0.4) > $game_map.local_height(@char.real_x + 0.5, @char.real_y + 0.5) ? $game_map.local_height(@char.real_x + 0.4, @char.real_y + 0.4) : $game_map.local_height(@char.real_x + 0.5, @char.real_y + 0.5))
+    h1 = $game_map.local_height(@char.real_x + 0.4, @char.real_y + 0.4)
+    h2 = $game_map.local_height(@char.real_x + 0.5, @char.real_y + 0.5)
+    @h = h1 > h2 ? h1 : h2
   end
   
   def sbmp 
@@ -1038,11 +1041,44 @@ class Light_Source
     
   def dbmp
     if !@static && @shadows
-      KGL.clone(@bitmap, Light_Cache[@key])
-      KGL.bindShadowbuffer(@bitmap)
-      draw_shadow
+      wcf_refresh_dynamic_shadow(@bitmap, Light_Cache[@key])
     end
     @bitmap
+  end
+
+  # Region casters are static in world space. Camera movement and flicker
+  # still render every frame; only the unchanged shadow-mask calculation is
+  # reused. Movement, direction, height, restore, or caster edits invalidate it.
+  def wcf_invalidate_shadow_cache
+    @wcf_shadow_valid = false
+    # Map disposal happens before the menu saves Game_Player/Game_Map. Native
+    # Bitmap objects cannot be marshalled, including disposed cached references.
+    @wcf_shadow_bitmap = @wcf_shadow_source = @wcf_shadow_casters = nil
+  end
+
+  def wcf_refresh_dynamic_shadow(bitmap, source)
+    casters = $game_map.casters
+    revision = casters.respond_to?(:wcf_shadow_revision) ? casters.wcf_shadow_revision : nil
+    if @wcf_shadow_valid && @wcf_shadow_bitmap.equal?(bitmap) &&
+        @wcf_shadow_source.equal?(source) && @wcf_shadow_casters.equal?(casters) &&
+        @wcf_shadow_revision == revision && @wcf_shadow_x == @x &&
+        @wcf_shadow_y == @y && @wcf_shadow_h == @h &&
+        @wcf_shadow_direction == @char.direction &&
+        @wcf_shadow_real_x == @char.real_x && @wcf_shadow_real_y == @char.real_y
+      return bitmap
+    end
+    KGL.clone(bitmap, source)
+    KGL.bindShadowbuffer(bitmap)
+    draw_shadow
+    @wcf_shadow_bitmap = bitmap
+    @wcf_shadow_source = source
+    @wcf_shadow_casters = casters
+    @wcf_shadow_revision = revision
+    @wcf_shadow_x, @wcf_shadow_y, @wcf_shadow_h = @x, @y, @h
+    @wcf_shadow_direction = @char.direction
+    @wcf_shadow_real_x, @wcf_shadow_real_y = @char.real_x, @char.real_y
+    @wcf_shadow_valid = true
+    bitmap
   end
     
   def draw_shadow
@@ -1121,6 +1157,7 @@ class Light_MKSource < Light_Source
   end
   
   def dispose
+    wcf_invalidate_shadow_cache
     return if @bitmap.nil?
     @bitmap.values.each { |b| b.dispose }
     @bitmap = nil
@@ -1159,7 +1196,9 @@ class Light_MKSource < Light_Source
     @cy = @y + @half_height[d]
     @screen_x = $game_map.adjust_x(@char.real_x)*32-@width_offset[d] + @offset[d][0] - $game_map.screen.shake
     @screen_y = $game_map.adjust_y(@char.real_y)*32-@height_offset[d] + @offset[d][1]
-    @h = ($game_map.local_height(@char.real_x + 0.4, @char.real_y + 0.4) > $game_map.local_height(@char.real_x + 0.5, @char.real_y + 0.5) ? $game_map.local_height(@char.real_x + 0.4, @char.real_y + 0.4) : $game_map.local_height(@char.real_x + 0.5, @char.real_y + 0.5))
+    h1 = $game_map.local_height(@char.real_x + 0.4, @char.real_y + 0.4)
+    h2 = $game_map.local_height(@char.real_x + 0.5, @char.real_y + 0.5)
+    @h = h1 > h2 ? h1 : h2
   end
   
   def sbmp
@@ -1168,9 +1207,7 @@ class Light_MKSource < Light_Source
     
   def dbmp
     if !@static && @shadows
-      KGL.clone(@bitmap[@char.direction], Light_Cache[@key[@char.direction]])
-      KGL.bindShadowbuffer(@bitmap[@char.direction])
-      draw_shadow
+      wcf_refresh_dynamic_shadow(@bitmap[@char.direction], Light_Cache[@key[@char.direction]])
     end
     @bitmap[@char.direction]
   end
@@ -1666,6 +1703,7 @@ class Shadow_Casters
   
   attr_reader :width
   attr_reader :height
+  attr_reader :wcf_shadow_revision
   
   def initialize(map_width, map_height, loop_x, loop_y)
     @map_width = map_width
@@ -1690,6 +1728,7 @@ class Shadow_Casters
   
   def push(x, y, caster)
     @data[x >> SCShift][y >> SCShift] << caster
+    @wcf_shadow_revision = (@wcf_shadow_revision || 0) + 1
   end
   
   def shadow(light)

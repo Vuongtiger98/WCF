@@ -136,17 +136,19 @@ class Scene_Map < Scene_Base
   end
   
   def update_text_window
-    @event_text_windows.each {|w| w.update}
+    (@event_text_windows || []).each { |w| w.update unless w.disposed? }
   end
   
   alias pre_text_event_terminate terminate
-  def termminate
-    pre_text_event_terminate
+  def terminate
     dispose_text_event_windows
+    pre_text_event_terminate
   end
   
   def dispose_text_event_windows
-    @event_text_windows.each {|w| w.dispose}
+    return unless @event_text_windows
+    @event_text_windows.each { |w| w.dispose unless w.disposed? }
+    @event_text_windows.clear
   end
   
   alias text_event_post_transfer post_transfer

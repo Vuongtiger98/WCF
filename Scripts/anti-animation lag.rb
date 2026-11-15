@@ -79,11 +79,18 @@ class << SceneManager
   # ● Dispose Animation Garbage
   #--------------------------------------------------------------------------  
   def dispose_animation_garbage
-      return if $game_temp.animation_garbage == nil
-      for animation in $game_temp.animation_garbage
-          animation.dispose 
-      end  
-      $game_temp.animation_garbage = nil
+      return unless $game_temp && $game_temp.animation_garbage
+      pending = []
+      $game_temp.animation_garbage.uniq.each do |animation|
+          next unless animation && !animation.disposed?
+          # An animation may have reused the cached bitmap since it was queued.
+          if Sprite_Base.wcf_animation_bitmap_in_use?(animation)
+              pending.push(animation)
+          else
+              animation.dispose
+          end
+      end
+      $game_temp.animation_garbage = pending.empty? ? nil : pending
   end  
 
 end
@@ -124,6 +131,10 @@ end
 # ■ Sprite Base 
 #==============================================================================
 class Sprite_Base < Sprite  
+
+  def self.wcf_animation_bitmap_in_use?(bitmap)
+    (@@_reference_count[bitmap] || 0) > 0
+  end
 
   #--------------------------------------------------------------------------
   # ● Dispose Animation

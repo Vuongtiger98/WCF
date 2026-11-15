@@ -3,6 +3,7 @@
 /Save*.rvdata2
 /Mapshots/
 /Screenshots/
+/Data/codex_backup*/
 
 # Office temporary lock files
 ~$*.docx
