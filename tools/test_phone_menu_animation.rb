@@ -7,20 +7,30 @@ class Scene_Item; end unless defined?(Scene_Item)
 class Scene_Save; end unless defined?(Scene_Save)
 class Scene_Load; end unless defined?(Scene_Load)
 class Scene_System; end unless defined?(Scene_System)
-module SceneManager; end
+module SceneManager
+  def self.call(type); @called=type; @scene=type.new; end
+  def self.called; @called; end
+  def self.scene; @scene; end
+end
+class Scene_Save; attr_accessor :wcf_phone_origin; end
+class Scene_Load; attr_accessor :wcf_phone_origin; end
 module Sound
   def self.play_cancel; end
 end
 
 class PhoneAnimationBase < Scene_Menu
+  def start
+    @background_sprite=surface(PhoneMenu::PHONE_Y)
+    @phone_backdrop=surface(0)
+  end
   def post_start; @base_post_started=true; end
   def update; end
 end
 
 class PhoneAnimationScene < PhoneAnimationBase
   source=File.read(ENV.fetch('WCF_PHONE_ANIMATION_SOURCE',File.join(ROOT,'Scripts/Custom Menu.rb')),encoding:'UTF-8')
-  [:post_start,:update,:update_opening_animation,:update_closing_animation,:start_closing,
-   :create_black_rectangle,:show_menu_sprites,:hide_menu_sprites].each do |name|
+  [:start,:post_start,:update,:update_opening_animation,:update_closing_animation,:start_closing,
+   :leave_phone_scene,:hide_phone_base_sprites,:create_black_rectangle,:show_menu_sprites,:hide_menu_sprites].each do |name|
     class_eval(method_source(source,name),'Phone transition source')
   end
   attr_reader :input_updates,:returned,:base_post_started
@@ -51,6 +61,9 @@ class PhoneAnimationScene < PhoneAnimationBase
 
   def update_main_menu; @input_updates+=1; end
   def phone_menu_return_scene; @returned+=1; end
+  def create_overlay; @overlay=surface(PhoneMenu::PHONE_Y); end
+  def create_main_panel; @main_panel=surface(PhoneMenu::PHONE_Y); end
+  def create_command_window; end
 end
 
 class PhoneMenuAnimationTest < Minitest::Test
@@ -64,7 +77,7 @@ class PhoneMenuAnimationTest < Minitest::Test
   def sprite(scene,name); scene.instance_variable_get(name); end
   def state(scene); scene.instance_variable_get(:@animation_state); end
 
-  def test_opening_from_map_and_each_subscene_always_starts_offscreen
+  def test_fresh_menu_starts_offscreen_without_an_app_resume_marker_regardless_of_caller
     [Scene_Map.new,Scene_Item.new,Scene_Save.new,Scene_Load.new,Scene_System.new].each do |previous|
       SceneManager.instance_variable_set(:@stack,[previous])
       scene=PhoneAnimationScene.new
@@ -123,5 +136,59 @@ class PhoneMenuAnimationTest < Minitest::Test
     assert_equal 1,scene.returned
     assert parts.all?(&:disposed?)
     assert scene.instance_variable_get(:@phone_menu_disposed)
+  end
+
+  def test_real_start_resumes_same_menu_from_each_app_without_sliding_again
+    [Scene_Item,Scene_Save,Scene_Load,Scene_System].each do |type|
+      scene=PhoneAnimationScene.new
+      scene.start
+      scene.post_start
+      assert_equal :opening,state(scene)
+      30.times { scene.update }
+      scene.leave_phone_scene(type)
+      assert_equal type,SceneManager.called
+      assert_equal :phone,SceneManager.scene.wcf_phone_origin if SceneManager.scene.respond_to?(:wcf_phone_origin)
+      assert scene.instance_variable_get(:@phone_app_suspended)
+      # Real Scene_Base freezes the visible frame before terminate cleans it.
+      scene.dispose_phone_menu_sprites
+      scene.start
+      scene.post_start
+      assert_equal :idle,state(scene)
+      assert_equal 0,scene.instance_variable_get(:@phone_slide_offset)
+      assert_equal PhoneMenu::PHONE_Y,sprite(scene,:@background_sprite).y
+      refute scene.instance_variable_get(:@phone_app_suspended)
+      refute scene.instance_variable_get(:@phone_menu_disposed)
+      before=scene.input_updates
+      scene.update
+      assert_equal before+1,scene.input_updates
+    end
+  end
+
+  def test_a_new_menu_after_abandoning_an_app_still_slides_in
+    old=PhoneAnimationScene.new
+    old.start
+    old.leave_phone_scene(Scene_Save)
+    fresh=PhoneAnimationScene.new
+    fresh.start
+    fresh.post_start
+    assert_equal :opening,state(fresh)
+    assert_equal Graphics.height,sprite(fresh,:@background_sprite).y
+  end
+
+  def test_switching_apps_keeps_the_rendered_phone_until_scene_termination
+    [Scene_Save,Scene_Load,Scene_Item,Scene_System].each do |type|
+      scene=PhoneAnimationScene.new
+      scene.start
+      scene.post_start
+      30.times { scene.update }
+      shown=scene.phone_visual_sprites.select { |part| part.visible && part.opacity > 0 }
+      refute_empty shown
+      scene.leave_phone_scene(type)
+      assert shown.all? { |part| part.visible && !part.disposed? },
+        'Do not hide/dispose the phone before Scene_Base freezes its last frame'
+      refute scene.instance_variable_get(:@phone_menu_disposed)
+      scene.dispose_phone_menu_sprites
+      assert shown.all?(&:disposed?)
+    end
   end
 end

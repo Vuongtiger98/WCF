@@ -335,6 +335,10 @@ class Scene_Menu < Scene_MenuBase
 
   def start
     @phone_menu_disposed = false
+    # SceneManager.return restarts the same menu instance after an app. Keep
+    # this on that instance: a later New Game / new menu must still slide in.
+    @phone_resume_from_app = @phone_app_suspended == true
+    @phone_app_suspended = false
     super
     @animation_frame = 0
     @selected_index = $phone_menu_selected_index || 0
@@ -362,7 +366,7 @@ class Scene_Menu < Scene_MenuBase
     hide_menu_sprites
     @background_sprite.y = PhoneMenu::PHONE_Y
     @phone_slide_offset = 0
-    phone_apply_slide_offset(Graphics.height - PhoneMenu::PHONE_Y)
+    phone_apply_slide_offset(Graphics.height - PhoneMenu::PHONE_Y) unless @phone_resume_from_app
   end
 
   def terminate
@@ -723,7 +727,7 @@ class Scene_Menu < Scene_MenuBase
         PhoneMenu::APP_CARD_W, PhoneMenu::APP_CARD_H)
       phone_text(bmp, x - 42, y + 27, 84, 20, PhoneMenu::APP_LABELS[index], 13, nil, 1)
     end
-    phone_footer(bmp, "Mũi tên: chọn   Enter: mở   Esc: đóng")
+    phone_footer(bmp, "Mũi tên: chọn   Z: mở   X: đóng")
     @phone_panel_snapshot = phone_panel_values.map { |value| value.dup }
     @phone_panel_bitmap = bmp
   end
@@ -925,9 +929,13 @@ class Scene_Menu < Scene_MenuBase
   #--------------------------------------------------------------------------
   def leave_phone_scene(scene_class)
     $phone_menu_selected_index = @selected_index
-    hide_phone_base_sprites
-    dispose_phone_menu_sprites
+    @phone_app_suspended = true
+    # Scene_Base#terminate freezes the last visible frame before cleanup.
+    # Destroying the phone here makes that transition start from an empty frame.
+    # Let our existing terminate hook dispose the scene after the freeze.
     SceneManager.call(scene_class)
+    child = SceneManager.scene
+    child.wcf_phone_origin = :phone if child.respond_to?(:wcf_phone_origin=)
   end
 
   def command_item
@@ -962,19 +970,17 @@ class Scene_Menu < Scene_MenuBase
   # Post start
   #--------------------------------------------------------------------------
   def post_start
-    super
     @selected_index = $phone_menu_selected_index || 0
-    # Every scene entry opens the phone, including a return from a phone app.
-    # The top of SceneManager's stack is the caller, not the scene just left.
-    @animation_state = :opening
+    @animation_state = @phone_resume_from_app ? :idle : :opening
     @animation_timer = 0
-    phone_apply_slide_offset(Graphics.height - PhoneMenu::PHONE_Y)
+    phone_apply_slide_offset(@phone_resume_from_app ? 0 : Graphics.height - PhoneMenu::PHONE_Y)
     @background_sprite.visible = true
     @overlay.visible = true
     @black_rectangle.opacity = 0
     @black_rectangle.visible = false
     show_menu_sprites
     update_icon_animation
+    super
   end
 
   #--------------------------------------------------------------------------
@@ -1206,7 +1212,7 @@ class Scene_Menu < Scene_MenuBase
     phone_text(bmp, 24, 26, 222, 30, "Tin nhắn", 22, nil, 0, true)
     entries = @pmgc_entries || []
     phone_text(bmp, 24, 60, 288, 20, "#{entries.size} cuộc trò chuyện", 13, Color.new(187, 201, 226))
-    phone_footer(bmp, "↑↓: chọn   Enter: xem   Esc: quay lại")
+    phone_footer(bmp, "↑↓: chọn   Z: xem   X: quay lại")
   end
 
   def get_sender_icon(sender, contact_id)
@@ -1804,7 +1810,7 @@ module WCFDiaryReader
     footer.bitmap.fill_rect(footer.bitmap.rect, Color.new(0, 0, 0, 170))
     footer.bitmap.font.size = 17
     footer.bitmap.draw_text(0, 0, Graphics.width, 28,
-      "←/→/Enter: Lật trang    Shift: Ẩn UI    Esc: Đóng", 1)
+      "←/→/Z: Lật trang    Shift: Ẩn UI    X: Đóng", 1)
     footer.y = Graphics.height - 28
     footer.z = 502
 
@@ -2126,8 +2132,8 @@ class Scene_Menu < Scene_MenuBase
     bitmap = @gallery_button_bitmap
     bitmap.clear
     bitmap.fill_rect(bitmap.rect, Color.new(9, 14, 28, 230))
-    text = scroll_mode ? "Mũi tên: di chuyển   Q/W: thu nhỏ   Enter/Esc: quay lại" :
-      "Q/W: phóng to   Enter/Esc: quay lại"
+    text = scroll_mode ? "Mũi tên: di chuyển   Q/W: thu nhỏ   Z/X: quay lại" :
+      "Q/W: phóng to   Z/X: quay lại"
     phone_text(bitmap, 16, 4, bitmap.width - 32, 24, text, 13, nil, 1)
   end
 
@@ -2150,7 +2156,7 @@ class Scene_Menu < Scene_MenuBase
     picture_id = gallery_picture_id_from_index(@gallery_page, @gallery_index)
     title = gallery_picture_unlocked?(picture_id) ? gallery_picture_name(picture_id) : "Khám phá câu chuyện để mở ảnh"
     phone_text(bmp, 24, 388, 288, 24, title, 13, nil, 1)
-    phone_footer(bmp, "Mũi tên: chọn   Enter: xem   Esc: quay lại")
+    phone_footer(bmp, "Mũi tên: chọn   Z: xem   X: quay lại")
     @gallery_info.visible = true
     @gallery_full_sprite.visible = false if @gallery_full_sprite
     @gallery_button.visible = false if @gallery_button
@@ -3024,7 +3030,7 @@ class Scene_Menu < Scene_MenuBase
       end
     end
     phone_text(bmp, 36, 55, 264, 18, subtitle, 12, Color.new(187, 201, 226), 1)
-    phone_footer(bmp, "↑↓: cuộn   Esc: danh bạ")
+    phone_footer(bmp, "↑↓: cuộn   X: danh bạ")
     @contact_info.visible = true
     dispose_sprite_array(@contact_messages)
     @contact_messages = []
@@ -3225,6 +3231,692 @@ module PhoneGroupChatSave
 
     branch_entries.each do |entry|
       save_entry(gid, entry)
+    end
+  end
+end
+#==============================================================================
+# WCF Phone Save / Load
+# Narrative save cards. Keep this section in Custom Menu after the gallery hooks.
+# No new script slot, map edits, or changes to save contents / load-success hooks.
+#==============================================================================
+module WCFPhoneSaveRecord
+  VERSION = 1
+  RECIPIENTS = {1=>"Leo", 2=>"Kohi", 3=>"Shylvie", 4=>"Hakase"}
+  MARKET_GIFTS = {1=>"Máy pha cà phê", 2=>"Dao và chảo", 3=>"Khăn len", 4=>"Bộ phá khóa"}
+  LEO_GIFTS = {1=>["Cà phê Luminous", "Kohi"],
+    2=>["Khiên", "Shylvie"], 3=>["Áo choàng tàng hình", "Hakase"]}
+  JEWEL_GIFTS = {1=>["Purple Garnet", "Leo"], 2=>["Kim cương cà phê", "Kohi"],
+    3=>["Congo Tourmaline", "Shylvie"], 4=>["Rainbow Fluorite", "Hakase"]}
+  LOCATIONS = {
+    3=>"Văn phòng Silverwing", 6=>"Thành phố", 10=>"Xe buýt",
+    13=>"Văn phòng Wanderer", 14=>"Bếp Wanderer", 15=>"Phòng tắm Wanderer",
+    17=>"Hành lang Silverwing", 19=>"Siêu thị", 20=>"Quán mì cay",
+    21=>"Atlantis", 22=>"Nhà Hải Quỳ", 23=>"Tiệm sách Atlantis",
+    24=>"Bãi rác trong ký ức", 25=>"Atlantis", 26=>"Phòng kho nhà Hải Quỳ",
+    28=>"Mê cung gương Atlantis", 29=>"Hành lang Atlantis", 34=>"Mê cung gương Atlantis",
+    35=>"Phòng Hải Quỳ", 36=>"Sau câu chuyện", 37=>"Phòng Hải Quỳ",
+    38=>"Văn phòng Wanderer", 39=>"Văn phòng Wanderer", 40=>"Atlantis",
+    41=>"Phòng Hải Quỳ ở nhà", 42=>"Phòng Hải Quỳ", 43=>"Phòng Shylvie",
+    44=>"Phòng Leo", 45=>"Phòng Hakase", 46=>"Phòng Kohi", 47=>"Phòng Hải Quỳ",
+    48=>"Văn phòng Wanderer", 49=>"Phòng Hải Quỳ", 50=>"Bên ngoài Wanderer",
+    51=>"Phòng Hải Quỳ", 52=>"Văn phòng Wanderer", 53=>"Atlantis",
+    54=>"Văn phòng Wanderer", 55=>"Atlantis", 56=>"Trạm xe buýt",
+    57=>"Tiệm ma pháp", 58=>"Cà phê Luminous", 59=>"Cửa hàng vũ khí",
+    60=>"Phòng Hải Quỳ", 61=>"Phòng họp Wanderer", 62=>"Phòng họp Wanderer",
+    63=>"Phòng chế tạo Wanderer", 64=>"Tiệm đá phong thủy", 65=>"Phòng Hải Quỳ",
+    66=>"Văn phòng Wanderer", 67=>"Bếp Wanderer", 69=>"Test Hub"
+  }
+  PHASES = {3=>"Một ngày ở Silverwing", 6=>"Trên đường về", 10=>"Chuyến xe buýt",
+    13=>"Tìm quà Giáng sinh", 17=>"Rời Silverwing", 19=>"Chọn quà ở siêu thị",
+    20=>"Mì cay cho Leo", 21=>"Đến Atlantis", 22=>"Về nhà", 23=>"Tiệm sách Atlantis",
+    24=>"Ký ức", 25=>"Sau cuộc rượt đuổi", 26=>"Khám phá phòng kho",
+    28=>"Mê cung gương", 29=>"Cuộc rượt đuổi", 34=>"Giữa vòng vây",
+    35=>"Đêm muộn", 36=>"Sau câu chuyện", 37=>"Chuẩn bị quà",
+    38=>"Tiệc Giáng sinh", 39=>"Sáng hôm sau", 40=>"Tìm cà phê Atlantis",
+    47=>"Chuẩn bị quà", 48=>"Tiệc Giáng sinh", 49=>"Chuẩn bị quà",
+    50=>"Sau bữa tiệc", 51=>"Chuẩn bị quà", 52=>"Sau bữa tiệc",
+    53=>"Tại Atlantis", 54=>"Tìm Hải Quỳ", 55=>"Giải cứu Hải Quỳ",
+    56=>"Đi mua quà", 57=>"Khám phá tiệm ma pháp", 58=>"Ghé cà phê Luminous",
+    59=>"Chọn quà ở cửa hàng vũ khí", 60=>"Chuẩn bị quà",
+    64=>"Chọn đá phong thủy", 65=>"Chuẩn bị quà", 66=>"Tiệc Giáng sinh",
+    67=>"Sáng hôm sau", 69=>"Điểm bắt đầu thử nghiệm"}
+
+  def self.number(variables, id)
+    value = variables && variables[id]
+    value.is_a?(Numeric) ? value.to_i : 0
+  end
+
+  def self.on?(switches, id)
+    switches && switches[id] == true
+  end
+
+  def self.route(switches, variables, map_id)
+    choices = []
+    choices << "Siêu thị" if [44,45,46].any? { |id| on?(switches,id) }
+    choices << "Mì cay" if on?(switches,55) || on?(switches,57)
+    choices << "Sách dịch chuyển" if on?(switches,61) || on?(switches,65)
+    choices << "Sách Ma Vương" if on?(switches,66) || on?(switches,69)
+    choices << "Chủ tiệm sách" if on?(switches,70) || on?(switches,71)
+    choices << "Gợi ý của Leo" if on?(switches,72) || on?(switches,75)
+    choices << "Gợi ý của Shylvie" if on?(switches,76) || on?(switches,79)
+    return choices.first if choices.size == 1
+    return "Chưa xác định" if choices.size > 1
+    return "Thử nghiệm" if map_id == 69
+    return "Phòng kho" if on?(switches,42) || [24,25,26,28,29,34,35].include?(map_id)
+    return "Atlantis" if on?(switches,30) || [21,22,23,41].include?(map_id)
+    "Chưa chọn"
+  end
+
+  def self.gift(switches, variables, map_id = 0)
+    candidates = []
+    if on?(switches, 44) || on?(switches, 45) || on?(switches, 46)
+      name = MARKET_GIFTS[number(variables, 42)]
+      recipient = RECIPIENTS[number(variables, 43)]
+      candidates << [name, recipient, on?(switches, 45)] if name && recipient
+    end
+    if on?(switches, 55) || on?(switches, 57)
+      candidates << ["Mì cay", "Leo", on?(switches, 57)]
+    end
+    if on?(switches, 61) || on?(switches, 65)
+      candidates << ["Sách dịch chuyển", "Shylvie",
+        on?(switches, 65) || number(variables, 52) >= 5]
+    end
+    if on?(switches, 66) || on?(switches, 69)
+      candidates << ["Sách Ma Vương Cổ Đại", "Hakase",
+        on?(switches, 69) || number(variables, 53) >= 5]
+    end
+    if on?(switches, 72) || on?(switches, 75)
+      pair = LEO_GIFTS[number(variables, 55)]
+      # Shops 57/58 also use stage 2 for free exploration before checkout.
+      stage = number(variables, 56)
+      bought = stage >= 3 || (stage >= 2 && ![56,57,58].include?(map_id))
+      candidates << [pair[0], pair[1], on?(switches, 75)] if pair && bought
+    end
+    if on?(switches, 76) || on?(switches, 79)
+      pair = JEWEL_GIFTS[number(variables, 57)]
+      candidates << [pair[0], pair[1], on?(switches, 79) || number(variables, 58) >= 4] if
+        pair && number(variables, 58) >= 2
+    end
+    # A stale/debug save with competing routes must never claim a guessed gift.
+    candidates.size == 1 ? candidates.first : nil
+  end
+
+  def self.describe(map, switches, variables, playtime = "—")
+    map_id = map && map.respond_to?(:map_id) ? map.map_id : 0
+    location = LOCATIONS[map_id]
+    if !location && map && map.respond_to?(:display_name)
+      location = map.display_name.to_s.strip
+    end
+    location = "Địa điểm chưa xác định" if !location || location.empty?
+    title = PHASES[map_id]
+    if [14,15,42,43,44,45,46,61,62,63].include?(map_id)
+      christmas = [48,58,62,67,73,77].any? { |id| on?(switches,id) }
+      title = christmas ? "Tiệc Giáng sinh" : "Khám phá Wanderer"
+      title = "Nấu mì cay" if map_id == 14 && on?(switches,55) && number(variables,51) == 3
+    end
+    title ||= map_id == 41 ? "Về nhà" : "Hành trình của Hải Quỳ"
+    chosen = gift(switches, variables, map_id)
+    result = {:version=>VERSION, :map_id=>map_id, :location=>location,
+      :title=>title, :route=>route(switches,variables,map_id), :playtime=>playtime.to_s,
+      :gift=>"", :recipient=>"", :given=>false}
+    if chosen
+      result[:gift], result[:recipient], result[:given] = chosen
+    end
+    result
+  end
+
+  def self.capture
+    playtime = $game_system ? $game_system.playtime_s : "—"
+    result = describe($game_map, $game_switches, $game_variables, playtime)
+    result[:saved_at] = Time.now.to_i
+    result
+  end
+
+  def self.from_header(header)
+    stored = header[:wcf_phone_save]
+    if stored.is_a?(Hash) && stored[:version] == VERSION &&
+        [:title,:location,:playtime,:gift,:recipient].all? { |key| stored[key].is_a?(String) } &&
+        (stored[:saved_at].nil? || stored[:saved_at].is_a?(Integer))
+      # Read plain metadata only. Never look at the currently running route.
+      result = stored.dup
+      result[:route] = route(header[:switches],header[:variables],stored[:map_id]) unless
+        result[:route].is_a?(String) && !result[:route].empty?
+      return result
+    end
+    describe(header[:map], header[:switches], header[:variables], header[:playtime_s] || "—")
+  end
+
+  def self.gift_text(record)
+    return "Đang tìm quà Giáng sinh" if record[:gift].to_s.empty? &&
+      [10,13,19,20,23,56,57,58,59,64].include?(record[:map_id])
+    return "" if record[:gift].to_s.empty?
+    prefix = record[:given] ? "Đã tặng: " : ""
+    "#{prefix}#{record[:gift]} → #{record[:recipient]}"
+  end
+end
+
+module DataManager
+  class << self
+    alias wcf_phone_make_save_header make_save_header
+  end
+  def self.make_save_header
+    header = wcf_phone_make_save_header
+    header[:wcf_phone_save] = WCFPhoneSaveRecord.capture
+    header
+  end
+end
+
+module WCFPhoneSaveStore
+  # Yanfly headers contain complete game objects. Retain only plain card data,
+  # and read only the visible slots when changing page.
+  def self.read(index)
+    path = DataManager.make_filename(index)
+    return {:state=>:empty} unless File.exist?(path)
+    header = DataManager.load_header(index)
+    return {:state=>:invalid} unless header.is_a?(Hash)
+    record = WCFPhoneSaveRecord.from_header(header)
+    record[:saved_at] ||= File.mtime(path).to_i
+    {:state=>:ready, :record=>record}
+  rescue StandardError
+    {:state=>:invalid}
+  end
+
+  def self.write(index)
+    path = DataManager.make_filename(index)
+    backup = path + ".phone-backup"
+    # The stock rescue deletes a failed save. Preserve an occupied slot first.
+    return false if File.exist?(backup)
+    previous = File.exist?(path)
+    if previous
+      bytes = File.binread(path)
+      File.open(backup, "wb") { |file| file.write(bytes) }
+    end
+    success = begin
+      DataManager.save_game(index)
+    rescue StandardError
+      false
+    end
+    if !success && previous
+      File.open(path, "wb") { |file| file.write(File.binread(backup)) }
+    end
+    File.delete(backup) if previous && File.exist?(backup)
+    success
+  rescue StandardError
+    # A restore failure leaves the backup on disk for recovery.
+    false
+  end
+
+  def self.delete(index)
+    DataManager.delete_save_file(index)
+    !File.exist?(DataManager.make_filename(index))
+  rescue StandardError
+    false
+  end
+end
+
+module WCFPhoneSaveDrawing
+  def ps_wrapped(bitmap, x, y, width, text, size, line_height, max_lines, color = nil, bold = false)
+    bitmap.font.name, bitmap.font.size, bitmap.font.bold = PhoneMenu::UI_FONT,size,bold
+    words = text.to_s.split(/\s+/)
+    lines = [""]
+    words.each_with_index do |word,index|
+      trial = lines[-1].empty? ? word : lines[-1]+" "+word
+      if bitmap.text_size(trial).width <= width || lines[-1].empty?
+        lines[-1] = trial
+      elsif lines.size < max_lines
+        lines << word
+      else
+        lines[-1] += " "+words[index..-1].join(" ")
+        break
+      end
+    end
+    lines.each_with_index do |line,index|
+      ps_text(bitmap,x,y+index*line_height,width,line_height,line,size,color,0,bold)
+    end
+  end
+
+  def ps_round(bitmap, x, y, w, h, radius, color)
+    radius = [radius, w / 2, h / 2].min
+    bitmap.fill_rect(x + radius, y, w - radius * 2, h, color)
+    bitmap.fill_rect(x, y + radius, w, h - radius * 2, color)
+    [[x+radius,y+radius], [x+w-radius-1,y+radius],
+      [x+radius,y+h-radius-1], [x+w-radius-1,y+h-radius-1]].each do |cx,cy|
+      (-radius..radius).each do |dy|
+        dx = Math.sqrt(radius * radius - dy * dy).to_i
+        bitmap.fill_rect(cx-dx,cy+dy,dx*2+1,1,color)
+      end
+    end
+  end
+
+  def ps_text(bitmap, x, y, w, h, text, size = 14, color = nil, align = 0, bold = false)
+    bitmap.font.name = PhoneMenu::UI_FONT
+    bitmap.font.size, bitmap.font.bold = size, bold
+    bitmap.font.italic = bitmap.font.shadow = bitmap.font.outline = false
+    bitmap.font.color = color || Color.new(245,246,255)
+    value = text.to_s
+    if bitmap.text_size(value).width > w
+      clusters = value.scan(/\P{M}\p{M}*/)
+      clusters.pop while !clusters.empty? && bitmap.text_size(clusters.join + "…").width > w
+      value = clusters.join + "…"
+    end
+    bitmap.draw_text(x,y,w,h,value,align)
+  end
+
+  def ps_card(bitmap, x, y, w, h, selected = false)
+    ps_round(bitmap,x,y,w,h,12,selected ? Color.new(174,186,255) : Color.new(119,140,181,65))
+    ps_round(bitmap,x+1,y+1,w-2,h-2,11,
+      selected ? Color.new(53,66,111,245) : Color.new(18,28,47,235))
+  end
+end
+
+class Scene_File < Scene_MenuBase
+  include WCFPhoneSaveDrawing
+  attr_writer :wcf_phone_origin
+  PS_PER_PAGE = 2
+  PS_WIDTH = 460
+  PS_HEIGHT = 336
+  PS_X = (Graphics.width - PS_WIDTH) / 2
+  PS_Y = (Graphics.height - PS_HEIGHT) / 2
+  PS_ROTATION_FRAMES = 24
+
+  alias wcf_phone_file_update update
+  alias wcf_phone_file_return return_scene
+
+  def create_background
+    @ps_owned_sprites = []
+    @ps_backdrop = ps_sprite(Graphics.width,Graphics.height,10)
+    source = SceneManager.background_bitmap
+    @ps_backdrop.bitmap.blt(0,0,source,source.rect) if source
+    @ps_backdrop.color.set(8,12,24,190)
+    @background_sprite = ps_sprite(PhoneMenu::PHONE_WIDTH,PhoneMenu::PHONE_HEIGHT,50)
+    art = Cache.load_bitmap("Graphics/PhoneMenu/",PhoneMenu::BACKGROUND)
+    @background_sprite.bitmap.stretch_blt(@background_sprite.bitmap.rect,art,art.rect)
+    @background_sprite.ox = PhoneMenu::PHONE_WIDTH / 2
+    @background_sprite.oy = PhoneMenu::PHONE_HEIGHT / 2
+    @background_sprite.x, @background_sprite.y = Graphics.width / 2,Graphics.height / 2
+    @ps_overlay = ps_sprite(PhoneMenu::PHONE_WIDTH,PhoneMenu::PHONE_HEIGHT,60)
+    @ps_overlay.ox = PhoneMenu::PHONE_WIDTH / 2
+    @ps_overlay.oy = PhoneMenu::PHONE_HEIGHT / 2
+    @ps_overlay.x, @ps_overlay.y = Graphics.width / 2,Graphics.height / 2
+    @ps_overlay_alpha = nil
+    ps_apply_overlay_alpha(@wcf_phone_origin == :phone ? PhoneMenu::MAIN_OVERLAY_OPACITY : 240)
+  end
+
+  def transition_speed
+    # Rotation provides the transition for phone apps. A second engine fade
+    # would replace the frozen home screen with a dark blank phone first.
+    @wcf_phone_origin == :phone ? 0 : super
+  end
+
+  def ps_apply_overlay_alpha(value)
+    value = value.round
+    return if @ps_overlay_alpha == value
+    @ps_overlay_alpha = value
+    @ps_overlay.bitmap.clear
+    ps_round(@ps_overlay.bitmap,12,16,PhoneMenu::PHONE_WIDTH-24,
+      PhoneMenu::PHONE_HEIGHT-32,18,Color.new(9,14,28,value))
+  end
+
+  def ps_sprite(w,h,z)
+    sprite = Sprite.new
+    sprite.bitmap = Bitmap.new(w,h)
+    sprite.z = z
+    @ps_owned_sprites << sprite
+    sprite
+  end
+
+  def dispose_background
+    Array(@ps_owned_sprites).each do |sprite|
+      sprite.bitmap.dispose if sprite.bitmap && !sprite.bitmap.disposed?
+      sprite.dispose unless sprite.disposed?
+    end
+    @ps_owned_sprites = []
+    # This project's viewport wrapper does not expose disposed?. Clear our own
+    # reference after disposal so cleanup is safe on both RGSS and the wrapper.
+    @ps_clip.dispose if @ps_clip
+    @ps_clip = nil
+  end
+
+  def create_all_windows
+    # Sprite UI replaces all four Yanfly windows; its save/load callbacks stay.
+    @ps_clip = Viewport.new(PS_X+16,PS_Y+12,PS_WIDTH-32,PS_HEIGHT-24)
+    @ps_clip.z = 100
+    @ps_panel = ps_sprite(PS_WIDTH,PS_HEIGHT,0)
+    @ps_panel.viewport = @ps_clip
+    @ps_panel.x, @ps_panel.y = -16,-12
+    @ps_index = [[first_savefile_index.to_i,0].max,DataManager.savefile_max-1].min
+    @ps_cache = {}
+    @ps_mode, @ps_choice, @ps_notice, @ps_notice_timer = :list,0,"",0
+    @ps_rotation_mode = @wcf_phone_origin == :phone ? :opening : nil
+    @ps_rotation_frame = 0
+    @ps_panel.visible = !@ps_rotation_mode
+    ps_set_angle(@ps_rotation_mode ? 0 : 90)
+    ps_redraw
+  end
+
+  def ps_loading?
+    is_a?(Scene_Load)
+  end
+
+  def ps_slot(index = @ps_index)
+    @ps_cache[index] ||= WCFPhoneSaveStore.read(index)
+  end
+
+  def ps_page
+    @ps_index / PS_PER_PAGE
+  end
+
+  def update
+    wcf_phone_file_update
+    if @ps_rotation_mode
+      ps_update_rotation
+      return
+    end
+    if @ps_notice_timer > 0
+      @ps_notice_timer -= 1
+      if @ps_notice_timer == 0
+        @ps_notice = ""
+        ps_redraw
+      end
+    end
+    if @ps_mode == :list
+      ps_update_list
+    else
+      ps_update_actions
+    end
+  end
+
+  def ps_set_angle(angle)
+    radians = angle * Math::PI / 180.0
+    width = PhoneMenu::PHONE_WIDTH * Math.cos(radians).abs + PhoneMenu::PHONE_HEIGHT * Math.sin(radians).abs
+    height = PhoneMenu::PHONE_WIDTH * Math.sin(radians).abs + PhoneMenu::PHONE_HEIGHT * Math.cos(radians).abs
+    scale = [1.0,(Graphics.width-20).to_f/width,(Graphics.height-20).to_f/height].min
+    [@background_sprite,@ps_overlay].each do |sprite|
+      sprite.angle = angle
+      sprite.zoom_x = sprite.zoom_y = scale
+    end
+  end
+
+  def ps_update_rotation
+    @ps_rotation_frame += 1
+    progress = [@ps_rotation_frame.to_f / PS_ROTATION_FRAMES,1.0].min
+    eased = progress * progress * (3.0-2.0*progress)
+    closing = @ps_rotation_mode == :closing
+    ps_set_angle(90.0 * (closing ? 1.0-eased : eased))
+    unless closing
+      ps_apply_overlay_alpha(PhoneMenu::MAIN_OVERLAY_OPACITY +
+        (240-PhoneMenu::MAIN_OVERLAY_OPACITY)*eased)
+    end
+    return unless progress >= 1.0
+    @ps_rotation_mode = nil
+    if closing
+      wcf_phone_file_return
+    else
+      @ps_panel.visible = true
+    end
+  end
+
+  def return_scene
+    return if @ps_rotation_mode
+    # Title/direct callers never showed a portrait phone. Return directly in
+    # landscape; only a phone app needs the matching rotation back to portrait.
+    return wcf_phone_file_return unless @wcf_phone_origin == :phone
+    @ps_panel.visible = false
+    @ps_rotation_mode, @ps_rotation_frame = :closing,0
+  end
+
+  def ps_update_list
+    if Input.trigger?(:B)
+      Sound.play_cancel
+      return return_scene
+    end
+    return ps_open_actions if Input.trigger?(:C)
+    step = 0
+    step = 1 if Input.repeat?(:DOWN)
+    step = -1 if Input.repeat?(:UP)
+    step = PS_PER_PAGE if Input.trigger?(:RIGHT) || Input.trigger?(:R)
+    step = -PS_PER_PAGE if Input.trigger?(:LEFT) || Input.trigger?(:L)
+    return if step == 0
+    old = @ps_index
+    @ps_index = [[@ps_index+step,0].max,DataManager.savefile_max-1].min
+    if old != @ps_index
+      Sound.play_cursor
+      ps_redraw
+    end
+  end
+
+  def ps_open_actions
+    slot = ps_slot
+    if ps_loading? && slot[:state] == :empty
+      Sound.play_buzzer
+      ps_notice("Bản lưu này chưa có dữ liệu.")
+      return
+    end
+    @ps_mode, @ps_choice = :actions,0
+    Sound.play_ok
+    ps_redraw
+  end
+
+  def ps_actions
+    slot = ps_slot
+    actions = [["Quay lại",:back]]
+    if ps_loading?
+      actions << ["Tiếp tục bản lưu này",:load] if slot[:state] == :ready
+    elsif !$game_system.save_disabled
+      actions << [slot[:state] == :empty ? "Tạo bản lưu" : "Ghi đè bản lưu",:save]
+    end
+    actions << ["Xóa bản lưu",:delete] unless slot[:state] == :empty
+    actions
+  end
+
+  def ps_update_actions
+    if Input.trigger?(:B)
+      Sound.play_cancel
+      @ps_mode, @ps_choice = :list,0
+      ps_redraw
+      return
+    end
+    # Confirmation buttons are fixed keyboard shortcuts, not another list.
+    # The Z which opens this screen ends in the actions branch below; a fresh
+    # Z press confirms on a later update, while X above always cancels first.
+    if @ps_mode == :confirm
+      ps_execute(@ps_pending) if Input.trigger?(:C)
+      return
+    end
+    max = ps_actions.size
+    change = Input.repeat?(:DOWN) || Input.repeat?(:RIGHT) ? 1 : 0
+    change = -1 if Input.repeat?(:UP) || Input.repeat?(:LEFT)
+    if change != 0
+      @ps_choice = (@ps_choice+change) % max
+      Sound.play_cursor
+      ps_redraw
+    end
+    return unless Input.trigger?(:C)
+    if @ps_choice == 0
+      Sound.play_cancel
+      @ps_mode = :list
+      ps_redraw
+    else
+      action = ps_actions[@ps_choice][1]
+      @ps_pending = action
+      @ps_preview = WCFPhoneSaveRecord.capture if action == :save
+      @ps_mode, @ps_choice = :confirm,0
+      Sound.play_ok
+      ps_redraw
+    end
+  end
+
+  def ps_execute(action)
+    case action
+    when :save
+      # Recheck permissions at execution, as well as when listing actions.
+      success = !$game_system.save_disabled && WCFPhoneSaveStore.write(@ps_index)
+      on_save_success if success
+      ps_finish_action(success,"Đã lưu thành công: Bản lưu %02d." % (@ps_index+1),"Không lưu được. Kiểm tra file lưu.")
+    when :load
+      if ps_slot[:state] == :ready && DataManager.load_game(@ps_index)
+        # Preserve MOG weather, Yanfly limits and GlobalGallery alias chains.
+        on_load_success
+      else
+        ps_finish_action(false,"","Không tải được bản lưu này.")
+      end
+    when :delete
+      success = WCFPhoneSaveStore.delete(@ps_index)
+      Sound.play_ok if success
+      ps_finish_action(success,"Đã xóa bản lưu.","Không xóa được bản lưu này.")
+    end
+  end
+
+  def ps_finish_action(success, message, error)
+    Sound.play_buzzer unless success
+    @ps_cache.delete(@ps_index)
+    @ps_mode, @ps_choice = :list,0
+    ps_notice(success ? message : error)
+  end
+
+  def ps_notice(text)
+    @ps_notice, @ps_notice_timer = text,180
+    ps_redraw
+  end
+
+  def ps_redraw
+    bmp = @ps_panel.bitmap
+    bmp.clear
+    title = ps_loading? ? "Tiếp tục hành trình" : "Lưu hành trình"
+    if @ps_mode == :confirm && @ps_pending == :save
+      title = ps_slot[:state] == :empty ? "Tạo Bản lưu %02d" : "Ghi đè Bản lưu %02d?"
+      title = title % (@ps_index+1)
+    end
+    if @ps_mode == :confirm && @ps_pending != :save
+      title = (@ps_pending == :load ? "Tải Bản lưu %02d?" : "Xóa Bản lưu %02d?") % (@ps_index+1)
+    end
+    ps_text(bmp,28,18,304,30,title,24,nil,0,true)
+    subtitle = @ps_notice.empty? ? "WANDERER · BẢN LƯU" : @ps_notice
+    if @ps_mode != :list && @ps_notice.empty? && ps_slot[:record] && ps_slot[:record][:saved_at]
+      stamp = Time.at(ps_slot[:record][:saved_at]).strftime("%d/%m/%Y %H:%M")
+      subtitle = "Bản hiện có lưu lúc #{stamp}"
+    end
+    ps_text(bmp,28,49,404,20,subtitle,15,Color.new(187,201,226))
+    if @ps_mode == :list
+      ps_draw_list(bmp)
+    else
+      ps_draw_detail(bmp)
+    end
+    return if @ps_mode == :confirm && @ps_pending == :save
+    bmp.fill_rect(28,294,404,1,Color.new(183,198,231,44))
+    footer = if @ps_mode == :list
+      "↑↓ Chọn  ←→ Trang  Z Mở  X Về"
+    elsif @ps_mode == :confirm
+      "Z Xác nhận   X Hủy"
+    else
+      "↑↓ Chọn   Z Mở   X Quay lại"
+    end
+    ps_text(bmp,28,299,404,22,footer,15,Color.new(202,212,235),1)
+  end
+
+  def ps_draw_list(bmp)
+    first = ps_page * PS_PER_PAGE
+    PS_PER_PAGE.times do |row|
+      id = first+row
+      break if id >= DataManager.savefile_max
+      y = 74+row*108
+      ps_card(bmp,26,y,408,104,id == @ps_index)
+      slot = ps_slot(id)
+      ps_text(bmp,38,y+2,236,22,"Bản lưu %02d" % (id+1),19,nil,0,true)
+      if slot[:state] == :ready
+        record = slot[:record]
+        ps_text(bmp,330,y+2,92,22,record[:playtime],16,Color.new(187,201,226),2)
+        ps_text(bmp,38,y+25,384,19,"Route: #{record[:route]}",17)
+        ps_text(bmp,38,y+44,384,19,"Mốc truyện: #{record[:title]}",18,nil)
+        ps_text(bmp,38,y+63,384,19,"Vị trí hiện tại: #{record[:location]}",17,Color.new(204,216,240))
+        gift = WCFPhoneSaveRecord.gift_text(record)
+        ps_text(bmp,38,y+82,384,20,gift.empty? ? "" : "Quà: #{gift}",17,Color.new(219,214,255))
+      else
+        label = slot[:state] == :empty ? "Chưa có bản lưu" : "Không đọc được bản lưu"
+        color = slot[:state] == :empty ? Color.new(155,171,201) : Color.new(255,184,170)
+        ps_text(bmp,38,y+44,384,24,label,19,color,1)
+      end
+    end
+    pages = (DataManager.savefile_max+PS_PER_PAGE-1)/PS_PER_PAGE
+    ps_text(bmp,336,21,96,24,"#{ps_page+1} / #{pages}",18,Color.new(187,201,226),2)
+  end
+
+  def ps_draw_record(bmp, record, x, width, label)
+    y = 78
+    ps_card(bmp,x,y,width,198)
+    ps_text(bmp,x+12,y+4,width-24,16,label,14,Color.new(187,201,226))
+    ps_text(bmp,x+12,y+21,width-24,19,"Route: #{record[:route]}",16)
+    ps_wrapped(bmp,x+12,y+41,width-24,"Mốc: #{record[:title]}",19,19,2,nil,true)
+    ps_text(bmp,x+12,y+80,width-24,16,"Vị trí hiện tại:",15,Color.new(187,201,226))
+    ps_text(bmp,x+12,y+96,width-24,20,record[:location],width < 220 ? 16 : 18,Color.new(204,216,240))
+    gift = record[:gift].to_s
+    gift = WCFPhoneSaveRecord.gift_text(record) if gift.empty?
+    ps_wrapped(bmp,x+12,y+117,width-24,gift.empty? ? "" : "Quà: #{gift}",17,19,2,Color.new(219,214,255))
+    unless record[:recipient].to_s.empty?
+      label = record[:given] ? "Đã tặng: #{record[:recipient]}" : "Người nhận: #{record[:recipient]}"
+      avatar_width = width >= 250 ? 24 : 0
+      ps_text(bmp,x+12,y+155,width-24-avatar_width,20,label,16,Color.new(204,216,240))
+      if width >= 250 && WCFPhoneSaveRecord::RECIPIENTS.values.include?(record[:recipient])
+        avatar = Cache.load_bitmap("Graphics/PhoneMenu/","Contact_#{record[:recipient]}")
+        bmp.stretch_blt(Rect.new(x+width-32,y+155,20,20),avatar,avatar.rect)
+      end
+    end
+    ps_text(bmp,x+12,y+177,width-24,18,"Đã chơi: #{record[:playtime]}",14,Color.new(187,201,226))
+  end
+
+  def ps_draw_empty(bmp, slot, x, width, label)
+    ps_card(bmp,x,78,width,198)
+    ps_text(bmp,x+12,88,width-24,22,label,18,nil,0,true)
+    text = slot[:state] == :empty ? "Chưa có bản lưu" : "Dữ liệu không đọc được"
+    ps_wrapped(bmp,x+12,132,width-24,text,20,25,3,Color.new(187,201,226))
+  end
+
+  def ps_button(bmp, x, y, width, height, label, selected, danger = false)
+    ps_card(bmp,x,y,width,height,selected)
+    color = danger ? Color.new(255,184,170) : nil
+    lines = height > 40 ? 2 : 1
+    ps_wrapped(bmp,x+12,y+5,width-24,label,18,22,lines,color,selected)
+  end
+
+  def ps_draw_detail(bmp)
+    slot = ps_slot
+    record = slot[:record]
+    confirming_save = @ps_mode == :confirm && @ps_pending == :save
+    if confirming_save
+      if record
+        ps_draw_record(bmp,record,26,198,"Đang có · Bản lưu %02d" % (@ps_index+1))
+      else
+        ps_draw_empty(bmp,slot,26,198,"Bản lưu %02d" % (@ps_index+1))
+      end
+      ps_draw_record(bmp,@ps_preview,236,198,"Sẽ lưu")
+      save_label = slot[:state] == :empty ? "Lưu (Z)" : "Ghi đè (Z)"
+      ps_button(bmp,26,282,198,36,"Hủy (X)",false)
+      ps_button(bmp,236,282,198,36,save_label,false)
+    else
+      if record
+        ps_draw_record(bmp,record,26,252,"Bản lưu %02d" % (@ps_index+1))
+      else
+        ps_draw_empty(bmp,slot,26,252,"Bản lưu %02d" % (@ps_index+1))
+      end
+      if @ps_mode == :confirm
+        warning = if @ps_pending == :delete
+          "Xóa vĩnh viễn bản lưu này?"
+        elsif @wcf_phone_origin == :phone
+          "Tiến độ chưa lưu sẽ bị thay thế."
+        else
+          "Tiếp tục từ bản lưu này?"
+        end
+        ps_wrapped(bmp,300,83,124,warning,17,22,4,Color.new(219,214,255))
+        ps_button(bmp,290,178,144,40,"Hủy (X)",false)
+        label = @ps_pending == :load ? "Tải (Z)" : "Xóa (Z)"
+        ps_button(bmp,290,236,144,40,label,false,@ps_pending == :delete)
+      else
+        ps_actions.each_with_index do |option,index|
+          label = {:back=>"Quay lại",:load=>"Tiếp tục",:save=>"Tạo bản lưu",:delete=>"Xóa bản lưu"}[option[1]]
+          label = "Ghi đè" if option[1] == :save && slot[:state] != :empty
+          ps_button(bmp,290,78+index*66,144,52,label,index == @ps_choice,option[1] == :delete)
+        end
+      end
     end
   end
 end

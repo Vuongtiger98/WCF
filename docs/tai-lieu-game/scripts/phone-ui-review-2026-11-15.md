@@ -58,3 +58,5 @@ Kiểm tra offline `ruby tools/test_phone_menu_animation.rb`: **29 case / 741 as
 Tổng cùng hai bộ lifecycle/probe: **39 case / 794 assertion**. Không mở game hoặc dùng Computer Use trong lượt sửa animation này, theo yêu cầu tạm dừng chơi trực tiếp. Chưa xác nhận animation bằng quan sát engine sau bản sửa.
 
 Backup riêng trước sửa: `Data/codex_backup_phone_open_20261115/`. Chỉ source slot 198 thay; kiểm tra bằng `ruby -W0 tools/script_inventory.rb check-phone-open-scope`. Toàn bộ ID, tên, thứ tự script và map/event giữ nguyên.
+
+Ngày 16/11: yêu cầu quay lại từ màn hình con không được slide-in. Hành vi "mọi lần vào Scene_Menu đều mở lại" trong phần trên đã được thay bằng cờ resume trên từng instance. Save/Load xoay ngang khi vào và xoay về dọc khi trở lại; xem [bản cập nhật Save/Load](phone-save-load-2026-11-16.md).

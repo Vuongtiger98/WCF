@@ -117,12 +117,17 @@ module ScriptInventory
       errors.each { |error| puts "ERROR|#{error}" }
       puts "SCRIPT_INVENTORY_AUDIT|slots=#{entries.length}|csv=#{order.length}|errors=#{errors.length}"
       exit 1 unless errors.empty?
-    when 'check-patch-scope', 'check-performance-scope', 'check-native-performance-scope', 'check-phone-ui-scope', 'check-phone-open-scope'
+    when 'check-patch-scope', 'check-performance-scope', 'check-native-performance-scope', 'check-phone-ui-scope', 'check-phone-open-scope', 'check-phone-save-scope', 'check-phone-landscape-scope', 'check-phone-labels-scope', 'check-phone-transition-scope', 'check-phone-shortcuts-scope'
+      phone_shortcuts = command == 'check-phone-shortcuts-scope'
+      phone_transition = command == 'check-phone-transition-scope'
+      phone_labels = command == 'check-phone-labels-scope'
+      phone_landscape = command == 'check-phone-landscape-scope'
+      phone_save = command == 'check-phone-save-scope'
       phone_open = command == 'check-phone-open-scope'
       phone_ui = command == 'check-phone-ui-scope'
       native = command == 'check-native-performance-scope'
       performance = command != 'check-patch-scope'
-      backup = phone_open ? 'codex_backup_phone_open_20261115' : phone_ui ? 'codex_backup_phone_ui_20261115' : native ? 'codex_backup_performance_native_20261115' :
+      backup = phone_shortcuts ? 'codex_backup_phone_shortcuts_20261116' : phone_transition ? 'codex_backup_phone_transition_20261116' : phone_labels ? 'codex_backup_phone_labels_20261116' : phone_landscape ? 'codex_backup_phone_landscape_20261116' : phone_save ? 'codex_backup_phone_save_20261115' : phone_open ? 'codex_backup_phone_open_20261115' : phone_ui ? 'codex_backup_phone_ui_20261115' : native ? 'codex_backup_performance_native_20261115' :
         performance ? 'codex_backup_performance_20261115' : 'codex_backup_scripts_review_20261030'
       before = Marshal.load(File.binread(File.join(ROOT, 'Data', backup, 'Scripts.rvdata2')))
       after = Marshal.load(File.binread(File.join(ROOT, 'Data/Scripts.rvdata2')))
@@ -132,7 +137,7 @@ module ScriptInventory
         raise "Slot identity/order changed #{index}" unless old[0,2] == current[0,2]
         changed << current[1] unless old[2] == current[2]
       end
-      expected = (phone_ui || phone_open) ? ['Custom Menu'] : native ? ['KUL Graphics', 'Custom Menu'] :
+      expected = (phone_ui || phone_open || phone_save || phone_landscape || phone_labels || phone_transition || phone_shortcuts) ? ['Custom Menu'] : native ? ['KUL Graphics', 'Custom Menu'] :
         ['Custom Menu', 'Game_Map', 'KUL Graphics', 'MOG_Weather_EX', 'Text Over Event']
       expected += ["Galv's Layer Graphics", 'Particles', 'anti-animation lag'] unless performance
       expected.sort!

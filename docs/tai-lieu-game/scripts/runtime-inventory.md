@@ -207,7 +207,7 @@ Snapshot đối chiếu trực tiếp `Data/Scripts.rvdata2`. Slot là chỉ s�
 | 195 | [MOG_Picture_Gallery](<../../../Scripts/MOG_Picture_Gallery.rb>) | Có mã | exact | `edc0c0b45563` |
 | 196 | [Move the Menu](<../../../Scripts/Move the Menu.rb>) | Có mã | exact | `deac30decd8b` |
 | 197 | [Cutscene Group Chat](<../../../Scripts/Cutscene Group Chat.rb>) | Có mã | exact | `d9fbbb7c5377` |
-| 198 | [Custom Menu](<../../../Scripts/Custom Menu.rb>) | Có mã | exact | `51ef64184713` |
+| 198 | [Custom Menu](<../../../Scripts/Custom Menu.rb>) | Có mã | exact | `79f1ee454b54` |
 | 199 | [BulletHell](<../../../Scripts/BulletHell.rb>) | Có mã | line-endings-only | `5f046f2e6063` |
 | 200 | [Random Event Patch](<../../../Scripts/Random Event Patch.rb>) | Có mã | line-endings-only | `72e08c8015f5` |
 | 201 | [Easy Script Importer-Exporter  ](<../../../Scripts/Easy Script Importer-Exporter  .rb>) | Có mã | exact | `fb255a4fadff` |

@@ -40,12 +40,20 @@ ruby tools/test_performance_optimizations.rb
 ruby tools/test_rgss_performance_probe.rb
 ruby tools/test_phone_menu_layout.rb
 ruby tools/test_phone_menu_animation.rb
+ruby tools/test_phone_save_load.rb
 ruby -W0 tools/script_inventory.rb check-performance-scope
 ruby -W0 tools/script_inventory.rb check-native-performance-scope
 ruby -W0 tools/script_inventory.rb check-phone-ui-scope
 ruby -W0 tools/script_inventory.rb check-phone-open-scope
+ruby -W0 tools/script_inventory.rb check-phone-save-scope
+ruby -W0 tools/script_inventory.rb check-phone-landscape-scope
+ruby -W0 tools/script_inventory.rb check-phone-labels-scope
+ruby -W0 tools/script_inventory.rb check-phone-transition-scope
+ruby -W0 tools/script_inventory.rb check-phone-shortcuts-scope
 ```
 
 `markdown` xuất nội dung inventory ra stdout; `order` xuất thứ tự đề xuất ra stdout. Công cụ chỉ đọc, không tự ghi đè map, script runtime hoặc file export. Review nội dung trước khi áp dụng. `-W0` tránh trộn warning regex của script legacy vào dữ liệu xuất ra.
 
 Khi thay script runtime, chỉ thay source nén của đúng slot đã xác định theo tên. Giữ nguyên số slot, ID, tên và thứ tự; tạo backup trước khi sửa và kiểm tra các slot ngoài phạm vi không thay đổi.
+
+Save/Load theo theme điện thoại và cách kiểm tra: [phone-save-load-2026-11-16.md](phone-save-load-2026-11-16.md).
