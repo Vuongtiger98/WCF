@@ -80,6 +80,11 @@ class Window_Base
   def create_contents; @contents = FakeContents.new; end
   def open; end
   def close; end
+  def dispose; end
+end
+
+module SceneManager
+  def self.scene; nil; end
 end
 
 load File.expand_path("../Scripts/Pop Message.rb", __dir__)
@@ -163,7 +168,7 @@ raise "Map Effects zoom anchor mismatch: #{zoomed_anchor.inspect}" unless
 $game_map.effects.angle = 90
 rotated_anchor = window.pop_message_map_effect_point(400, 240)
 raise "Map Effects rotation anchor mismatch: #{rotated_anchor.inspect}" unless
-  rotated_anchor == [320, 344]
+  rotated_anchor == [320, 136]
 $game_map = nil
 
 puts "POP_MESSAGE_MAP_EFFECTS_TEST|ok|zoom=true|rotation=true"

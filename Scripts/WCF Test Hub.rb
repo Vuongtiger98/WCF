@@ -168,8 +168,9 @@ module WCFTestHub
     $phone_menu_selected_index = 0
     PhoneMenuScript.force_timeline(timeline) if defined?(PhoneMenuScript)
     return unless $game_config && $game_config.respond_to?(:phone_group_chats)
-    $game_config.phone_group_chats.clear
+    $game_config.clear_phone_group_chats
     install_group_chat(preset, result) if preset
+    $game_config.phone_mark_all_read
   end
 
   def self.install_group_chat(preset, result)

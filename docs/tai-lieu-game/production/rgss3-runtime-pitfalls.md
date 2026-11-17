@@ -82,3 +82,11 @@ guard `@face_window.hide_face if @face_window`.
 RGSS3 dùng implementation được load cuối cùng khi nhiều script định nghĩa lại cùng một method. `Custom Menu` có patch lưu lịch sử lựa chọn và định nghĩa lại `Scene_SimplePhoneChat#apply_choice` sau `Cutscene Group Chat`. Patch cũ chỉ lưu text/result cho lịch sử nhưng bỏ mất xử lý `choice[:switch]` và `choice[:variable]`; vì vậy giao diện vẫn hiện và nhận lựa chọn trong khi Variable route không đổi.
 
 Khi override một method điều khiển state, phải đối chiếu implementation gốc và giữ đủ mọi side effect, hoặc alias/gọi method gốc rồi chỉ bổ sung hành vi. Với lựa chọn Group Chat, implementation cuối phải cập nhật đồng thời `$game_temp.group_chat_result`, switch tùy chọn, variable tùy chọn và dữ liệu lưu lịch sử.
+
+## Viewport snapshot phải theo viewport map sau transfer
+
+Yanfly căn giữa map nhỏ bằng cách thay rect viewport. Map Effects sao chép rect lúc tạo renderer nên phải đồng bộ lại khi transfer, không chỉ cập nhật viewport nguồn. Rect cũ `(48,32,544,416)` từng làm cả map và đuôi pop lệch sau khi vào map `640×480`. Các UI neo vào map cần dùng cùng phép biến đổi với renderer; balloon nằm trong snapshot phải tránh bị cắt cả trước và sau zoom. Không vá bằng cách bù tọa độ riêng cho từng event. Xem [kiểm tra mở đầu–bus 16/11/2026](../scripts/prologue-review-2026-11-16.md).
+
+## Mở scene chat chưa có nghĩa là event đã đợi người chơi trả lời
+
+`SceneManager.call(Scene_SimplePhoneChat)` không tự yield Fiber của event. Wrapper `command_355` trong Cutscene Group Chat phải dừng script command khi scene chat còn mở, rồi mới cho các lệnh lưu lịch sử hoặc đọc biến nhánh chạy. Nếu thiếu bước này, history có thể chỉ chứa phần thoại gốc và event đọc kết quả nil/0 trước khi người chơi chọn. Xem [bản đồng bộ chat cutscene](../scripts/cutscene-phone-chat-2026-11-16.md).

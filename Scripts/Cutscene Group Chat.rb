@@ -16,71 +16,7 @@
 #==============================================================================
 
 module SimplePhoneChat
-  PHONE_WIDTH  = 350
-  PHONE_HEIGHT = 450
-  PHONE_X = (Graphics.width - PHONE_WIDTH) / 2
-  PHONE_Y = (Graphics.height - PHONE_HEIGHT) / 2
-
-  BACKGROUND_FILE = "MessageBackground"
-
-  HEADER_H = 52
-  FOOTER_H = 74
-
-  CONTENT_X = 12
-  CONTENT_Y = HEADER_H + 6
-  CONTENT_W = PHONE_WIDTH - 24
-  CONTENT_H = PHONE_HEIGHT - HEADER_H - FOOTER_H - 12
-
-  AVATAR_SIZE = 28
-  LEFT_AVATAR_X  = 10
-  RIGHT_AVATAR_X = PHONE_WIDTH - 10 - AVATAR_SIZE
-
-  LEFT_BUBBLE_X = LEFT_AVATAR_X + AVATAR_SIZE + 8
-  RIGHT_BUBBLE_RIGHT = RIGHT_AVATAR_X - 8
-
-  MAX_BUBBLE_W = 168
-  MIN_BUBBLE_W = 56
-  BUBBLE_PAD_X = 12
-  BUBBLE_PAD_Y = 8
-  LINE_H = 22
-  NAME_H = 18
-  NAME_GAP = 2
-  ENTRY_GAP = 10
-  BLOCK_GAP = 12
-
-  IMAGE_MAX_W = 150
-  IMAGE_MAX_H = 118
-
-  CHOICE_X = 16
-  CHOICE_W = PHONE_WIDTH - 32
-  CHOICE_H = 32
-  CHOICE_GAP = 8
-
-  HEADER_BG = Color.new(0, 0, 0, 140)
-  FOOTER_BG = Color.new(0, 0, 0, 70)
-  DIM_COLOR = Color.new(0, 0, 0, 120)
-
-  LEFT_BUBBLE_COLOR  = Color.new(248, 248, 248, 232)
-  RIGHT_BUBBLE_COLOR = Color.new(42, 155, 255, 224)
-
-  NAME_COLOR   = Color.new(255, 255, 255)
-  SYSTEM_COLOR = Color.new(240, 240, 240)
-  SHADOW_COLOR = Color.new(0, 0, 0, 160)
-
-  LEFT_TEXT_COLOR  = Color.new(24, 24, 24)
-  RIGHT_TEXT_COLOR = Color.new(255, 255, 255)
-
-  CHOICE_COLOR = Color.new(248, 248, 248, 235)
-  CHOICE_SELECTED_COLOR = Color.new(170, 210, 255, 235)
-  CHOICE_TEXT_COLOR = Color.new(20, 20, 20)
-
-  TITLE_SIZE  = 24
-  SUB_SIZE    = 16
-  NAME_SIZE   = 18
-  TEXT_SIZE   = 20
-  SYSTEM_SIZE = 18
-  CHOICE_SIZE = 20
-  
+  # Layout and colors are shared with Custom Menu through WCFPhoneDrawing.
   MESSAGE_SE = RPG::SE.new("Cursor2", 80, 100)   # default message sound
 
   # Optional per character sound
@@ -114,6 +50,7 @@ class Game_SimplePhoneChat
   attr_reader   :choices
   attr_reader   :choice_branches
   attr_accessor :required_choice
+  attr_reader :phone_read_entries
 
   def initialize
     @title = "Chat"
@@ -123,6 +60,7 @@ class Game_SimplePhoneChat
     @choices = []
     @choice_branches = {}
     @required_choice = false
+    @phone_read_entries = {}
   end
 
   def add_actor(id, name, avatar_filename)
@@ -213,6 +151,7 @@ module GroupChat
     end
     $game_temp.group_chat_data = chat
     $game_temp.group_chat_result = nil
+    SceneManager.snapshot_for_background
     SceneManager.call(Scene_SimplePhoneChat)
   end
 
@@ -224,34 +163,146 @@ end
 #==============================================================================
 # ** Scene_SimplePhoneChat
 #==============================================================================
+class Game_Interpreter
+  alias wcf_phone_chat_command_355 command_355
+  def command_355
+    result = wcf_phone_chat_command_355
+    # SceneManager.call schedules a scene; it does not suspend this event.
+    # Save-history / route commands must read the answer after chat returns.
+    Fiber.yield while SceneManager.scene_is?(Scene_SimplePhoneChat)
+    result
+  end
+end
+
 class Scene_SimplePhoneChat < Scene_Base
   def start
     super
     @chat = $game_temp.group_chat_data || Game_SimplePhoneChat.new
     @active_entries = @chat.entries.clone
-    @visible_count = 0
-    @scroll_y = 0
-    @choice_active = false
-    @choice_index = 0
-    @branch_used = false
-    @measure_bitmap = Bitmap.new(1, 1)
-
+    @chat_disposed = false
+    @chat_slide_offset = 0
+    @chat_base_y = {}
+    @visible_count = @scroll_y = @choice_index = 0
+    @choice_active = @branch_used = false
+    @entry_layout_cache = {}
+    @choice_rows = []
+    @phone_seen_ranges = {}
+    @phone_read_view = nil
     create_dim
     create_phone_background
-    create_message_layer
-    create_header_layer
-    create_footer_layer
-    create_choice_layer
+    @message_layer = chat_sprite(288, chat_content_height, 110, 24, 96)
+    @header_layer = chat_sprite(PhoneMenu::PHONE_WIDTH, PhoneMenu::PHONE_HEIGHT, 120)
+    @footer_layer = chat_sprite(PhoneMenu::PHONE_WIDTH, PhoneMenu::PHONE_HEIGHT, 120)
+    @choice_layer = chat_sprite(PhoneMenu::PHONE_WIDTH, PhoneMenu::PHONE_HEIGHT, 130)
     refresh_header
-    refresh_footer
     refresh_messages
     refresh_choices
+    @chat_animation = :opening
+    @chat_animation_timer = 0
+    chat_slide(Graphics.height - PhoneMenu::PHONE_Y)
+  end
+
+  def chat_sprite(w, h, z, x = 0, y = 0)
+    sprite = Sprite.new
+    sprite.bitmap = Bitmap.new(w, h)
+    sprite.x, sprite.y, sprite.z = PhoneMenu::PHONE_X+x, PhoneMenu::PHONE_Y+y, z
+    sprite
+  end
+
+  def create_dim
+    @dim = Sprite.new
+    source = SceneManager.background_bitmap
+    @dim.bitmap = source ? source.clone : Bitmap.new(Graphics.width, Graphics.height)
+    @dim.color.set(8, 12, 24, 190)
+    @dim.z = 10
+  end
+
+  def create_phone_background
+    @phone_bg = chat_sprite(PhoneMenu::PHONE_WIDTH, PhoneMenu::PHONE_HEIGHT, 50)
+    source = Cache.load_bitmap('Graphics/PhoneMenu/', PhoneMenu::MESSAGE_BACKGROUND)
+    @phone_bg.bitmap.stretch_blt(@phone_bg.bitmap.rect, source, source.rect)
+    @chat_overlay = chat_sprite(PhoneMenu::PHONE_WIDTH, PhoneMenu::PHONE_HEIGHT, 70)
+    fill_round_rect(@chat_overlay.bitmap, 12, 16, PhoneMenu::PHONE_WIDTH-24,
+      PhoneMenu::PHONE_HEIGHT-32, 18, Color.new(9,14,28,PhoneMenu::MESSAGE_OVERLAY_OPACITY))
+  end
+
+  def chat_parts
+    [@phone_bg,@chat_overlay,@message_layer,@header_layer,@footer_layer,@choice_layer].compact
+  end
+
+  def chat_slide(offset)
+    # RGSS Sprite positions are integers. Always place from a fixed baseline;
+    # accumulating fractional deltas drifts apart during the slide.
+    chat_parts.each do |sprite|
+      @chat_base_y[sprite] ||= sprite.y
+      sprite.y = @chat_base_y[sprite]+offset.round
+    end
+    @chat_slide_offset = offset.round
+  end
+
+  def update_chat_animation
+    @chat_animation_timer += 1
+    progress = [@chat_animation_timer.to_f/PhoneMenu::SLIDE_DURATION,1.0].min
+    distance = Graphics.height-PhoneMenu::PHONE_Y
+    chat_slide(distance * (@chat_animation == :opening ? (1.0-progress)**3 : progress**3))
+    return unless progress >= 1.0
+    if @chat_animation == :closing
+      SceneManager.return
+    else
+      @chat_animation = :idle
+      @chat_animation_timer = 0
+    end
+  end
+
+  def return_scene
+    return if @chat_animation == :closing
+    @chat_animation = :closing
+    @chat_animation_timer = 0
+  end
+
+  def update
+    super
+    track_phone_read_entries if @chat_animation == :idle
+    if @chat_animation != :idle
+      update_chat_animation
+    elsif @choice_active
+      update_choice_input
+    else
+      update_message_input
+    end
+    track_phone_read_entries if @chat_animation == :idle
+  end
+
+  # Accumulate visible ranges so a long entry is read only after every part
+  # has been on screen. Revealing an entry alone is not enough.
+  def track_phone_read_entries
+    height = chat_message_height
+    view = [@visible_count,@scroll_y,height]
+    return if @phone_read_view == view
+    @phone_read_view = view
+    chat_draw_data[:entries].each_with_index do |row,index|
+      top = [@scroll_y-row[:y],0].max
+      bottom = [@scroll_y+height-row[:y],row[:height]].min
+      next unless bottom > top
+      entry = @active_entries[index]
+      key = entry.object_id
+      next if @chat.phone_read_entries[key]
+      spans = (@phone_seen_ranges[key] ||= [])
+      spans << [top,bottom]
+      merged = []
+      spans.sort_by { |range|range[0] }.each do |range|
+        if !merged.empty? && merged[-1][1] >= range[0]
+          merged[-1][1] = [merged[-1][1],range[1]].max
+        else
+          merged << range.dup
+        end
+      end
+      @phone_seen_ranges[key] = merged
+      @chat.phone_read_entries[key] = true if merged[0][0] == 0 && merged[0][1] >= row[:height]
+    end
   end
 
   def terminate
-    # SceneManager resumes the map only after this scene terminates. Commit the
-    # chosen entry one final time here so late method overrides cannot leave a
-    # route variable unset even though the player visibly made a choice.
     if @branch_used && @chat && @chat.choices[@choice_index]
       commit_choice_side_effects(@chat.choices[@choice_index])
     end
@@ -271,91 +322,34 @@ class Scene_SimplePhoneChat < Scene_Base
     value
   end
 
-  def update
-    super
-    if @choice_active
-      update_choice_input
-    else
-      update_message_input
-    end
-  end
-
-  #--------------------------------------------------------------------------
-  # Create
-  #--------------------------------------------------------------------------
-  def create_dim
-    @dim = Sprite.new
-    @dim.bitmap = Bitmap.new(Graphics.width, Graphics.height)
-    @dim.bitmap.fill_rect(0, 0, Graphics.width, Graphics.height, SimplePhoneChat::DIM_COLOR)
-    @dim.z = 1
-  end
-
-  def create_phone_background
-    @phone_bg = Sprite.new
-    @phone_bg.x = SimplePhoneChat::PHONE_X
-    @phone_bg.y = SimplePhoneChat::PHONE_Y
-    @phone_bg.z = 10
-    src = Cache.load_bitmap("Graphics/PhoneMenu/", SimplePhoneChat::BACKGROUND_FILE)
-    @phone_bg.bitmap = Bitmap.new(SimplePhoneChat::PHONE_WIDTH, SimplePhoneChat::PHONE_HEIGHT)
-    @phone_bg.bitmap.stretch_blt(@phone_bg.bitmap.rect, src, src.rect)
-  end
-
-  def create_message_layer
-    @message_layer = Sprite.new
-    @message_layer.x = SimplePhoneChat::PHONE_X + SimplePhoneChat::CONTENT_X
-    @message_layer.y = SimplePhoneChat::PHONE_Y + SimplePhoneChat::CONTENT_Y
-    @message_layer.z = 20
-    @message_layer.bitmap = Bitmap.new(SimplePhoneChat::CONTENT_W, SimplePhoneChat::CONTENT_H)
-  end
-
-  def create_header_layer
-    @header_layer = Sprite.new
-    @header_layer.x = SimplePhoneChat::PHONE_X
-    @header_layer.y = SimplePhoneChat::PHONE_Y
-    @header_layer.z = 30
-    @header_layer.bitmap = Bitmap.new(SimplePhoneChat::PHONE_WIDTH, SimplePhoneChat::HEADER_H)
-  end
-
-  def create_footer_layer
-    @footer_layer = Sprite.new
-    @footer_layer.x = SimplePhoneChat::PHONE_X
-    @footer_layer.y = SimplePhoneChat::PHONE_Y + SimplePhoneChat::PHONE_HEIGHT - SimplePhoneChat::FOOTER_H
-    @footer_layer.z = 30
-    @footer_layer.bitmap = Bitmap.new(SimplePhoneChat::PHONE_WIDTH, SimplePhoneChat::FOOTER_H)
-  end
-
-  def create_choice_layer
-    @choice_layer = Sprite.new
-    @choice_layer.x = SimplePhoneChat::PHONE_X
-    @choice_layer.y = SimplePhoneChat::PHONE_Y
-    @choice_layer.z = 40
-    @choice_layer.bitmap = Bitmap.new(SimplePhoneChat::PHONE_WIDTH, SimplePhoneChat::PHONE_HEIGHT)
-    @choice_layer.visible = false
-  end
-
-  #--------------------------------------------------------------------------
-  # Input
-  #--------------------------------------------------------------------------
   def update_message_input
-    if Input.trigger?(:C)
-      if @visible_count < @active_entries.size
+    if Input.repeat?(:UP) || Input.repeat?(:DOWN)
+      @scroll_y += Input.repeat?(:UP) ? -44 : 44
+      refresh_messages
+    elsif Input.trigger?(:C)
+      if @scroll_y < chat_max_scroll
+        @scroll_y = [@scroll_y+chat_message_height-22,chat_max_scroll].min
+        refresh_messages
+      elsif @visible_count < @active_entries.size
         entry = @active_entries[@visible_count]
         play_message_se(entry)
         @visible_count += 1
+        data = chat_draw_data
+        last = data[:entries].last
+        # Start a long message at its beginning; Z pages through it before
+        # revealing another entry. Original transcript strings stay intact.
+        @scroll_y = last && last[:height] > chat_message_height ? last[:y] : chat_max_scroll
         refresh_messages
+        refresh_header
       elsif need_start_choices?
         @choice_active = true
         @choice_index = 0
         Sound.play_ok
-        refresh_footer
         refresh_choices
       else
         return_scene
       end
     elsif Input.trigger?(:B)
-      # A required-choice chat must not be closable before a choice has been
-      # committed. Previously B could close the chat while it was still
-      # revealing messages, leaving its route variable at 0.
       if @chat.required_choice && !@branch_used
         Sound.play_buzzer
       else
@@ -363,31 +357,17 @@ class Scene_SimplePhoneChat < Scene_Base
       end
     end
   end
-  
+
   def play_message_se(entry)
     return unless entry
-
-    # system message
-    if entry[:type] == :system
-      SimplePhoneChat::MESSAGE_SE.play
-      return
-    end
-
-    # actor-specific sound
-    if entry[:actor] && SimplePhoneChat::ACTOR_SE[entry[:actor]]
-      SimplePhoneChat::ACTOR_SE[entry[:actor]].play
-    else
-      SimplePhoneChat::MESSAGE_SE.play
-    end
+    sound = entry[:type] == :system ? SimplePhoneChat::MESSAGE_SE :
+      (SimplePhoneChat::ACTOR_SE[entry[:actor]] || SimplePhoneChat::MESSAGE_SE)
+    sound.play
   end
 
   def update_choice_input
-    if Input.trigger?(:UP)
-      @choice_index = (@choice_index - 1) % @chat.choices.size
-      Sound.play_cursor
-      refresh_choices
-    elsif Input.trigger?(:DOWN)
-      @choice_index = (@choice_index + 1) % @chat.choices.size
+    if Input.trigger?(:UP) || Input.trigger?(:DOWN)
+      @choice_index = (@choice_index+(Input.trigger?(:UP) ? -1 : 1)) % @chat.choices.size
       Sound.play_cursor
       refresh_choices
     elsif Input.trigger?(:C)
@@ -406,375 +386,193 @@ class Scene_SimplePhoneChat < Scene_Base
     !@branch_used && !@chat.choices.empty?
   end
 
-def apply_choice
-  choice = @chat.choices[@choice_index]
-  return unless choice
+  # Custom Menu's later override also saves the selected transcript branch.
+  def apply_choice
+    choice = @chat.choices[@choice_index]
+    return unless choice
+    commit_choice_side_effects(choice)
+    @branch_used = true
+    @choice_active = false
+    @active_entries += @chat.choice_branches[choice[:value]] || []
+    Sound.play_ok
+    refresh_choices
+  end
 
-  value = commit_choice_side_effects(choice)
-
-  @branch_used = true
-  @choice_active = false
-
-  branch_entries = @chat.choice_branches[value] || []
-  @active_entries += branch_entries
-
-  Sound.play_ok
-  refresh_footer
-  refresh_choices
-end
-
-  #--------------------------------------------------------------------------
-  # Refresh
-  #--------------------------------------------------------------------------
   def refresh_header
     bmp = @header_layer.bitmap
     bmp.clear
-    draw_round_rect(bmp, 0, 0, SimplePhoneChat::PHONE_WIDTH, SimplePhoneChat::HEADER_H, 12, SimplePhoneChat::HEADER_BG)
-
-    draw_shadow_text(bmp, 0, 4, SimplePhoneChat::PHONE_WIDTH, 24,
-      @chat.title, 1, SimplePhoneChat::TITLE_SIZE, true, Color.new(255,255,255))
-
-    draw_shadow_text(bmp, 0, 25, SimplePhoneChat::PHONE_WIDTH, 18,
-      @chat.subtitle, 1, SimplePhoneChat::SUB_SIZE, false, Color.new(245,245,245))
+    phone_card(bmp,24,24,288,54)
+    phone_text(bmp,36,28,264,27,@chat.title,20,nil,1,true)
+    subtitle = @chat.subtitle.to_s
+    subtitle = 'Trò chuyện' if subtitle.empty?
+    phone_text(bmp,36,55,264,18,subtitle,12,Color.new(187,201,226),1)
   end
 
   def refresh_footer
+    return unless @footer_layer
     bmp = @footer_layer.bitmap
     bmp.clear
-    return if @choice_active
-    bmp.fill_rect(0, 0, SimplePhoneChat::PHONE_WIDTH, SimplePhoneChat::FOOTER_H, SimplePhoneChat::FOOTER_BG)
+    if @choice_active
+      hint = '↑↓: chọn   Z: xác nhận'
+    elsif @scroll_y < chat_max_scroll
+      hint = '↑↓: cuộn   Z: đọc tiếp'
+    elsif @visible_count < @active_entries.size
+      hint = '↑↓: xem lại   Z: tin tiếp'
+    elsif need_start_choices?
+      hint = '↑↓: xem lại   Z: trả lời'
+    else
+      hint = '↑↓: xem lại   Z / X: trở lại'
+    end
+    hint += '   X: đóng' if !@choice_active && !@chat.required_choice &&
+      @visible_count < @active_entries.size
+    phone_footer(bmp,hint)
+  end
+
+  def chat_content_height
+    PhoneMenu::MESSAGE_BOTTOM_LIMIT-PhoneMenu::CONTACT_MESSAGE_Y
+  end
+
+  def chat_message_height
+    @choice_active && @choice_top ? [@choice_top-96-10,44].max : chat_content_height
   end
 
   def refresh_choices
     bmp = @choice_layer.bitmap
     bmp.clear
-    if !@choice_active
-      @choice_layer.visible = false
-      return
+    @choice_layer.visible = @choice_active
+    if @choice_active
+      first = [[@choice_index-1,0].max,[@chat.choices.size-3,0].max].min
+      rows = @chat.choices[first,3].each_with_index.map do |choice,i|
+        lines = phone_wrap_text(choice[:text],264,16)
+        {:index=>first+i,:lines=>lines,:height=>[lines.size*20+16,38].max}
+      end
+      while rows.size > 1 && rows.inject(0) { |sum,r|sum+r[:height]+8 } > 200
+        rows.last[:index] == @choice_index ? rows.shift : rows.pop
+      end
+      @choice_rows = rows
+      total = rows.inject(22) { |sum,r|sum+r[:height]+8 }
+      @choice_top = PhoneMenu::PHONE_HEIGHT-46-total
+      phone_text(bmp,24,@choice_top,288,20,
+        "Chọn câu trả lời · #{@choice_index+1}/#{@chat.choices.size}",12,Color.new(202,212,235))
+      y = @choice_top+22
+      rows.each do |row|
+        phone_card(bmp,24,y,288,row[:height],row[:index]==@choice_index)
+        row[:lines].each_with_index do |line,i|
+          phone_text(bmp,36,y+8+i*20,264,20,line,16)
+        end
+        y += row[:height]+8
+      end
+      @scroll_y = chat_max_scroll
+    else
+      @choice_top = nil
+      @choice_rows = []
     end
+    refresh_messages
+  end
 
-    @choice_layer.visible = true
-    count = @chat.choices.size
-    total_h = count * SimplePhoneChat::CHOICE_H + (count - 1) * SimplePhoneChat::CHOICE_GAP
-    start_y = SimplePhoneChat::PHONE_HEIGHT - 16 - total_h
-
-    @chat.choices.each_with_index do |choice, i|
-      y = start_y + i * (SimplePhoneChat::CHOICE_H + SimplePhoneChat::CHOICE_GAP)
-      color = (i == @choice_index) ? SimplePhoneChat::CHOICE_SELECTED_COLOR : SimplePhoneChat::CHOICE_COLOR
-      draw_round_rect(bmp, SimplePhoneChat::CHOICE_X, y, SimplePhoneChat::CHOICE_W,
-        SimplePhoneChat::CHOICE_H, 8, color)
-
-      bmp.font.size = SimplePhoneChat::CHOICE_SIZE
-      bmp.font.bold = true
-      bmp.font.outline = false
-      bmp.font.color = SimplePhoneChat::CHOICE_TEXT_COLOR
-      bmp.draw_text(SimplePhoneChat::CHOICE_X, y + 2, SimplePhoneChat::CHOICE_W,
-        SimplePhoneChat::CHOICE_H, choice[:text], 1)
-    end
+  def chat_max_scroll
+    [chat_draw_data[:height]-chat_message_height,0].max
   end
 
   def refresh_messages
     bmp = @message_layer.bitmap
     bmp.clear
-
-    data = build_visible_draw_data
-    @scroll_y = data[:scroll_y]
-    draw_entries_to_bitmap(bmp, data[:entries], @scroll_y)
-  end
-
-  #--------------------------------------------------------------------------
-  # Drawing data
-  #--------------------------------------------------------------------------
-  def build_visible_draw_data
-    visible_entries = @active_entries[0, @visible_count] || []
-    draw_entries = []
-    y = 0
-
-    visible_entries.each do |entry|
-      layout = build_entry_layout(entry, y)
-      draw_entries << layout
-      y += layout[:height] + SimplePhoneChat::BLOCK_GAP
-    end
-
-    total_h = y
-    scroll_y = [total_h - SimplePhoneChat::CONTENT_H, 0].max
-
-    {
-      :entries => draw_entries,
-      :scroll_y => scroll_y
-    }
-  end
-
-  def build_entry_layout(entry, start_y)
-    case entry[:type]
-    when :text
-      build_text_layout(entry, start_y)
-    when :image
-      build_image_layout(entry, start_y)
-    when :system
-      build_system_layout(entry, start_y)
-    else
-      { :type => :none, :y => start_y, :height => 0 }
-    end
-  end
-
-  def build_text_layout(entry, start_y)
-    actor = @chat.actor(entry[:actor])
-    lines = wrap_text(entry[:text], SimplePhoneChat::MAX_BUBBLE_W - SimplePhoneChat::BUBBLE_PAD_X * 2)
-
-    longest = 0
-    lines.each do |line|
-      w = text_width(line, SimplePhoneChat::TEXT_SIZE)
-      longest = w if w > longest
-    end
-
-    bubble_w = [[longest + SimplePhoneChat::BUBBLE_PAD_X * 2, SimplePhoneChat::MIN_BUBBLE_W].max,
-                SimplePhoneChat::MAX_BUBBLE_W].min
-    bubble_h = lines.size * SimplePhoneChat::LINE_H + SimplePhoneChat::BUBBLE_PAD_Y * 2
-    total_h = SimplePhoneChat::NAME_H + SimplePhoneChat::NAME_GAP + bubble_h
-
-    if entry[:side] == :right
-      avatar_x = SimplePhoneChat::RIGHT_AVATAR_X - SimplePhoneChat::CONTENT_X
-      bubble_x = SimplePhoneChat::RIGHT_BUBBLE_RIGHT - bubble_w - SimplePhoneChat::CONTENT_X
-      name_x = bubble_x
-      align = 2
-      bubble_color = SimplePhoneChat::RIGHT_BUBBLE_COLOR
-      text_color = SimplePhoneChat::RIGHT_TEXT_COLOR
-    else
-      avatar_x = SimplePhoneChat::LEFT_AVATAR_X - SimplePhoneChat::CONTENT_X
-      bubble_x = SimplePhoneChat::LEFT_BUBBLE_X - SimplePhoneChat::CONTENT_X
-      name_x = bubble_x
-      align = 0
-      bubble_color = SimplePhoneChat::LEFT_BUBBLE_COLOR
-      text_color = SimplePhoneChat::LEFT_TEXT_COLOR
-    end
-
-    {
-      :type => :text,
-      :actor => actor,
-      :lines => lines,
-      :y => start_y,
-      :height => total_h,
-      :avatar_x => avatar_x,
-      :bubble_x => bubble_x,
-      :name_x => name_x,
-      :bubble_w => bubble_w,
-      :bubble_h => bubble_h,
-      :align => align,
-      :bubble_color => bubble_color,
-      :text_color => text_color
-    }
-  end
-
-  def build_image_layout(entry, start_y)
-  actor = @chat.actor(entry[:actor])
-  src = Cache.load_bitmap("Graphics/Pictures/", entry[:image])
-  w, h = fit_rect(src.width, src.height, SimplePhoneChat::IMAGE_MAX_W, SimplePhoneChat::IMAGE_MAX_H)
-  total_h = SimplePhoneChat::NAME_H + SimplePhoneChat::NAME_GAP + h
-
-  if entry[:side] == :right
-    avatar_x = SimplePhoneChat::RIGHT_AVATAR_X - SimplePhoneChat::CONTENT_X
-    image_x = SimplePhoneChat::RIGHT_BUBBLE_RIGHT - w - SimplePhoneChat::CONTENT_X
-    name_x = image_x
-    align = 2
-  else
-    avatar_x = SimplePhoneChat::LEFT_AVATAR_X - SimplePhoneChat::CONTENT_X
-    image_x = SimplePhoneChat::LEFT_BUBBLE_X - SimplePhoneChat::CONTENT_X
-    name_x = image_x
-    align = 0
-  end
-
-  {
-    :type => :image,
-    :actor => actor,
-    :picture => entry[:image],
-    :y => start_y,
-    :height => total_h,
-    :avatar_x => avatar_x,
-    :image_x => image_x,
-    :image_w => w,
-    :image_h => h,
-    :name_x => name_x,
-    :align => align
-  }
-end
-
-  def build_system_layout(entry, start_y)
-    {
-      :type => :system,
-      :text => entry[:text],
-      :y => start_y,
-      :height => 24
-    }
-  end
-
-  #--------------------------------------------------------------------------
-  # Draw entries
-  #--------------------------------------------------------------------------
-  def draw_entries_to_bitmap(bitmap, entries, scroll_y)
-    entries.each do |layout|
-      y = layout[:y] - scroll_y
-      next if y + layout[:height] < 0
-      next if y > SimplePhoneChat::CONTENT_H
+    @message_layer.src_rect.set(0,0,288,chat_message_height)
+    @scroll_y = [[@scroll_y,0].max,chat_max_scroll].min
+    chat_draw_data[:entries].each do |layout|
+      y = layout[:y]-@scroll_y
+      next if y+layout[:height] < 0 || y > chat_message_height
       case layout[:type]
-      when :text
-        draw_text_entry(bitmap, layout, y)
-      when :image
-        draw_image_entry(bitmap, layout, y)
-      when :system
-        draw_system_entry(bitmap, layout, y)
+      when :text then draw_text_entry(bmp,layout,y)
+      when :image then draw_image_entry(bmp,layout,y)
+      when :system then draw_system_entry(bmp,layout,y)
       end
     end
+    if @visible_count == 0
+      phone_text(bmp,0,80,288,24,'Z để xem tin nhắn',16,Color.new(187,201,226),1)
+    end
+    refresh_footer
   end
 
-  def draw_text_entry(bitmap, layout, y)
-    bubble_y = y + SimplePhoneChat::NAME_H + SimplePhoneChat::NAME_GAP
-    avatar_y = bubble_y + layout[:bubble_h] - SimplePhoneChat::AVATAR_SIZE
+  def chat_draw_data
+    y = 0
+    rows = (@active_entries[0,@visible_count] || []).map do |entry|
+      # Layout once per entry; revealing later messages does not measure all
+      # previous paragraphs again. This cache belongs to this scene only.
+      cached = @entry_layout_cache[entry.object_id] ||= build_entry_layout(entry)
+      row = cached.merge(:y=>y)
+      y += row[:height]+PhoneMenu::MESSAGE_SPACING
+      row
+    end
+    {:entries=>rows,:height=>[y-PhoneMenu::MESSAGE_SPACING,0].max}
+  end
 
-    draw_avatar(bitmap, layout[:actor][:avatar], layout[:avatar_x], avatar_y)
+  def build_entry_layout(entry)
+    type = entry[:type]
+    row = {:type=>type,:actor=>@chat.actor(entry[:actor]) || {:name=>'',:avatar=>'Contact_Quy'},
+      :right=>entry[:side]==:right}
+    if type == :system
+      lines = phone_wrap_text(entry[:text],248,14)
+      return row.merge(:lines=>lines,:height=>lines.size*20+16)
+    end
+    if type == :image
+      src = Cache.load_bitmap('Graphics/Pictures/',entry[:image])
+      scale = [150.0/src.width,110.0/src.height,1.0].min
+      width,height = [(src.width*scale).to_i,1].max,[(src.height*scale).to_i,1].max
+      row.merge!(:picture=>entry[:image],:width=>width,:body_height=>height)
+    else
+      lines = phone_wrap_text(entry[:text],PhoneMenu::MESSAGE_MAX_WIDTH-24,17)
+      longest = lines.map { |line|simple_text_width(line,17) }.max || 0
+      width = [[longest+24,PhoneMenu::MESSAGE_MIN_WIDTH].max,PhoneMenu::MESSAGE_MAX_WIDTH].min
+      row.merge!(:lines=>lines,:width=>width,:body_height=>lines.size*22+20)
+    end
+    row[:x] = row[:right] ? PhoneMenu::MESSAGE_RIGHT_BUBBLE_RIGHT-PhoneMenu::PHONE_X-24-row[:width] : 36
+    row[:height] = row[:body_height]+22
+    row
+  end
 
-    draw_shadow_text(bitmap, layout[:name_x], y, 170, SimplePhoneChat::NAME_H,
-      layout[:actor][:name], layout[:align], SimplePhoneChat::NAME_SIZE, true, SimplePhoneChat::NAME_COLOR)
-
-    draw_round_rect(bitmap, layout[:bubble_x], bubble_y,
-      layout[:bubble_w], layout[:bubble_h], 14, layout[:bubble_color])
-
-    bitmap.font.size = SimplePhoneChat::TEXT_SIZE
-    bitmap.font.bold = false
-    bitmap.font.outline = false
-    bitmap.font.color = layout[:text_color]
-
-    text_x = layout[:bubble_x] + SimplePhoneChat::BUBBLE_PAD_X
-    text_y = bubble_y + SimplePhoneChat::BUBBLE_PAD_Y
-    text_w = layout[:bubble_w] - SimplePhoneChat::BUBBLE_PAD_X * 2
-
-    layout[:lines].each_with_index do |line, i|
-      bitmap.draw_text(text_x, text_y + i * SimplePhoneChat::LINE_H,
-        text_w, SimplePhoneChat::LINE_H, line, layout[:align])
+  def draw_text_entry(bmp,row,y)
+    draw_sender(bmp,row,y)
+    fill_round_rect(bmp,row[:x],y+22,row[:width],row[:body_height],12,
+      row[:right] ? Color.new(78,96,159,248) : Color.new(230,236,249,248))
+    row[:lines].each_with_index do |line,i|
+      phone_text(bmp,row[:x]+12,y+32+i*22,row[:width]-24,22,line,17,
+        row[:right] ? Color.new(255,255,255) : Color.new(25,37,59))
     end
   end
 
-  def draw_image_entry(bitmap, layout, y)
-    image_y = y + SimplePhoneChat::NAME_H + SimplePhoneChat::NAME_GAP
-    avatar_y = image_y + layout[:image_h] - SimplePhoneChat::AVATAR_SIZE
-
-    draw_avatar(bitmap, layout[:actor][:avatar], layout[:avatar_x], avatar_y)
-
-    draw_shadow_text(bitmap, layout[:name_x], y, 170, SimplePhoneChat::NAME_H,
-      layout[:actor][:name], layout[:align], SimplePhoneChat::NAME_SIZE, true, SimplePhoneChat::NAME_COLOR)
-
-    src = Cache.load_bitmap("Graphics/Pictures/", layout[:picture])
-    bitmap.stretch_blt(Rect.new(layout[:image_x], image_y, layout[:image_w], layout[:image_h]),
-      src, src.rect)
+  def draw_sender(bmp,row,y)
+    phone_text(bmp,row[:x],y,row[:width],20,row[:actor][:name],13,
+      Color.new(199,211,237),row[:right] ? 2 : 0,true)
+    src = Cache.load_bitmap('Graphics/PhoneMenu/',row[:actor][:avatar])
+    x = row[:right] ? PhoneMenu::MESSAGE_RIGHT_ICON_X-PhoneMenu::PHONE_X-24 : 0
+    bmp.stretch_blt(Rect.new(x,y+row[:height]-28,28,28),src,src.rect)
   end
 
-  def draw_system_entry(bitmap, layout, y)
-    draw_shadow_text(bitmap, 0, y, SimplePhoneChat::CONTENT_W, 24,
-      "Notice: #{layout[:text]}", 1, SimplePhoneChat::SYSTEM_SIZE, true, SimplePhoneChat::SYSTEM_COLOR)
+  def draw_image_entry(bmp,row,y)
+    draw_sender(bmp,row,y)
+    src = Cache.load_bitmap('Graphics/Pictures/',row[:picture])
+    bmp.stretch_blt(Rect.new(row[:x],y+22,row[:width],row[:body_height]),src,src.rect)
   end
 
-  def draw_avatar(bitmap, filename, x, y)
-    src = Cache.load_bitmap("Graphics/PhoneMenu/", filename)
-    bitmap.stretch_blt(Rect.new(x, y, SimplePhoneChat::AVATAR_SIZE, SimplePhoneChat::AVATAR_SIZE),
-      src, src.rect)
-  end
-
-  #--------------------------------------------------------------------------
-  # Utility
-  #--------------------------------------------------------------------------
-  def draw_shadow_text(bitmap, x, y, w, h, text, align, size, bold, color)
-    bitmap.font.size = size
-    bitmap.font.bold = bold
-    bitmap.font.outline = false
-    bitmap.font.color = SimplePhoneChat::SHADOW_COLOR
-    bitmap.draw_text(x + 1, y + 1, w, h, text, align)
-    bitmap.font.color = color
-    bitmap.draw_text(x, y, w, h, text, align)
-  end
-
-  def wrap_text(text, max_width)
-    words = text.to_s.split(/\s+/)
-    return [""] if words.empty?
-    lines = []
-    line = ""
-
-    words.each do |word|
-      test = line.empty? ? word : "#{line} #{word}"
-      if text_width(test, SimplePhoneChat::TEXT_SIZE) <= max_width
-        line = test
-      else
-        if line.empty?
-          lines << word
-          line = ""
-        else
-          lines << line
-          line = word
-        end
-      end
-    end
-    lines << line unless line.empty?
-    lines
-  end
-
-  def text_width(text, size)
-    @measure_bitmap.font.size = size
-    @measure_bitmap.font.bold = false
-    @measure_bitmap.font.outline = false
-    @measure_bitmap.text_size(text.to_s).width
-  end
-
-  def fit_rect(w, h, max_w, max_h)
-    scale = [max_w.to_f / w, max_h.to_f / h, 1.0].min
-    [(w * scale).to_i, (h * scale).to_i]
-  end
-
-  def draw_round_rect(bitmap, x, y, w, h, r, color)
-    r = [r, w / 2, h / 2].min
-    bitmap.fill_rect(x + r, y, w - r * 2, h, color)
-    bitmap.fill_rect(x, y + r, w, h - r * 2, color)
-    draw_circle(bitmap, x + r, y + r, r, color)
-    draw_circle(bitmap, x + w - r - 1, y + r, r, color)
-    draw_circle(bitmap, x + r, y + h - r - 1, r, color)
-    draw_circle(bitmap, x + w - r - 1, y + h - r - 1, r, color)
-  end
-
-  def draw_circle(bitmap, cx, cy, r, color)
-    (-r..r).each do |dy|
-      dx = Math.sqrt(r * r - dy * dy).to_i
-      bitmap.fill_rect(cx - dx, cy + dy, dx * 2 + 1, 1, color)
+  def draw_system_entry(bmp,row,y)
+    fill_round_rect(bmp,8,y,272,row[:height],10,Color.new(26,37,58,230))
+    row[:lines].each_with_index do |line,i|
+      phone_text(bmp,20,y+8+i*20,248,20,line,14,Color.new(209,220,245),1)
     end
   end
 
-  #--------------------------------------------------------------------------
-  # Dispose
-  #--------------------------------------------------------------------------
   def dispose_chat
-    @measure_bitmap.dispose if @measure_bitmap && !@measure_bitmap.disposed?
-
-    if @dim
-      @dim.bitmap.dispose if @dim.bitmap && !@dim.bitmap.disposed?
-      @dim.dispose unless @dim.disposed?
+    return if @chat_disposed
+    @chat_disposed = true
+    (chat_parts+[@dim]).compact.each do |sprite|
+      sprite.bitmap.dispose if sprite.bitmap && !sprite.bitmap.disposed?
+      sprite.dispose unless sprite.disposed?
     end
-    if @phone_bg
-      @phone_bg.bitmap.dispose if @phone_bg.bitmap && !@phone_bg.bitmap.disposed?
-      @phone_bg.dispose unless @phone_bg.disposed?
-    end
-    if @message_layer
-      @message_layer.bitmap.dispose if @message_layer.bitmap && !@message_layer.bitmap.disposed?
-      @message_layer.dispose unless @message_layer.disposed?
-    end
-    if @header_layer
-      @header_layer.bitmap.dispose if @header_layer.bitmap && !@header_layer.bitmap.disposed?
-      @header_layer.dispose unless @header_layer.disposed?
-    end
-    if @footer_layer
-      @footer_layer.bitmap.dispose if @footer_layer.bitmap && !@footer_layer.bitmap.disposed?
-      @footer_layer.dispose unless @footer_layer.disposed?
-    end
-    if @choice_layer
-      @choice_layer.bitmap.dispose if @choice_layer.bitmap && !@choice_layer.bitmap.disposed?
-      @choice_layer.dispose unless @choice_layer.disposed?
-    end
+    @phone_measure_bitmap.dispose if @phone_measure_bitmap && !@phone_measure_bitmap.disposed?
+    @phone_measure_bitmap = nil
+    @phone_wrap_cache = @entry_layout_cache = nil
+    @chat_base_y = nil
   end
 end
 

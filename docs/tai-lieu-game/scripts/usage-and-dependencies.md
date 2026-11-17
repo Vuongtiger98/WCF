@@ -65,6 +65,7 @@ Pop Message dùng `\bm[id]`; `\cbm` quay về khung thường. Thoại thường
 ## Điện thoại, Gallery và minigame
 
 - `PhoneGroupChatSave.save_current_cutscene(:wanderer_group)` lưu chat sau cảnh.
+- Dấu chưa đọc tự cập nhật khi thêm bằng `PhoneGroupChatSave.add_text/add_image/add_system` hoặc `$game_config.add_message/add_messages`; normal contact và unread đều thuộc save hiện tại. Xem [phone-unread-2026-11-16.md](phone-unread-2026-11-16.md). Không tự append thẳng vào mảng message.
 - `WCFGalleryScene.show(id)`, `hide`, `hold(frames)` trình bày CG/vật phẩm và đồng bộ unlock.
 - `WCF_SNOWBALL.start(event_id)` dùng `3` Shylvie, `4` Kohi, `5` Leo, `6` Hakase trên Map038.
 - `WCFTestHub.prepare(key, overrides)` chuẩn bị checkpoint và điện thoại; event hub chịu trách nhiệm chọn branch và teleport.

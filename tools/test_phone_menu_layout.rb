@@ -6,11 +6,16 @@ raise 'UI tests target the current layout' if BASELINE
 
 class Scene_Menu
   source=script_source('Custom Menu')
+  source.scan(/^module PhoneMenu.*?^end/m).select { |code|
+    code.include?('GALLERY_PICTURE_NAMES') || code.include?('ITEM_PICTURE_IDS')
+  }.each { |code| eval(code,TOPLEVEL_BINDING,'Gallery registry') }
   [:update_icon_animation,:phone_visual_sprites,:phone_collect_sprites,:phone_apply_slide_offset,
    :pmgc_wrap_text,:pmgc_message_height,:pmgc_page_lines,:pmgc_visible_messages,
    :pmgc_normal_message_to_hash,:pmgc_main_message?,:pmgc_name_sprite,:pmgc_icon_sprite,
    :pmgc_draw_text_message,:pmgc_sender_name,:pmgc_sender_avatar,:phone_fit_bitmap,
-   :rebuild_gallery_grid,:dispose_gallery_grid_sprites,:make_round_rect_bitmap,:phone_locked_thumbnail].each do |name|
+   :rebuild_gallery_grid,:dispose_gallery_grid_sprites,:make_round_rect_bitmap,:phone_locked_thumbnail,
+   :gallery_picture_ids,:gallery_picture_id_from_index,
+   :phone_new_boundary?,:phone_message_new?,:phone_thread_unread?,:phone_unread_state,:update_phone_unread].each do |name|
     class_eval(method_source(source,name,-1),'Custom Menu layout')
   end
   def gallery_thumbnail_bitmap(id); Bitmap.new(300,400); end

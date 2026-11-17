@@ -11,6 +11,12 @@ Kiểm kê ban đầu ngày 30/10/2026, cập nhật runtime và hiệu năng ng
 | [compatibility-audit.md](compatibility-audit.md) | Lỗi đã xác nhận/đã sửa, chỗ có thể xung đột và giới hạn kiểm tra |
 | [performance-audit-2026-11-15.md](performance-audit-2026-11-15.md) | Tối ưu chung, số thao tác trước/sau, công cụ đo và các đoạn cần playtest trên laptop |
 | [phone-ui-review-2026-11-15.md](phone-ui-review-2026-11-15.md) | Bố cục điện thoại, danh bạ/chat/Gallery và kết quả kiểm tra trong engine |
+| [phone-settings-2026-11-17.md](phone-settings-2026-11-17.md) | Settings theo theme điện thoại, âm lượng/toggle và xác nhận thoát bằng Z/X |
+| [item-library-2026-11-17.md](item-library-2026-11-17.md) | Túi đồ thành bộ sưu tập qua nhiều lượt chơi, tách ảnh quà khỏi Gallery |
+| [prologue-review-2026-11-16.md](prologue-review-2026-11-16.md) | Vá viewport/pop/balloon dùng chung và kết quả native từ mở đầu qua đủ bốn nhánh bus |
+| [cutscene-phone-chat-2026-11-16.md](cutscene-phone-chat-2026-11-16.md) | Đồng bộ chat cutscene với theme điện thoại và chờ kết quả trước khi event tiếp tục |
+| [phone-unread-2026-11-16.md](phone-unread-2026-11-16.md) | Dấu chưa đọc theo từng save, đọc hết tin dài/cutscene và tương thích API event |
+| [cutscene-phone-chat-2026-11-16.md](cutscene-phone-chat-2026-11-16.md) | Đồng bộ chat cutscene với theme điện thoại và chờ kết quả trước khi event tiếp tục |
 | [rgss3-writing-guide.md](rgss3-writing-guide.md) | Quy tắc viết script phù hợp Ruby/RGSS3 và kiến trúc dự án |
 | [feature-proposals.md](feature-proposals.md) | Đề xuất chức năng mới, lợi ích và cách tích hợp |
 
@@ -41,6 +47,8 @@ ruby tools/test_rgss_performance_probe.rb
 ruby tools/test_phone_menu_layout.rb
 ruby tools/test_phone_menu_animation.rb
 ruby tools/test_phone_save_load.rb
+ruby tools/test_phone_settings.rb
+ruby tools/test_item_library.rb
 ruby -W0 tools/script_inventory.rb check-performance-scope
 ruby -W0 tools/script_inventory.rb check-native-performance-scope
 ruby -W0 tools/script_inventory.rb check-phone-ui-scope

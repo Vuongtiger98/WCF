@@ -294,6 +294,17 @@ class Spriteset_Map_Effects
     end
   end
   def update(tilemap_oy = 0)
+    # Yanfly resizes the map viewports after a transfer, including small maps
+    # centred inside the screen. This snapshot viewport must follow that rect.
+    # Keeping the old rect clips/offsets every effect and character after zoom.
+    source_rect = @map_viewports[0].rect
+    target_rect = @viewport.rect
+    if source_rect.x != target_rect.x or source_rect.y != target_rect.y or
+        source_rect.width != target_rect.width or source_rect.height != target_rect.height
+      @viewport.rect = Rect.new(source_rect.x,source_rect.y,source_rect.width,source_rect.height)
+      @motion_blur_refresh = true
+      @wcf_viewport_resized = true
+    end
     unless @data.active?
       dispose(false) if @viewport.visible
       return
@@ -301,9 +312,10 @@ class Spriteset_Map_Effects
     @viewport.visible = true
     @motion_blur_refresh ||= @data.refresh_motion_blur?
     refresh_sprites
-    if !@effects_bitmaps[0] or @data.refresh_bitmap?
+    if !@effects_bitmaps[0] or @data.refresh_bitmap? or @wcf_viewport_resized
       refresh_bitmaps
       refresh_pixelize
+      @wcf_viewport_resized = false
     end
     refresh_back
     wave_sync   = @data.tilemap_wave_sync(tilemap_oy)
@@ -319,6 +331,31 @@ class Spriteset_Map_Effects
     n = (@data.blur? ? @data.blur_division.to_i+1 : 1) - @effects_sprites.size
     n.times {@effects_sprites << Sprite.new(@viewport)}
     (-n).times {@effects_sprites.pop.dispose}
+  end
+  # Shared conversion for screen-space UI attached to map characters. Snapshot
+  # effects live in their own viewport; its origin is not always screen (0,0).
+  def wcf_screen_point(x,y)
+    dx = (x-@data.ox)*@data.zoom_x
+    dy = (y-@data.oy)*@data.zoom_y
+    dx = -dx if @data.mirror
+    # RGSS Sprite.angle is counter-clockwise in screen coordinates (Y down).
+    angle = -@data.angle*Math::PI/180.0
+    cosine,sine = Math.cos(angle),Math.sin(angle)
+    [@viewport.rect.x-@viewport.ox+@data.x+dx*cosine-dy*sine,
+     @viewport.rect.y-@viewport.oy+@data.y+dx*sine+dy*cosine]
+  end
+  def wcf_source_vector(dx,dy)
+    angle = -@data.angle*Math::PI/180.0
+    cosine,sine = Math.cos(angle),Math.sin(angle)
+    x,y = dx*cosine+dy*sine,-dx*sine+dy*cosine
+    x = -x if @data.mirror
+    [x/@data.zoom_x,y/@data.zoom_y]
+  end
+  def wcf_source_viewport?(viewport)
+    @map_viewports.include?(viewport)
+  end
+  def wcf_output_rect
+    @viewport.rect
   end
   def refresh_bitmaps
     n = (@data.motion_blur_rate == 0 ? 1 : @effects_sprites.size) - @effects_bitmaps.size

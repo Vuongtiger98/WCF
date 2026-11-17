@@ -53,7 +53,7 @@ Snapshot đối chiếu trực tiếp `Data/Scripts.rvdata2`. Slot là chỉ s�
 | 41 | (slot rỗng) | Rỗng/separator | — | `e3b0c44298fc` |
 | 42 | ▼ Sprites | Rỗng/separator | — | `e3b0c44298fc` |
 | 43 | [Sprite_Base](<../../../Scripts/Sprite_Base.rb>) | Có mã | line-endings-only | `ce8863a1033b` |
-| 44 | [Sprite_Character](<../../../Scripts/Sprite_Character.rb>) | Có mã | line-endings-only | `a6e750b6db70` |
+| 44 | [Sprite_Character](<../../../Scripts/Sprite_Character.rb>) | Có mã | exact | `78972c97f82b` |
 | 45 | [Sprite_Battler](<../../../Scripts/Sprite_Battler.rb>) | Có mã | exact | `1494e975a5b8` |
 | 46 | [Sprite_Picture](<../../../Scripts/Sprite_Picture.rb>) | Có mã | exact | `0ad0ffdfd8b3` |
 | 47 | [Sprite_Timer](<../../../Scripts/Sprite_Timer.rb>) | Có mã | exact | `4d2fbf1bb203` |
@@ -159,7 +159,7 @@ Snapshot đối chiếu trực tiếp `Data/Scripts.rvdata2`. Slot là chỉ s�
 | 147 | [Picture bug](<../../../Scripts/Picture bug.rb>) | Có mã | exact | `cfda0f573adf` |
 | 148 | [Fixed Pictures](<../../../Scripts/Fixed Pictures.rb>) | Có mã | different | `ec754bd06a78` |
 | 149 | [Map Effects User Guide](<../../../Scripts/Map Effects User Guide.rb>) | Comment/tài liệu | exact | `a72d15fa1ce0` |
-| 150 | [Map effects](<../../../Scripts/Map effects.rb>) | Có mã | exact | `8315e5eb6c89` |
+| 150 | [Map effects](<../../../Scripts/Map effects.rb>) | Có mã | exact | `12b8ff1a1957` |
 | 151 | [Stop Movement](<../../../Scripts/Stop Movement.rb>) | Có mã | exact | `50c92d599894` |
 | 152 | ========================== | Rỗng/separator | — | `e3b0c44298fc` |
 | 153 | [Disable key](<../../../Scripts/Disable key.rb>) | Comment/tài liệu | exact | `2ea9f2bf651a` |
@@ -206,13 +206,13 @@ Snapshot đối chiếu trực tiếp `Data/Scripts.rvdata2`. Slot là chỉ s�
 | 194 | [MOG_T_Name](<../../../Scripts/MOG_T_Name.rb>) | Có mã | line-endings-only | `bfe266ab88b7` |
 | 195 | [MOG_Picture_Gallery](<../../../Scripts/MOG_Picture_Gallery.rb>) | Có mã | exact | `edc0c0b45563` |
 | 196 | [Move the Menu](<../../../Scripts/Move the Menu.rb>) | Có mã | exact | `deac30decd8b` |
-| 197 | [Cutscene Group Chat](<../../../Scripts/Cutscene Group Chat.rb>) | Có mã | exact | `d9fbbb7c5377` |
-| 198 | [Custom Menu](<../../../Scripts/Custom Menu.rb>) | Có mã | exact | `79f1ee454b54` |
+| 197 | [Cutscene Group Chat](<../../../Scripts/Cutscene Group Chat.rb>) | Có mã | exact | `888f8ece463d` |
+| 198 | [Custom Menu](<../../../Scripts/Custom Menu.rb>) | Có mã | exact | `2ed43a75ff63` |
 | 199 | [BulletHell](<../../../Scripts/BulletHell.rb>) | Có mã | line-endings-only | `5f046f2e6063` |
 | 200 | [Random Event Patch](<../../../Scripts/Random Event Patch.rb>) | Có mã | line-endings-only | `72e08c8015f5` |
 | 201 | [Easy Script Importer-Exporter  ](<../../../Scripts/Easy Script Importer-Exporter  .rb>) | Có mã | exact | `fb255a4fadff` |
 | 202 | [Galv's Cam Slide Control](<../../../Scripts/Galv's Cam Slide Control.rb>) | Comment/tài liệu | exact | `20defc298c45` |
-| 203 | [Pop Message](<../../../Scripts/Pop Message.rb>) | Có mã | exact | `9dd32b3de199` |
+| 203 | [Pop Message](<../../../Scripts/Pop Message.rb>) | Có mã | exact | `99a2c38d5d90` |
 | 204 | [Enhanced Camera ](<../../../Scripts/Enhanced Camera .rb>) | Có mã | exact | `97172d461ad0` |
 | 205 | [The Art of Screenshake](<../../../Scripts/The Art of Screenshake.rb>) | Có mã | exact | `2594f422a3a6` |
 | 206 | [Transform Form Selection](<../../../Scripts/Transform Form Selection.rb>) | Có mã | line-endings-only | `561dd6c82726` |
@@ -228,7 +228,7 @@ Snapshot đối chiếu trực tiếp `Data/Scripts.rvdata2`. Slot là chỉ s�
 | 216 | (slot rỗng) | Rỗng/separator | — | `e3b0c44298fc` |
 | 217 | ▼ Main Process | Rỗng/separator | — | `e3b0c44298fc` |
 | 218 | [WCF Storage Memory Transition](<../../../Scripts/WCF Storage Memory Transition.rb>) | Có mã | exact | `12873b29e63e` |
-| 219 | [WCF Test Hub](<../../../Scripts/WCF Test Hub.rb>) | Có mã | exact | `f9c6ad6eea8a` |
+| 219 | [WCF Test Hub](<../../../Scripts/WCF Test Hub.rb>) | Có mã | exact | `26b17a6b92ca` |
 | 220 | [Main](<../../../Scripts/Main.rb>) | Có mã | exact | `05ee51c5e379` |
 | 221 | (slot rỗng) | Rỗng/separator | — | `e3b0c44298fc` |
 

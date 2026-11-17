@@ -9,7 +9,7 @@ Các file được script tham chiếu trong `Graphics/PhoneMenu/` gồm nền �
 - `Graphics/Gallery/0`: thumbnail khóa.
 - Gallery đọc ảnh từ cả `Graphics/Gallery` và `Graphics/Pictures`; không copy cùng một bitmap sang hai thư mục. Bảng ID và trạng thái gắn scene nằm tại `../../gallery-assets.md`.
 - `Graphics/Gallery` dành cho thumbnail khóa, UI và ending art vốn chỉ dùng trong Gallery/Title. CG và hình vật phẩm dùng trực tiếp bản duy nhất trong `Graphics/Pictures`.
-- Gallery hiện dành 90 slot. ID 82–85 là `Album_1`–`Album_4`; ID 86–90 còn dự phòng. Bảng `../../gallery-assets.md` là registry có thẩm quyền khi phạm vi ID thay đổi.
+- Giữ dải mã 90 slot để tương thích event; Gallery chỉ hiển thị 41 ảnh cảnh/ending/album. ID 2–5 và 42–81 chuyển sang Thư viện vật phẩm. ID 82–85 là `Album_1`–`Album_4`; ID 86–90 còn dự phòng. Bảng `../../gallery-assets.md` là registry có thẩm quyền khi phạm vi ID thay đổi.
 - `Save/GlobalGallery.rvdata2` là dữ liệu unlock toàn cục, không phải asset.
 
 ## Các hệ thống đồ họa

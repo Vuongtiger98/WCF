@@ -196,10 +196,61 @@ class Sprite_Character < Sprite_Base
         sx = balloon_frame_index * 32
         sy = ((@balloon_id - 1) % 10) * 32
         @balloon_sprite.src_rect.set(sx, sy, 32, 32)
+        wcf_keep_balloon_in_view
       else
         end_balloon
       end
     end
+  end
+  # Balloon belongs to the map viewport, unlike Window_Message. Clamp both the
+  # source snapshot and the final transformed quad without moving the actor.
+  def wcf_keep_balloon_in_view
+    vp = @balloon_sprite.viewport
+    return unless vp
+    scene = SceneManager.scene
+    set = scene && scene.instance_variable_get(:@spriteset)
+    renderer = set && set.instance_variable_get(:@map_effects)
+    effects = $game_map.effects if $game_map
+    active = renderer && renderer.respond_to?(:wcf_source_viewport?) &&
+      effects && effects.active? && renderer.wcf_source_viewport?(vp)
+    # Do not pull balloons from off-screen NPCs onto the screen edge. Empty
+    # event graphics can still be deliberate anchors for NPCs in a parallax.
+    return unless wcf_balloon_target_visible?(vp,nil)
+    return if active && !wcf_balloon_target_visible?(vp,renderer)
+    3.times do
+      wcf_clamp_balloon_rect(vp.rect,nil)
+      wcf_clamp_balloon_rect(renderer.wcf_output_rect,renderer) if active
+    end
+  end
+  def wcf_balloon_target_visible?(vp,renderer)
+    left = x+vp.rect.x-vp.ox-ox*zoom_x
+    top = y+vp.rect.y-vp.oy-oy*zoom_y
+    w,h = width*zoom_x,height*zoom_y
+    points = [[left,top],[left+w,top],[left,top+h],[left+w,top+h]]
+    points.map! { |px,py| renderer.wcf_screen_point(px,py) } if renderer
+    xs,ys = points.map { |p| p[0] },points.map { |p| p[1] }
+    rect = renderer ? renderer.wcf_output_rect : vp.rect
+    xs.max >= [rect.x,0].max && xs.min <= [rect.x+rect.width,Graphics.width].min &&
+      ys.max >= [rect.y,0].max && ys.min <= [rect.y+rect.height,Graphics.height].min
+  end
+  def wcf_clamp_balloon_rect(rect,renderer)
+    balloon = @balloon_sprite
+    vp = balloon.viewport
+    x = balloon.x+vp.rect.x-vp.ox-balloon.ox*balloon.zoom_x
+    y = balloon.y+vp.rect.y-vp.oy-balloon.oy*balloon.zoom_y
+    w,h = balloon.width*balloon.zoom_x,balloon.height*balloon.zoom_y
+    points = [[x,y],[x+w,y],[x,y+h],[x+w,y+h]]
+    points.map! { |px,py| renderer.wcf_screen_point(px,py) } if renderer
+    left,right = points.map { |point| point[0] }.minmax
+    top,bottom = points.map { |point| point[1] }.minmax
+    min_x,min_y = [rect.x,0].max+2,[rect.y,0].max+2
+    max_x,max_y = [rect.x+rect.width,Graphics.width].min-2,[rect.y+rect.height,Graphics.height].min-2
+    dx = left < min_x ? min_x-left : right > max_x ? max_x-right : 0
+    dy = top < min_y ? min_y-top : bottom > max_y ? max_y-bottom : 0
+    return if dx == 0 && dy == 0
+    dx,dy = renderer.wcf_source_vector(dx,dy) if renderer
+    balloon.x += dx
+    balloon.y += dy
   end
   #--------------------------------------------------------------------------
   # * End Balloon Icon

@@ -5,17 +5,19 @@
 - CG và hình vật phẩm chỉ lưu một bản trong `Graphics/Pictures`.
 - Ending art tiếp tục nằm trong `Graphics/Gallery` vì Title/Ending Presentation đang dùng trực tiếp thư mục này.
 - `Cache.gallery(ID)` tự tra `PhoneMenu::GALLERY_PICTURE_FILES` và chọn đúng nguồn. Không tạo thêm bản đánh số `1.png`, `2.png`, ... trong `Graphics/Gallery`.
-- `WCFGalleryScene.show(ID)` vừa hiện Picture ở giữa màn hình vừa gọi `GlobalGallery.unlock(ID)`; `WCFGalleryScene.hide` xóa Picture.
+- `WCFGalleryScene.show(ID)` hiện Picture ở giữa màn hình và gọi điểm mở khóa tương ứng; CG cảnh vào Gallery, ảnh vật phẩm vào `WCFItemLibrary`. `WCFGalleryScene.hide` xóa Picture.
+- Từ 17/11/2026, ảnh vật phẩm chuyển sang ứng dụng Túi đồ/Thư viện vật phẩm. Gallery hiển thị 41 CG cảnh, ending và album; giữ bảng ID cũ để event không phải đổi mã. Chi tiết tại [Thư viện vật phẩm](tai-lieu-game/scripts/item-library-2026-11-17.md).
 
 ## Dải ID
 
 | ID | Nội dung | Nguồn |
 |---:|---|---|
-| 1–8 | CG1–CG8 | `Graphics/Pictures` |
+| 1, 6–8 | CG1, CG6–CG8 — Gallery | `Graphics/Pictures` |
+| 2–5 | CG2–CG5 — Thư viện vật phẩm | `Graphics/Pictures` |
 | 9 | Ending rượt đuổi | `Graphics/Gallery/EDRuotDuoi` |
 | 10–25 | 16 ending siêu thị, bốn quà × bốn người nhận | `Graphics/Gallery/ED_MKT_*` |
 | 26–41 | CG9–CG24 | `Graphics/Pictures` |
-| 42–81 | 40 hình vật phẩm theo bảng trong `Custom Menu` | `Graphics/Pictures` |
+| 42–81 | 40 hình vật phẩm — Thư viện vật phẩm, không nằm trong Gallery | `Graphics/Pictures` |
 | 82–85 | Album nhà kho `Album_1`–`Album_4` | `Graphics/Pictures` |
 | 86–90 | Dự phòng | — |
 
@@ -42,7 +44,7 @@
 - Map040: cà phê thường khi chọn quay về; cà phê Atlantis khi câu đủ mười tôm vàng.
 - Map014/038 route mì cay: `Mibullyquy` hoặc `Mihaiquy`; Map038 E118 còn mở `Nhua`, `Matnada`, `Bomoclen` và `Banhkemcam` đúng vòng tặng quà.
 
-Các file còn lại đã được đăng ký trong Gallery nhưng giữ trạng thái khóa cho tới khi có scene thực sự chứa vật phẩm. Việc một tên xuất hiện trong kịch bản compact không đủ để tự chèn vào map chưa được dựng.
+Các ảnh vật phẩm còn lại đã được đăng ký trong Thư viện vật phẩm nhưng giữ trạng thái khóa cho tới khi có scene thực sự chứa vật phẩm. Việc một tên xuất hiện trong kịch bản compact không đủ để tự chèn vào map chưa được dựng.
 
 ## Quy tắc message khi hiện ảnh
 

@@ -4,6 +4,7 @@
 require_relative 'test_phone_menu_layout'
 
 class Scene_Item; end unless defined?(Scene_Item)
+class Scene_ItemLibrary; attr_accessor :wcf_phone_origin; end unless defined?(Scene_ItemLibrary)
 class Scene_Save; end unless defined?(Scene_Save)
 class Scene_Load; end unless defined?(Scene_Load)
 class Scene_System; end unless defined?(Scene_System)
@@ -139,7 +140,7 @@ class PhoneMenuAnimationTest < Minitest::Test
   end
 
   def test_real_start_resumes_same_menu_from_each_app_without_sliding_again
-    [Scene_Item,Scene_Save,Scene_Load,Scene_System].each do |type|
+    [Scene_ItemLibrary,Scene_Save,Scene_Load,Scene_System].each do |type|
       scene=PhoneAnimationScene.new
       scene.start
       scene.post_start
@@ -176,7 +177,7 @@ class PhoneMenuAnimationTest < Minitest::Test
   end
 
   def test_switching_apps_keeps_the_rendered_phone_until_scene_termination
-    [Scene_Save,Scene_Load,Scene_Item,Scene_System].each do |type|
+    [Scene_Save,Scene_Load,Scene_ItemLibrary,Scene_System].each do |type|
       scene=PhoneAnimationScene.new
       scene.start
       scene.post_start

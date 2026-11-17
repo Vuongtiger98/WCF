@@ -1,6 +1,6 @@
 # Save / Load trong điện thoại — 16/11/2026
 
-Mốc trước thay đổi đã commit/push lên `origin/master`: `a56ad23`. Bản sửa này chỉ thay source slot 198 `Custom Menu`, giữ nguyên 222 slot, ID/tên/thứ tự script, CSV, map/event và save của người chơi. Backup trước sửa nằm tại `Data/codex_backup_phone_save_20261115/` (bắt đầu trước nửa đêm); trước lần đổi sang ngang: `Data/codex_backup_phone_landscape_20261116/`; trước lần thêm nhãn/Z-X/luồng Title: `Data/codex_backup_phone_labels_20261116/`. Chưa đổi giao diện Settings.
+Mốc trước thay đổi đã commit/push lên `origin/master`: `a56ad23`. Bản sửa này chỉ thay source slot 198 `Custom Menu`, giữ nguyên 222 slot, ID/tên/thứ tự script, CSV, map/event và save của người chơi. Backup trước sửa nằm tại `Data/codex_backup_phone_save_20261115/` (bắt đầu trước nửa đêm); trước lần đổi sang ngang: `Data/codex_backup_phone_landscape_20261116/`; trước lần thêm nhãn/Z-X/luồng Title: `Data/codex_backup_phone_labels_20261116/`. Settings đã được đồng bộ trong [bản sửa ngày 17/11/2026](phone-settings-2026-11-17.md).
 
 ## Giao diện và hành vi
 
@@ -24,7 +24,7 @@ Load từ Title không có điện thoại dọc trước đó nên hiện sẵn
 
 Tất cả tên hiển thị dùng `Bản lưu 01` … `Bản lưu 24` thay cho `Ô 01`, gồm danh sách, chi tiết, tiêu đề lưu/tải/xóa/ghi đè và thông báo kết quả. Danh sách dành một dòng riêng cho tên bản lưu và thời gian; các nhãn Route/Mốc truyện/Vị trí/Quà nằm các dòng dưới, không ép tên dài vào vùng 52 px cũ. Không đổi số thứ tự, số lượng bản lưu hoặc tên file `SaveNN.rvdata2`.
 
-Trong hộp `:confirm`, Z thực hiện thao tác đang xác nhận và X hủy, không còn dùng mũi tên để chọn một nút. Hai thẻ phía dưới/phía phải là hướng dẫn phím cố định, không hiển thị focus mặc định. Mũi tên được bỏ qua ở bước này, không phát tiếng cursor hoặc redraw. Nếu X và Z cùng được nhấn trong một frame, X ưu tiên hủy. Z dùng để mở hộp xác nhận không tự thực hiện luôn trong cùng update. Danh sách bản lưu và danh sách thao tác trước bước xác nhận vẫn chọn bằng mũi tên vì có nhiều mục khác nhau.
+Trong hộp `:confirm`, Z thực hiện thao tác đang xác nhận và X hủy, không còn dùng mũi tên để chọn một nút. Một khung **HƯỚNG DẪN PHÍM** phía dưới ghi “Nhấn Z để lưu/ghi đè/tải/xóa” và “Nhấn X để hủy”; không vẽ nút thao tác, nút Hủy hoặc focus. Mũi tên được bỏ qua ở bước này, không phát tiếng cursor hoặc redraw. Nếu X và Z cùng được nhấn trong một frame, X ưu tiên hủy. Z dùng để mở hộp xác nhận không tự thực hiện luôn trong cùng update. Danh sách bản lưu và danh sách thao tác trước bước xác nhận vẫn chọn bằng mũi tên vì có nhiều mục khác nhau.
 
 Backup trước thay đổi: `Data/codex_backup_phone_shortcuts_20261116/`.
 
@@ -86,3 +86,27 @@ Lượt chống nháy tại `Save/PhoneSaveLoadQA_20261116_010803/` đạt đầ
 Lượt phím tắt tại `Save/PhoneSaveLoadQA_20261116_011902/` gọi chính `ps_update_actions` với trạng thái `:C`/`:B` của harness, không chọn nút bằng mũi tên: ghi đè bằng Z, tải bằng Z và hủy xóa bằng X đều đạt. Ảnh `01-save-list.png`/`03-overwrite.png` xác nhận tên Bản lưu và hai thẻ phím tắt không có focus. Không gửi phím thật vào cửa sổ game.
 
 Ảnh QA dựng từ chính Bitmap/font RGSS của giao diện, không phải ảnh chụp chơi tay. Harness bỏ vòng chờ `Graphics.update`/input của cửa sổ ẩn; xoay bitmap khung/overlay 90° và ghép nội dung theo tọa độ để kiểm tra bố cục. Các góc/trạng thái animation được kiểm tra bằng script, chưa quan sát chuyển động hoặc thao tác phím trực tiếp trong cửa sổ game. Xem `save-load-qa.txt` và ảnh `01-save-list.png` … `08-load-confirm.png` trong thư mục QA.
+
+## Thứ tự thao tác và màu nút — 17/11/2026
+
+Theo yêu cầu mới, danh sách thao tác đặt **Tạo bản lưu/Ghi đè/Tiếp tục** ở trên cùng, **Xóa bản lưu** ở giữa khi có dữ liệu, **Quay lại** ở cuối. Khi mở chi tiết, focus ở thao tác đầu tiên. Nếu không có thao tác lưu/tải hợp lệ (file hỏng hoặc đang cấm lưu), chỉ hiện các thao tác còn dùng được. X vẫn quay lại ngay.
+
+Handler nhận diện Quay lại bằng action `:back`, không dựa vào index 0. Nhờ đó, việc đưa thao tác chính lên đầu không làm Z bị hiểu nhầm là quay lại. Vẫn phải nhấn Z mới một lần nữa để xác nhận; X ưu tiên huỷ nếu hai phím cùng được nhấn.
+
+Trong danh sách thao tác, màu được áp dụng cho nền, viền và chữ nút. Ở bước xác nhận, màu chỉ nhấn vào vạch bên trái và câu hướng dẫn Z trong một khung chung:
+
+| Thao tác | Màu |
+|---|---|
+| Tạo/lưu bản mới | Xanh lá |
+| Tiếp tục/tải | Xanh dương |
+| Ghi đè | Vàng cam |
+| Xóa | Đỏ |
+| Quay lại/Hủy | Xanh đen trung tính |
+
+Xác nhận lưu mới/ghi đè/tải/xóa dùng cùng khung hướng dẫn phím rộng toàn màn hình điện thoại, dưới phần thông tin. Khung có nền phẳng, tiêu đề **HƯỚNG DẪN PHÍM**, câu “Nhấn Z để …” bên trái và “Nhấn X để hủy” bên phải. Không chia thành hai nút, không vẽ focus hoặc lặp lại footer xác nhận khác. Cảnh báo xóa dùng chữ đỏ; nội dung so sánh dữ liệu trước/sau ghi đè vẫn giữ hai cột. Nhãn thao tác cùng Z/X giúp phân biệt mà không phụ thuộc riêng vào màu.
+
+Backup: `Data/codex_backup_phone_actions_20261117/`. Chỉ đổi slot 198 `Custom Menu`; giữ nguyên ID/tên/thứ tự 222 script, CSV và tất cả Data khác. Không đổi định dạng save hoặc các hook tải game.
+
+Kiểm tra Save/Load: **30 case / 775 assertion**, không failure/error; các bộ phone animation/layout và inventory/semantic cũng đạt. Native RGSS301 tại `Save/PhoneSaveLoadQA_20261117_013710/` hoàn thành chuỗi lưu/ghi đè/hủy xóa/tải/quay lại điện thoại. Kiểm tra pixel xác nhận nền xanh lá/xanh dương/vàng cam/đỏ; đã xem ảnh dựng `02-save-detail.png`, `03-overwrite.png`, `06-delete-confirm.png`, `07b-load-detail.png`. Đây là kiểm thử script và bitmap RGSS trong bản sao riêng, không phải thao tác phím thật vào cửa sổ game.
+
+Sau yêu cầu bỏ hình nút ở bước xác nhận, backup tiếp theo là `Data/codex_backup_phone_confirm_help_20261117/`. Kiểm tra mới đạt **31 case / 812 assertion**, gồm cả bốn kiểu xác nhận không được gọi hàm vẽ nút; Z thực hiện và X hủy vẫn đạt. Native RGSS301 tại `Save/PhoneSaveLoadQA_20261117_014424/` hoàn thành luồng thử và kiểm tra màu của khung hướng dẫn. Đã xem ảnh dựng ghi đè/xóa/tải; chữ nằm trọn trong khung, không còn hai hình nút. Inventory/semantic xác nhận runtime khớp source; chỉ thay slot 198, không đổi 78 file Data còn lại hoặc CSV.

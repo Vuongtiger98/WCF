@@ -11,7 +11,7 @@
 # Notes:
 # - The old phone background changing system is removed.
 # - The old :backgrounds menu slot is now a custom :gallery screen.
-# - Gallery unlocks use Mog's $game_system.gallery[id]
+# - Scene CGs use $game_system.gallery[id]; item discoveries have a global library.
 # - Locked thumbnail uses Graphics/Gallery/0
 #########################################################################
 
@@ -117,8 +117,30 @@ module PhoneMenu
     :gallery
   ]
 
-  CONTACTS = {
-  }
+  # Preserve event calls such as CONTACTS[1]=[...] while the actual data lives
+  # in Game_Config, never in a mutable global hash shared across save slots.
+  class ContactRegistry
+    include Enumerable
+    def data
+      $game_config && $game_config.respond_to?(:phone_contacts) ? $game_config.phone_contacts : {}
+    end
+    def [](id); data[id]; end
+    def []=(id,value); $game_config.set_phone_contact(id,value); end
+    def each(&block); data.each(&block); end
+    def keys; data.keys; end
+    def values; data.values; end
+    def size; data.size; end
+    def empty?; data.empty?; end
+    def to_a; data.to_a; end
+    def has_key?(id); data.has_key?(id); end
+    alias key? has_key?
+    def clear
+      data.keys.each { |id| $game_config.delete_phone_contact(id) }
+      self
+    end
+    def delete(id); $game_config.delete_phone_contact(id); end
+  end
+  CONTACTS = ContactRegistry.new
 end
 
 #==============================================================================
@@ -171,9 +193,13 @@ class Game_Config
   attr_accessor :phone_widget_small_right_big
   attr_accessor :phone_widget_small_right_sub
   attr_accessor :phone_timeline_stage
+  attr_reader :phone_contacts, :phone_unread_count, :phone_revision
 
   def initialize
     reset_phone_widgets
+    @phone_contacts = {}
+    @phone_unread = {}
+    @phone_unread_count = @phone_next_message_id = @phone_revision = 0
   end
 
   def reset_phone_widgets
@@ -211,14 +237,143 @@ class Game_Config
 
   def add_message(contact_id, message, sender = :contact)
     return unless PhoneMenu::CONTACTS[contact_id]
-    PhoneMenu::CONTACTS[contact_id][2] << [sender, message]
+    row = [sender,message.to_s.dup]
+    phone_register_message(:normal,contact_id,row)
+    @phone_contacts[contact_id][2] << row
   end
 
   def add_messages(contact_id, messages)
     return unless PhoneMenu::CONTACTS[contact_id]
     messages.each do |message, sender|
-      PhoneMenu::CONTACTS[contact_id][2] << [sender, message]
+      add_message(contact_id,message,sender)
     end
+  end
+
+  def set_phone_contact(id,value)
+    delete_phone_contact(id)
+    return unless value
+    @phone_contacts[id] = [value[0].to_s.dup,value[1].to_s.dup,[]]
+    (value[2] || []).each { |row| add_message(id,row[1],row[0]) }
+    @phone_revision += 1
+    @phone_contacts[id]
+  end
+
+  def delete_phone_contact(id)
+    phone_forget_unread(:normal,id)
+    old = @phone_contacts.delete(id)
+    @phone_revision += 1 if old
+    old
+  end
+
+  def phone_message_id(row)
+    row.is_a?(Hash) ? row[:_phone_id] : row[2]
+  end
+
+  def phone_incoming?(row)
+    if row.is_a?(Hash)
+      ![:choice,:choice_result].include?(row[:type]) &&
+        ![:main,:quy].include?(row[:sender]) && row[:side] != :right
+    else
+      ![:main,:quy].include?(row[0])
+    end
+  end
+
+  def phone_register_message(kind,id,row,read = false)
+    @phone_next_message_id += 1
+    serial = @phone_next_message_id
+    row.is_a?(Hash) ? row[:_phone_id] = serial : row[2] = serial
+    if !read && phone_incoming?(row)
+      (@phone_unread[phone_thread_key(kind,id)] ||= {})[serial] = true
+      @phone_unread_count += 1
+    end
+    @phone_revision += 1
+    row
+  end
+
+  def phone_unread?(kind,id)
+    pending = @phone_unread[phone_thread_key(kind,id)]
+    pending && !pending.empty?
+  end
+
+  def phone_message_unread?(kind,id,row)
+    pending = @phone_unread[phone_thread_key(kind,id)]
+    !!(pending && pending[phone_message_id(row)])
+  end
+
+  def phone_mark_read(kind,id,through)
+    pending = @phone_unread[phone_thread_key(kind,id)]
+    return false unless pending && through
+    old = pending.size
+    pending.delete_if { |serial,_| serial <= through }
+    @phone_unread_count -= old-pending.size
+    @phone_unread.delete(phone_thread_key(kind,id)) if pending.empty?
+    @phone_revision += 1 if pending.size != old
+    old != pending.size
+  end
+
+  def phone_forget_unread(kind,id)
+    pending = @phone_unread.delete(phone_thread_key(kind,id))
+    return unless pending
+    @phone_unread_count -= pending.size
+    @phone_revision += 1
+  end
+
+  def phone_thread_key(kind,id)
+    [kind,kind == :group ? id.to_sym : id]
+  end
+
+  def phone_mark_all_read
+    return if @phone_unread_count == 0
+    @phone_unread.clear
+    @phone_unread_count = 0
+    @phone_revision += 1
+  end
+
+  def phone_first_unread_id(entry)
+    row = entry[:messages].find { |m|phone_message_unread?(entry[:kind],entry[:id],m) }
+    row && phone_message_id(row)
+  end
+
+  def phone_message_payload(row)
+    row.reject { |key,_| key == :_phone_id }
+  end
+
+  # Re-importing the same transcript keeps message IDs/read state. A changed
+  # suffix receives new IDs, even when the total message count stays the same.
+  def replace_phone_transcript(id,rows,seen)
+    id = id.to_sym
+    group = ensure_group_chat(id)
+    old = group[:messages]
+    prefix = 0
+    while prefix < old.size && prefix < rows.size &&
+        phone_message_payload(old[prefix]) == rows[prefix]
+      prefix += 1
+    end
+    pending = @phone_unread[[:group,id]]
+    if pending
+      old[prefix..-1].to_a.each do |row|
+        @phone_unread_count -= 1 if pending.delete(phone_message_id(row))
+      end
+    end
+    fresh_unread = false
+    result = rows.each_with_index.map do |row,index|
+      if index < prefix
+        item = old[index]
+        if seen[index] && pending && pending.delete(phone_message_id(item))
+          @phone_unread_count -= 1
+        end
+        item
+      else
+        item = Marshal.load(Marshal.dump(row))
+        phone_register_message(:group,id,item,seen[index])
+        fresh_unread ||= !seen[index] && phone_incoming?(item)
+        item
+      end
+    end
+    @phone_unread.delete([:group,id]) if pending && pending.empty?
+    group[:messages] = result
+    @phone_revision += 1
+    fresh_unread
   end
 end
 
@@ -330,7 +485,119 @@ end
 #==============================================================================
 # Scene_Menu
 #==============================================================================
+module WCFPhoneDrawing
+  def phone_unread_dot(bitmap,x,y,radius = 5)
+    draw_filled_circle(bitmap,x,y,radius+1,Color.new(245,246,255))
+    draw_filled_circle(bitmap,x,y,radius,Color.new(244,91,119))
+  end
+  def simple_text_width(text, size = 20)
+    # A menu measures many lines while scrolling. Reuse the measuring surface.
+    if !@phone_measure_bitmap || @phone_measure_bitmap.disposed?
+      @phone_measure_bitmap = Bitmap.new(1, 1)
+    end
+    temp = @phone_measure_bitmap
+    temp.font.name = PhoneMenu::UI_FONT
+    temp.font.bold = false
+    temp.font.size = size
+    temp.font.outline = false
+    w = temp.text_size(text.to_s).width
+    w
+  end
+
+  def fill_round_rect(bitmap, x, y, width, height, radius, color)
+    return if width <= 0 || height <= 0
+    radius = [radius, width / 2, height / 2].min
+    bitmap.fill_rect(x + radius, y, width - radius * 2, height, color)
+    bitmap.fill_rect(x, y + radius, width, height - radius * 2, color)
+    draw_filled_circle(bitmap, x + radius, y + radius, radius, color)
+    draw_filled_circle(bitmap, x + width - radius - 1, y + radius, radius, color)
+    draw_filled_circle(bitmap, x + radius, y + height - radius - 1, radius, color)
+    draw_filled_circle(bitmap, x + width - radius - 1, y + height - radius - 1, radius, color)
+  end
+
+  def draw_filled_circle(bitmap, cx, cy, radius, color)
+    (-radius..radius).each do |dy|
+      dx = Math.sqrt(radius * radius - dy * dy).to_i
+      bitmap.fill_rect(cx - dx, cy + dy, dx * 2 + 1, 1, color)
+    end
+  end
+
+  def phone_text(bitmap, x, y, width, height, text, size = 16, color = nil, align = 0, bold = false)
+    bitmap.font.name = PhoneMenu::UI_FONT
+    bitmap.font.size = size
+    bitmap.font.bold = bold
+    bitmap.font.italic = false
+    bitmap.font.shadow = false
+    bitmap.font.outline = false
+    bitmap.font.color = color || Color.new(245, 246, 255)
+    value = text.to_s
+    if bitmap.text_size(value).width > width
+      clusters = value.scan(/\P{M}\p{M}*/)
+      low,high = 0,clusters.size
+      while low < high
+        mid = (low+high+1)/2
+        if bitmap.text_size(clusters[0,mid].join+"…").width <= width
+          low = mid
+        else
+          high = mid-1
+        end
+      end
+      value = bitmap.text_size("…").width <= width ? clusters[0,low].join+"…" : ""
+    end
+    bitmap.draw_text(x, y, width, height, value, align)
+  end
+
+  def phone_card(bitmap, x, y, width, height, selected = false)
+    edge = selected ? Color.new(174, 186, 255, 235) : Color.new(119, 140, 181, 65)
+    fill_round_rect(bitmap, x, y, width, height, 12, edge)
+    fill_round_rect(bitmap, x + 1, y + 1, width - 2, height - 2, 11,
+      selected ? Color.new(53, 66, 111, 240) : Color.new(18, 28, 47, 220))
+  end
+
+  def phone_footer(bitmap, text)
+    bitmap.fill_rect(28, PhoneMenu::PHONE_HEIGHT - 42, PhoneMenu::PHONE_WIDTH - 56, 1,
+      Color.new(183, 198, 231, 44))
+    phone_text(bitmap, 24, PhoneMenu::PHONE_HEIGHT - 35, PhoneMenu::PHONE_WIDTH - 48, 18,
+      text, 12, Color.new(202, 212, 235), 1)
+  end
+
+  def phone_wrap_text(text, width, size = 17)
+    @phone_wrap_cache ||= {}
+    key = [text.to_s.dup,width,size]
+    return @phone_wrap_cache[key] if @phone_wrap_cache.has_key?(key)
+    lines = []
+    text.to_s.split("\n",-1).each do |paragraph|
+      current = ''
+      paragraph.split(/[ \t]+/).each do |word|
+        candidate = current.empty? ? word : current+' '+word
+        if simple_text_width(candidate,size) <= width
+          current = candidate
+          next
+        end
+        lines << current unless current.empty?
+        current = ''
+        word.scan(/\P{M}\p{M}*/).each do |cluster|
+          if !current.empty? && simple_text_width(current+cluster,size) > width
+            lines << current
+            current = ''
+          end
+          current += cluster
+        end
+      end
+      lines << current
+    end
+    result = lines.empty? ? [''] : lines
+    @phone_wrap_cache.shift if @phone_wrap_cache.size >= 32
+    @phone_wrap_cache[key] = result
+  end
+end
+
+class Scene_SimplePhoneChat
+  include WCFPhoneDrawing
+end
+
 class Scene_Menu < Scene_MenuBase
+  include WCFPhoneDrawing
   alias phone_menu_return_scene return_scene
 
   def start
@@ -455,37 +722,8 @@ class Scene_Menu < Scene_MenuBase
     bmp
   end
 
-  def simple_text_width(text, size = 20)
-    # A menu measures many lines while scrolling. Reuse the measuring surface.
-    if !@phone_measure_bitmap || @phone_measure_bitmap.disposed?
-      @phone_measure_bitmap = Bitmap.new(1, 1)
-    end
-    temp = @phone_measure_bitmap
-    temp.font.name = PhoneMenu::UI_FONT
-    temp.font.bold = false
-    temp.font.size = size
-    temp.font.outline = false
-    w = temp.text_size(text.to_s).width
-    w
-  end
 
-  def fill_round_rect(bitmap, x, y, width, height, radius, color)
-    return if width <= 0 || height <= 0
-    radius = [radius, width / 2, height / 2].min
-    bitmap.fill_rect(x + radius, y, width - radius * 2, height, color)
-    bitmap.fill_rect(x, y + radius, width, height - radius * 2, color)
-    draw_filled_circle(bitmap, x + radius, y + radius, radius, color)
-    draw_filled_circle(bitmap, x + width - radius - 1, y + radius, radius, color)
-    draw_filled_circle(bitmap, x + radius, y + height - radius - 1, radius, color)
-    draw_filled_circle(bitmap, x + width - radius - 1, y + height - radius - 1, radius, color)
-  end
 
-  def draw_filled_circle(bitmap, cx, cy, radius, color)
-    (-radius..radius).each do |dy|
-      dx = Math.sqrt(radius * radius - dy * dy).to_i
-      bitmap.fill_rect(cx - dx, cy + dy, dx * 2 + 1, 1, color)
-    end
-  end
 
   def make_round_rect_bitmap(width, height, radius, color)
     bmp = Bitmap.new(width, height)
@@ -510,22 +748,6 @@ class Scene_Menu < Scene_MenuBase
     bmp
   end
 
-  def phone_text(bitmap, x, y, width, height, text, size = 16, color = nil, align = 0, bold = false)
-    bitmap.font.name = PhoneMenu::UI_FONT
-    bitmap.font.size = size
-    bitmap.font.bold = bold
-    bitmap.font.italic = false
-    bitmap.font.shadow = false
-    bitmap.font.outline = false
-    bitmap.font.color = color || Color.new(245, 246, 255)
-    value = text.to_s
-    if bitmap.text_size(value).width > width
-      clusters = value.scan(/\P{M}\p{M}*/)
-      clusters.pop while !clusters.empty? && bitmap.text_size(clusters.join + "…").width > width
-      value = clusters.join + "…"
-    end
-    bitmap.draw_text(x, y, width, height, value, align)
-  end
 
   def phone_widget_label(value)
     text = value.to_s
@@ -534,19 +756,7 @@ class Scene_Menu < Scene_MenuBase
     text.sub(/\AWind (\d+) km\/h\z/, 'Gió \\1 km/h')
   end
 
-  def phone_card(bitmap, x, y, width, height, selected = false)
-    edge = selected ? Color.new(174, 186, 255, 235) : Color.new(119, 140, 181, 65)
-    fill_round_rect(bitmap, x, y, width, height, 12, edge)
-    fill_round_rect(bitmap, x + 1, y + 1, width - 2, height - 2, 11,
-      selected ? Color.new(53, 66, 111, 240) : Color.new(18, 28, 47, 220))
-  end
 
-  def phone_footer(bitmap, text)
-    bitmap.fill_rect(28, PhoneMenu::PHONE_HEIGHT - 42, PhoneMenu::PHONE_WIDTH - 56, 1,
-      Color.new(183, 198, 231, 44))
-    phone_text(bitmap, 24, PhoneMenu::PHONE_HEIGHT - 35, PhoneMenu::PHONE_WIDTH - 48, 18,
-      text, 12, Color.new(202, 212, 235), 1)
-  end
 
   def phone_fit_bitmap(target, source, available_height = nil, upscale = true)
     target.clear
@@ -668,6 +878,61 @@ class Scene_Menu < Scene_MenuBase
       sprite.visible = false
       @icon_sprites << sprite
     end
+    create_phone_unread_badge
+  end
+
+  def create_phone_unread_badge
+    index = PhoneMenu::MENU_COMMANDS.index(:contacts)
+    return unless index
+    icon = @icon_sprites[index]
+    @phone_unread_badge = Sprite.new
+    @phone_unread_badge.bitmap = Bitmap.new(16,16)
+    phone_unread_dot(@phone_unread_badge.bitmap,8,8)
+    @phone_unread_badge.x,@phone_unread_badge.y = icon.x+13,icon.y-31
+    @phone_unread_badge.z = 120
+    @phone_unread_badge.visible = false
+  end
+
+  def update_phone_unread_badge
+    return unless @phone_unread_badge
+    index = PhoneMenu::MENU_COMMANDS.index(:contacts)
+    config = $game_config
+    pending = config && config.respond_to?(:phone_unread_count) && config.phone_unread_count > 0
+    @phone_unread_badge.visible = !!(pending && @icon_sprites[index].visible)
+  end
+
+  def phone_unread_state
+    $game_config if $game_config && $game_config.respond_to?(:phone_revision)
+  end
+
+  def phone_thread_unread?(entry)
+    state = phone_unread_state
+    state && state.phone_unread?(entry[:kind],entry[:id])
+  end
+
+  def phone_message_new?(entry,message)
+    state = phone_unread_state
+    state && state.phone_message_unread?(entry[:kind],entry[:id],message)
+  end
+
+  def phone_new_boundary?(message)
+    @phone_unread_boundary_id && message[:_phone_id] == @phone_unread_boundary_id
+  end
+
+  def update_phone_unread
+    state = phone_unread_state
+    if state && @contacts_screen && @animation_state == :idle
+      if @in_message_view
+        show_contact_details if @phone_view_revision != state.phone_revision
+        if @phone_read_candidate
+          kind,id,serial = @phone_read_candidate
+          show_contact_details if state.phone_mark_read(kind,id,serial)
+        end
+      elsif @phone_contacts_revision != state.phone_revision
+        refresh_contacts
+      end
+    end
+    update_phone_unread_badge
   end
 
   def icon_bitmap_name(symbol)
@@ -782,6 +1047,7 @@ class Scene_Menu < Scene_MenuBase
       update_main_menu
     end
     @animation_frame += 1
+    update_phone_unread
   end
 
   def update_opening_animation
@@ -906,12 +1172,14 @@ class Scene_Menu < Scene_MenuBase
     @main_panel.visible = true if @main_panel
     @icon_sprites.each { |s| s.visible = true } if @icon_sprites
     @highlight_sprites.each { |s| s.visible = true } if @highlight_sprites
+    update_phone_unread_badge
   end
 
   def hide_menu_sprites
     @main_panel.visible = false if @main_panel
     @icon_sprites.each { |s| s.visible = false } if @icon_sprites
     @highlight_sprites.each { |s| s.visible = false } if @highlight_sprites
+    @phone_unread_badge.visible = false if @phone_unread_badge
   end
 
   def hide_phone_base_sprites
@@ -939,7 +1207,7 @@ class Scene_Menu < Scene_MenuBase
   end
 
   def command_item
-    leave_phone_scene(Scene_Item)
+    leave_phone_scene(Scene_ItemLibrary)
   end
 
   def command_save
@@ -1363,6 +1631,11 @@ class Scene_Menu < Scene_MenuBase
   def dispose_phone_menu_sprites
     return if @phone_menu_disposed
     @phone_menu_disposed = true
+    if @phone_unread_badge
+      @phone_unread_badge.bitmap.dispose
+      @phone_unread_badge.dispose
+      @phone_unread_badge = nil
+    end
 
     if @phone_measure_bitmap && !@phone_measure_bitmap.disposed?
       @phone_measure_bitmap.dispose
@@ -1491,6 +1764,9 @@ module GlobalGallery
   end
 
   def self.unlock(id)
+    if defined?(WCFItemLibrary) && WCFItemLibrary.picture_gallery_id?(id)
+      return WCFItemLibrary.encounter_picture(PhoneMenu::GALLERY_PICTURE_FILES[id])
+    end
     data = load
     already_unlocked = !!data[id]
     data[id] = true
@@ -1598,12 +1874,12 @@ module PhoneMenu
     38 => "Kohi và ly nước II", 39 => "Hakase ôm Leo",
     40 => "Hải Quỳ ăn", 41 => "Hải Quỳ và Bully Quỳ",
     42 => "Áo khoác Leo tặng Hakase", 43 => "Áo khoác tàng hình",
-    44 => "Bánh kem vị cam", 45 => "Bao tay Hakase tặng Shylvie",
+    44 => "Bánh phô mai cam", 45 => "Bao tay Hakase tặng Shylvie",
     46 => "Bao tay Kohi tặng Hakase", 47 => "Bộ móc len",
     48 => "Bút vàng", 49 => "Cà phê thường", 50 => "Cà phê Atlantis",
     51 => "Cà phê Luminous", 52 => "Combo dao và chảo",
     53 => "Congo Tourmaline", 54 => "Viên đá tặng Shylvie",
-    55 => "Đèn Hakase", 56 => "Cà phê Diamond",
+    55 => "Đèn Hakase", 56 => "Kim cương hình hạt cà phê",
     57 => "Dụng cụ phá khóa", 58 => "Gậy phép thuật",
     59 => "Giá đỡ kiếm", 60 => "Kệ gỗ chưa lắp",
     61 => "Khăn tặng Shylvie", 62 => "Khăn tặng Hakase",
@@ -1662,6 +1938,220 @@ module PhoneMenu
   GALLERY_VIEW_Y = 0
   GALLERY_VIEW_W = Graphics.width
   GALLERY_VIEW_H = Graphics.height
+end
+
+module PhoneMenu
+  ITEM_PICTURE_IDS = (2..5).to_a + (42..81).to_a
+  GALLERY_VISIBLE_IDS = GALLERY_PICTURE_FILES.keys.sort.reject { |id| ITEM_PICTURE_IDS.include?(id) }
+end
+
+module WCFItemLibrary
+  FILE_NAME = "Save/ItemLibrary.rvdata2"
+  # Database item 17 belongs to the KUL lantern demo, not this collection.
+  EXCLUDED_KEYS = ["item:17"]
+  DESCRIPTIONS = {
+    "picture:cg2" => "Chiếc kẹp nhỏ gắn lên khăn của Leo. Có thêm đôi cánh dơi là nhận ra chủ nhân ngay.",
+    "picture:cg3" => "Chiếc kẹp hình khiên dành cho khăn của Shylvie. Nhỏ xíu, nhưng rất đúng phong cách người nhận.",
+    "picture:cg4" => "Chiếc kẹp hình chìa khóa dành cho khăn của Hakase. Một chi tiết nhỏ cho món quà thêm phần riêng biệt.",
+    "picture:cg5" => "Chiếc kẹp gắn lên khăn của Kohi. Chỉ cần nhìn hình hạt cà phê là biết chiếc khăn dành cho ai.",
+    "picture:aokhoacleotanghakase" => "Chiếc áo choàng mới Leo tặng Hakase. Những lỗ trên áo cũng được chuẩn bị rất có chủ đích.",
+    "picture:aokhoactanghinh" => "Áo choàng giúp người mặc kiểm soát ma lực để tàng hình. Một món đồ cổ Hải Quỳ tìm được cho Hakase.",
+    "picture:banhkemcam" => "Bánh phô mai vị cam Kohi làm cho Hải Quỳ. Ngon đến mức phải nhắc người ăn chừa lại chiếc đĩa.",
+    "picture:baotayhakasetangcv" => "Đôi bao tay Hello Kitty màu hồng Hakase tặng Shylvie. Năm nay phù thủy khiên sẽ phải màu mè hơn một chút.",
+    "picture:baotaykohitanghakase" => "Đôi bao tay Kohi tự đan tặng Hakase, kèm lời nhắc nhớ dùng khi lấy bánh khỏi lò.",
+    "picture:bomoclen" => "Bộ dụng cụ và len để làm nên những món quà bằng tay. Sự kiên nhẫn là phần phải tự chuẩn bị thêm.",
+    "picture:butvang" => "Cây bút vàng Kohi tặng Hakase với hy vọng ông bỏ tật cắn bút. Hy vọng là vậy.",
+    "picture:caphe" => "Túi cà phê để dùng cùng chiếc máy pha mới. Một lựa chọn giản dị giữa những món quà từ đủ chiều không gian.",
+    "picture:capheatlantis" => "Cà phê đặc sản Atlantis với hương vị nặng đô. Ngay cả chuyện kiếm được nó cũng chẳng bình thường chút nào.",
+    "picture:capheluminous" => "Cà phê đặc sản quê nhà Leo. Chỉ một muỗng đã pha được hàng chục ly mà hương vị vẫn đậm đà.",
+    "picture:combodaochao" => "Bộ dao và chảo mới tinh. Một món quà thiết thực cho căn bếp đã trải qua không ít chuyện ở Wanderer.",
+    "picture:congotourmaline" => "Viên đá Hải Quỳ chọn cho Shylvie. Theo chủ tiệm, nó có thể triệu hồi một chiếc khiên phép thuật mạnh mẽ.",
+    "picture:datangcv" => "Một cục đá to được buộc nơ cẩn thận. Hải Quỳ đã rất cố gắng đẽo nó trước khi quyết định tặng nguyên cục.",
+    "picture:denhakase" => "Chiếc đèn ngủ Hakase làm từ những mảnh thiên thạch. Một bầu trời sao nhỏ gọn, vừa vặn trong lọ.",
+    "picture:diamondcoffee" => "Viên kim cương hình hạt cà phê dành cho Kohi. Lấp lánh và hợp sở thích, nhưng không phải để đem pha.",
+    "picture:dungcuphakhoa" => "Bộ dụng cụ dành cho những ổ khóa khó chiều. Một lựa chọn quà Giáng sinh khiến người tặng phải nghĩ kỹ lời giải thích.",
+    "picture:gayphepthuat" => "Gậy phép có cánh và ngọc đỏ, được làm dựa trên tiểu thuyết Hải Quỳ viết. Hakase khẳng định đây là hàng thật.",
+    "picture:giadokiem" => "Giá trưng bày để những thanh kiếm có chỗ đứng đàng hoàng. Căn phòng của Leo hẳn sẽ gọn hơn đôi chút.",
+    "picture:kegochualap" => "Món quà Leo dành cho phòng Kohi, hiện vẫn là những tấm gỗ rời. Phần lắp ráp cũng nằm trong gói quà.",
+    "picture:khancv" => "Khăn len xanh Hải Quỳ tự đan, có chiếc kẹp hình khiên. Một món quà mang rất nhiều công sức và sự quan tâm.",
+    "picture:khanhakase" => "Khăn len tím xám Hải Quỳ tự đan, có chiếc kẹp hình chìa khóa. Mong rằng Hakase sẽ dùng nó để giữ ấm.",
+    "picture:khankohi" => "Khăn len nâu đỏ có chiếc kẹp hình hạt cà phê. Thành quả của người học đan gửi tặng chính người đã dạy mình.",
+    "picture:khanleo" => "Khăn len đỏ có chiếc kẹp hình con dơi. Hải Quỳ đã thêm dấu ấn của Leo vào từng chi tiết của món quà.",
+    "picture:khienriset" => "Chiếc khiên cổ Leo dành cho Shylvie. Lớp rêu và rỉ sét bên ngoài không khiến người nhận bớt hào hứng.",
+    "picture:kiemcach" => "Bộ phận chắn tay hình con dơi Kohi tặng Leo để thay cho kiếm cách tròn. Đến thanh kiếm cũng cần đồng bộ phong cách.",
+    "picture:kirby" => "Thú bông Kirby khổng lồ Hakase tặng Kohi. Mềm đến mức người nhận muốn ngồi thử ngay lập tức.",
+    "picture:knucklesplushie" => "Thú bông Knuckles tỷ lệ 1:1, còn cao hơn cả Hải Quỳ. Một món quà có thể ôm bằng cả người.",
+    "picture:matnada" => "Chiếc mặt nạ đá được Hakase tinh chỉnh lại. Vẻ tự tin của người tặng chưa đủ khiến cả văn phòng yên tâm.",
+    "picture:mayepcam" => "Máy ép cam MK25 thế hệ R34. Món quà khiến Hải Quỳ muốn kiểm tra từng bộ phận ngay khi vừa nhận được.",
+    "picture:mibullyquy" => "Mì cay “dữ tợn” do Bully Quỳ chuẩn bị cho Leo. Danh sách nguyên liệu đủ khiến người nghe phải dừng lại một lúc.",
+    "picture:mihaiquy" => "Mì cay Hải Quỳ dành công nghiên cứu để nấu cho Leo. Một món quà được chuẩn bị bằng cả sự háo hức lẫn quyết tâm.",
+    "picture:nhua" => "Hộp mô hình lắp ráp khiến Hải Quỳ và Hakase sáng mắt. Gọi là “nhựa” thôi, chứ độ mê thì không hề ít.",
+    "picture:oplung" => "Chiếc ốp lưng đen lấp lánh Shylvie tặng Leo. Một chút nổi bật cho món đồ luôn mang theo bên mình.",
+    "picture:purplegarnet" => "Viên đá tím Hải Quỳ chọn cho Leo. Theo chủ tiệm, nó giúp giải trừ độc tố và đem lại tinh thần tích cực.",
+    "picture:rainbowfluorite" => "“Đá tri thức” chứa những phép thuật ngẫu nhiên. Một món quà rất hợp với sự tò mò của Hakase.",
+    "picture:sapphire" => "Viên Sapphire Shylvie tặng Hải Quỳ, được khảm ma thuật dịch chuyển. Rất đẹp, dù Hải Quỳ vẫn thích phép beam hơn.",
+    "picture:tailsdoll" => "Thú bông Tails Shylvie tặng Hải Quỳ. Hai chiếc đuôi mềm mịn là chỗ lý tưởng để dụi mặt vào.",
+    "picture:tuideocheo" => "Chiếc túi Kohi tặng Shylvie, đính những hạt cườm xanh trong vắt. Nhìn là đoán được người nhận.",
+    "picture:vaycv" => "Chiếc váy dạ hội Kohi dành cho Shylvie. Một dịp để thử phong cách khác với những bộ đồ quen thuộc.",
+    "picture:vayquy" => "Chiếc váy xanh đính nơ vàng dành cho Hải Quỳ. Một món quà để diện trong những dịp đặc biệt.",
+    "item:18" => "Một thanh RAM trông khá có giá trị. Với Diana, góp đủ mười thanh là đủ cho một bữa no."
+  }
+
+  def self.picture_gallery_id?(id)
+    PhoneMenu::ITEM_PICTURE_IDS.include?(id)
+  end
+
+  def self.picture_key(name)
+    name = name.to_s.sub(/\.(png|jpg|jpeg|bmp)\z/i,"")
+    id = PhoneMenu::ITEM_PICTURE_IDS.find { |n| PhoneMenu::GALLERY_PICTURE_FILES[n].downcase == name.downcase }
+    id ? "picture:"+PhoneMenu::GALLERY_PICTURE_FILES[id].downcase : nil
+  end
+
+  def self.valid_key?(key)
+    key.is_a?(String) && !!(key =~ /\A(?:picture:[a-z0-9_]+|(?:item|weapon|armor):[1-9][0-9]*)\z/)
+  end
+
+  def self.read_store(path)
+    data = File.open(path,"rb") { |file| Marshal.load(file) }
+    return nil unless data.is_a?(Hash) && data[:version] == 1 && data[:keys].is_a?(Array)
+    return nil unless data[:keys].all? { |key| valid_key?(key) }
+    Hash[data[:keys].reject { |key| EXCLUDED_KEYS.include?(key) }.map { |key| [key,true] }]
+  rescue StandardError
+    nil
+  end
+
+  def self.bootstrap
+    return if @keys
+    @keys = read_store(FILE_NAME) || read_store(FILE_NAME+".bak") || {}
+    @persistence_error = false
+    # Existing gift unlocks move into the collection without changing CG IDs.
+    legacy = GlobalGallery.load
+    changed = false
+    if legacy.is_a?(Array)
+      PhoneMenu::ITEM_PICTURE_IDS.each do |id|
+        next unless legacy[id]
+        key = picture_key(PhoneMenu::GALLERY_PICTURE_FILES[id])
+        changed = true unless @keys[key]
+        @keys[key] = true
+      end
+    end
+    persist if changed
+  end
+
+  def self.persist
+    Dir.mkdir("Save") unless File.directory?("Save")
+    temporary, backup = FILE_NAME+".tmp",FILE_NAME+".bak"
+    File.open(temporary,"wb") do |file|
+      Marshal.dump({:version=>1,:keys=>@keys.keys.sort},file)
+      file.flush
+    end
+    if File.exist?(FILE_NAME) && read_store(FILE_NAME)
+      File.delete(backup) if File.exist?(backup)
+      File.rename(FILE_NAME,backup)
+    elsif File.exist?(FILE_NAME)
+      # Keep a valid recovery copy when the primary file was damaged.
+      File.delete(FILE_NAME)
+    end
+    begin
+      File.rename(temporary,FILE_NAME)
+    rescue StandardError
+      File.rename(backup,FILE_NAME) if !File.exist?(FILE_NAME) && File.exist?(backup)
+      raise
+    end
+    @persistence_error = false
+    true
+  rescue StandardError
+    @persistence_error = true
+    false
+  end
+
+  def self.unlock(key)
+    return false unless valid_key?(key)
+    return false if EXCLUDED_KEYS.include?(key)
+    bootstrap
+    if @keys[key]
+      persist if @persistence_error
+      return false
+    end
+    @keys[key] = true
+    persist
+    true
+  end
+
+  def self.unlocked?(key)
+    bootstrap
+    !!@keys[key]
+  end
+
+  def self.persistence_error?
+    bootstrap
+    !!@persistence_error
+  end
+
+  def self.encounter_picture(name)
+    key = picture_key(name)
+    key ? unlock(key) : false
+  end
+
+  def self.encounter_item(item)
+    return false unless item && !item.name.to_s.empty?
+    type = case item
+    when RPG::Item then "item"
+    when RPG::Weapon then "weapon"
+    when RPG::Armor then "armor"
+    end
+    type ? unlock("#{type}:#{item.id}") : false
+  end
+
+  def self.database_entry(key)
+    return nil if EXCLUDED_KEYS.include?(key)
+    return nil unless key =~ /\A(item|weapon|armor):([1-9][0-9]*)\z/
+    type, id = $1,$2.to_i
+    table = type == "item" ? $data_items : type == "weapon" ? $data_weapons : $data_armors
+    item = table && table[id]
+    return nil unless item && !item.name.to_s.empty?
+    name = type == "item" && id == 18 ? "Thanh RAM" : item.name
+    {:key=>key,:name=>name,:icon=>item.icon_index,:description=>DESCRIPTIONS[key] || item.description.to_s}
+  end
+
+  def self.entries
+    bootstrap
+    result = PhoneMenu::ITEM_PICTURE_IDS.map do |id|
+      file = PhoneMenu::GALLERY_PICTURE_FILES[id]
+      key = picture_key(file)
+      {:key=>key,:name=>PhoneMenu::GALLERY_PICTURE_NAMES[id],:picture=>file,
+        :description=>DESCRIPTIONS[key] || "Vật phẩm đã gặp trong hành trình."}
+    end
+    keys = ["item:18"] + @keys.keys.reject { |key| key.start_with?("picture:") }.sort
+    keys.uniq.each do |key|
+      entry = database_entry(key)
+      result << entry if entry
+    end
+    result
+  end
+
+  def self.encounter_owned_items
+    return unless $game_party
+    $game_party.all_items.each { |item| encounter_item(item) }
+  end
+end
+
+class Game_Party
+  alias wcf_library_gain_item gain_item
+  def gain_item(item,amount,include_equip = false)
+    result = wcf_library_gain_item(item,amount,include_equip)
+    WCFItemLibrary.encounter_item(item) if amount > 0 && item
+    result
+  end
+end
+
+class Game_Picture
+  alias wcf_library_show show
+  def show(*args)
+    result = wcf_library_show(*args)
+    WCFItemLibrary.encounter_picture(args[0])
+    result
+  end
 end
 
 module WCFGalleryScene
@@ -1884,25 +2374,29 @@ class Scene_Menu < Scene_MenuBase
   end
 
   def gallery_page_max
-    total = PhoneMenu::GALLERY_MAX_PICTURES
+    total = gallery_picture_ids.size
     max = (total.to_f / PhoneMenu::GALLERY_PER_PAGE).ceil
     max = 1 if max < 1
     max
   end
 
   def gallery_picture_id_from_index(page, index)
-    page * PhoneMenu::GALLERY_PER_PAGE + index + 1
+    gallery_picture_ids[page * PhoneMenu::GALLERY_PER_PAGE + index]
+  end
+
+  def gallery_picture_ids
+    PhoneMenu::GALLERY_VISIBLE_IDS
   end
 
   def gallery_picture_unlocked?(picture_id)
-    return false if picture_id <= 0
+    return false unless picture_id && gallery_picture_ids.include?(picture_id)
     return false unless $game_system
     !!$game_system.gallery[picture_id]
   end
 
   def gallery_enabled_count
     count = 0
-    1.upto(PhoneMenu::GALLERY_MAX_PICTURES) do |i|
+    gallery_picture_ids.each do |i|
       count += 1 if gallery_picture_unlocked?(i)
     end
     count
@@ -2014,10 +2508,9 @@ class Scene_Menu < Scene_MenuBase
 
   def rebuild_gallery_grid
     dispose_gallery_grid_sprites
-    start_id = @gallery_page * PhoneMenu::GALLERY_PER_PAGE + 1
     PhoneMenu::GALLERY_PER_PAGE.times do |index|
-      picture_id = start_id + index
-      break if picture_id > PhoneMenu::GALLERY_MAX_PICTURES
+      picture_id = gallery_picture_id_from_index(@gallery_page,index)
+      break unless picture_id
       x = PhoneMenu::GALLERY_START_X + (index % PhoneMenu::GALLERY_COLUMNS) *
         (PhoneMenu::GALLERY_THUMB_W + PhoneMenu::GALLERY_SPACING_X)
       y = PhoneMenu::GALLERY_START_Y + (index / PhoneMenu::GALLERY_COLUMNS) *
@@ -2146,7 +2639,7 @@ class Scene_Menu < Scene_MenuBase
     bmp = @gallery_info.bitmap
     bmp.clear
     phone_text(bmp, 24, 26, 190, 30, "Thư viện", 22, nil, 0, true)
-    phone_text(bmp, 212, 32, 100, 20, "#{gallery_enabled_count}/#{PhoneMenu::GALLERY_MAX_PICTURES} ảnh",
+    phone_text(bmp, 212, 32, 100, 20, "#{gallery_enabled_count}/#{gallery_picture_ids.size} ảnh",
       12, Color.new(187, 201, 226), 2)
     phone_text(bmp, 44, 56, PhoneMenu::PHONE_WIDTH - 88, 22,
       "Trang #{@gallery_page + 1} / #{gallery_page_max}", 13, Color.new(187, 201, 226), 1)
@@ -2315,7 +2808,7 @@ class Scene_Menu < Scene_MenuBase
   #--------------------------------------------------------------------------
   def update_gallery_selection
     items_this_page = [PhoneMenu::GALLERY_PER_PAGE,
-      PhoneMenu::GALLERY_MAX_PICTURES - @gallery_page * PhoneMenu::GALLERY_PER_PAGE].min
+      gallery_picture_ids.size - @gallery_page * PhoneMenu::GALLERY_PER_PAGE].min
     items_this_page = 0 if items_this_page < 0
 
     if Input.repeat?(:LEFT)
@@ -2325,7 +2818,7 @@ class Scene_Menu < Scene_MenuBase
         @gallery_page -= 1
         @gallery_page = gallery_page_max - 1 if @gallery_page < 0
         items_this_page = [PhoneMenu::GALLERY_PER_PAGE,
-          PhoneMenu::GALLERY_MAX_PICTURES - @gallery_page * PhoneMenu::GALLERY_PER_PAGE].min
+          gallery_picture_ids.size - @gallery_page * PhoneMenu::GALLERY_PER_PAGE].min
         @gallery_index = [items_this_page - 1, 0].max
       end
       RPG::SE.new(PhoneMenu::SELECT_SE).play
@@ -2348,7 +2841,7 @@ class Scene_Menu < Scene_MenuBase
         @gallery_page -= 1
         @gallery_page = gallery_page_max - 1 if @gallery_page < 0
         items_this_page = [PhoneMenu::GALLERY_PER_PAGE,
-          PhoneMenu::GALLERY_MAX_PICTURES - @gallery_page * PhoneMenu::GALLERY_PER_PAGE].min
+          gallery_picture_ids.size - @gallery_page * PhoneMenu::GALLERY_PER_PAGE].min
         @gallery_index = [items_this_page - 1, 0].max
       end
       RPG::SE.new(PhoneMenu::SELECT_SE).play
@@ -2377,7 +2870,7 @@ class Scene_Menu < Scene_MenuBase
       refresh_gallery
     elsif Input.trigger?(:C)
       picture_id = gallery_picture_id_from_index(@gallery_page, @gallery_index)
-      if picture_id <= PhoneMenu::GALLERY_MAX_PICTURES && gallery_picture_unlocked?(picture_id)
+      if gallery_picture_unlocked?(picture_id)
         Sound.play_ok
         show_gallery_full(picture_id)
       else
@@ -2596,10 +3089,10 @@ class Game_Config
     setup = PhoneGroupChat::GROUPS[group_id]
     if setup
       phone_group_chats[group_id] = {
-        :name => setup[:name],
-        :info => setup[:info],
-        :avatar => setup[:avatar],
-        :members => setup[:members],
+        :name => setup[:name].dup,
+        :info => setup[:info].dup,
+        :avatar => setup[:avatar].dup,
+        :members => Marshal.load(Marshal.dump(setup[:members])),
         :messages => []
       }
     else
@@ -2615,48 +3108,63 @@ class Game_Config
   end
 
   def clear_group_chat(group_id)
+    phone_forget_unread(:group,group_id.to_sym)
     ensure_group_chat(group_id)[:messages].clear
+    @phone_revision += 1
+  end
+
+  def clear_phone_group_chats
+    phone_group_chats.keys.each { |id| phone_forget_unread(:group,id) }
+    phone_group_chats.clear
+    @phone_revision += 1
+  end
+
+  def phone_append_group(group_id,row)
+    group_id = group_id.to_sym
+    phone_register_message(:group,group_id,row)
+    ensure_group_chat(group_id)[:messages] << row
+    row
   end
 
   def add_group_text(group_id, sender, text, side = nil)
-    ensure_group_chat(group_id)[:messages] << {
+    phone_append_group(group_id,{
       :type => :text,
       :sender => sender,
       :text => text.to_s,
       :side => side
-    }
+    })
   end
 
   def add_group_image(group_id, sender, image, side = nil)
-    ensure_group_chat(group_id)[:messages] << {
+    phone_append_group(group_id,{
       :type => :image,
       :sender => sender,
       :image => image.to_s,
       :side => side
-    }
+    })
   end
 
   def add_group_system(group_id, text)
-    ensure_group_chat(group_id)[:messages] << {
+    phone_append_group(group_id,{
       :type => :system,
       :text => text.to_s
-    }
+    })
   end
 
   def add_group_choice(group_id, text, value)
-    ensure_group_chat(group_id)[:messages] << {
+    phone_append_group(group_id,{
       :type => :choice,
       :text => text.to_s,
       :value => value
-    }
+    })
   end
 
   def add_group_choice_result(group_id, text, value = nil)
-    ensure_group_chat(group_id)[:messages] << {
+    phone_append_group(group_id,{
       :type => :choice_result,
       :text => text.to_s,
       :value => value
-    }
+    })
   end
 end
 
@@ -2779,6 +3287,7 @@ class Scene_Menu < Scene_MenuBase
       panel = Sprite.new
       panel.bitmap = Bitmap.new(288, 84)
       phone_card(panel.bitmap, 0, 0, 288, 84, index == @selected_contact)
+      phone_unread_dot(panel.bitmap,272,17) if phone_thread_unread?(entry)
       panel.x, panel.y, panel.z, panel.visible = PhoneMenu::PHONE_X + 24, y, 96, false
       @contact_panels << panel
 
@@ -2790,7 +3299,7 @@ class Scene_Menu < Scene_MenuBase
 
       name_sprite = Sprite.new
       name_sprite.bitmap = Bitmap.new(208, 76)
-      phone_text(name_sprite.bitmap, 0, 0, 200, 25, entry[:name], 18, nil, 0, true)
+      phone_text(name_sprite.bitmap, 0, 0, 184, 25, entry[:name], 18, nil, 0, true)
       phone_text(name_sprite.bitmap, 0, 26, 200, 18, entry[:info], 12, Color.new(183, 197, 225))
       last = (entry[:messages] || []).last
       last = pmgc_normal_message_to_hash(last) if last
@@ -2815,6 +3324,7 @@ class Scene_Menu < Scene_MenuBase
       sprites.each { |sprite| sprite.visible = true }
     end
     @contact_info.visible = true
+    @phone_contacts_revision = phone_unread_state ? phone_unread_state.phone_revision : 0
   end
 
   def update_contact_selection
@@ -2845,6 +3355,9 @@ class Scene_Menu < Scene_MenuBase
       return if @pmgc_entries.empty?
       @in_message_view = true
       @message_index = 0
+      entry = pmgc_current_entry
+      @phone_unread_boundary_id = phone_unread_state && phone_unread_state.phone_first_unread_id(entry)
+      @phone_open_unread = !!phone_thread_unread?(entry)
       show_contact_details
     elsif Input.trigger?(:B)
       close_contacts_screen
@@ -2884,6 +3397,7 @@ class Scene_Menu < Scene_MenuBase
     elsif Input.trigger?(:B)
       @in_message_view = false
       @message_index = @message_line_offset = 0
+      @phone_read_candidate = @phone_unread_boundary_id = nil
       refresh_contacts
       show_contacts_sprites
     end
@@ -2896,7 +3410,8 @@ class Scene_Menu < Scene_MenuBase
       :type => :text,
       :sender => sender,
       :text => text.to_s,
-      :side => sender == :main ? :right : :left
+      :side => sender == :main ? :right : :left,
+      :_phone_id => message[2]
     }
   end
 
@@ -2931,50 +3446,24 @@ class Scene_Menu < Scene_MenuBase
   end
 
   def pmgc_wrap_text(text, max_chars)
-    # Fit the actual font, including Vietnamese accents, rather than a character count.
-    width = PhoneMenu::MESSAGE_MAX_WIDTH - PhoneMenu::MESSAGE_PADDING_X * 2
-    @phone_wrap_cache ||= {}
-    key = [text.to_s.dup, width]
-    return @phone_wrap_cache[key] if @phone_wrap_cache.has_key?(key)
-    lines = []
-    text.to_s.split("\n", -1).each do |paragraph|
-      current = ""
-      paragraph.split(/[ \t]+/).each do |word|
-        candidate = current.empty? ? word : current + " " + word
-        if simple_text_width(candidate, 17) <= width
-          current = candidate
-          next
-        end
-        lines << current unless current.empty?
-        current = ""
-        word.scan(/\P{M}\p{M}*/).each do |cluster|
-          if !current.empty? && simple_text_width(current + cluster, 17) > width
-            lines << current
-            current = ""
-          end
-          current += cluster
-        end
-      end
-      lines << current
-    end
-    result = lines.empty? ? [""] : lines
-    @phone_wrap_cache.shift if @phone_wrap_cache.size >= 32
-    @phone_wrap_cache[key] = result
+    phone_wrap_text(text,PhoneMenu::MESSAGE_MAX_WIDTH-PhoneMenu::MESSAGE_PADDING_X*2,17)
   end
 
   def pmgc_message_height(message)
-    return 146 if message[:type] == :image
+    extra = phone_new_boundary?(message) ? 24 : 0
+    return 146+extra if message[:type] == :image
     lines = message[:_phone_lines] || pmgc_wrap_text(message[:text], 0)
     case message[:type]
     when :system, :choice, :choice_result
-      lines.size * 20 + 16
+      lines.size * 20 + 16+extra
     else
-      lines.size * PhoneMenu::MESSAGE_LINE_SPACING + PhoneMenu::MESSAGE_PADDING_Y * 2 + 22
+      lines.size * PhoneMenu::MESSAGE_LINE_SPACING + PhoneMenu::MESSAGE_PADDING_Y * 2 + 22+extra
     end
   end
 
   def pmgc_page_lines(message)
     height = PhoneMenu::MESSAGE_BOTTOM_LIMIT - PhoneMenu::CONTACT_MESSAGE_Y
+    height -= 24 if phone_new_boundary?(message)
     notice = [:system, :choice, :choice_result].include?(message[:type])
     [(height - (notice ? 16 : 42)) / (notice ? 20 : PhoneMenu::MESSAGE_LINE_SPACING), 1].max
   end
@@ -3007,6 +3496,13 @@ class Scene_Menu < Scene_MenuBase
   def show_contact_details
     entry = pmgc_current_entry
     return unless entry
+    state = phone_unread_state
+    now_unread = !!phone_thread_unread?(entry)
+    if now_unread && !@phone_open_unread
+      @phone_unread_boundary_id = state.phone_first_unread_id(entry)
+    end
+    @phone_open_unread = now_unread
+    @phone_read_candidate = nil
     cursor = [@selected_contact + @contact_index, @message_index]
     @message_line_offset = 0 unless @phone_message_cursor == cursor
     @phone_message_cursor = cursor
@@ -3019,7 +3515,7 @@ class Scene_Menu < Scene_MenuBase
     bmp.clear
     phone_card(bmp, 24, 24, 288, 54)
     phone_text(bmp, 36, 28, 264, 27, entry[:name], 20, nil, 1, true)
-    subtitle = "Lịch sử trò chuyện"
+    subtitle = now_unread ? "Có tin nhắn mới" : "Lịch sử trò chuyện"
     current = (entry[:messages] || [])[@message_index]
     if current
       current = pmgc_normal_message_to_hash(current)
@@ -3038,7 +3534,12 @@ class Scene_Menu < Scene_MenuBase
     if messages.empty?
       phone_text(bmp, 24, 180, 288, 30, "Chưa có tin nhắn", 17, nil, 1)
     end
-    pmgc_visible_messages(messages, @message_index).each do |message, y|
+    visible = pmgc_visible_messages(messages, @message_index)
+    visible.each do |message, y|
+      if phone_new_boundary?(message)
+        phone_text(bmp,32,y,272,20,"Tin nhắn mới",12,Color.new(255,166,183),1,true)
+        y += 24
+      end
       case message[:type]
       when :system, :choice, :choice_result
         color = message[:type] == :system ? Color.new(209, 220, 245) : Color.new(255, 224, 164)
@@ -3049,6 +3550,16 @@ class Scene_Menu < Scene_MenuBase
         pmgc_draw_text_message(entry, message, y)
       end
     end
+    if state && !visible.empty? && !messages.empty?
+      last = visible[-1][0]
+      serial = state.phone_message_id(messages[-1])
+      complete = last[:_phone_id] == serial
+      if last[:_phone_continued]
+        complete &&= (@message_line_offset || 0)+last[:_phone_lines].size >= pmgc_wrap_text(last[:text],0).size
+      end
+      @phone_read_candidate = [entry[:kind],entry[:id],serial] if complete
+    end
+    @phone_view_revision = state.phone_revision if state
   end
 
   def pmgc_draw_center_notice(text, y, color, lines = nil)
@@ -3079,7 +3590,7 @@ class Scene_Menu < Scene_MenuBase
     img_x = is_main ? PhoneMenu::MESSAGE_RIGHT_BUBBLE_RIGHT - img_w : PhoneMenu::MESSAGE_LEFT_BUBBLE_X
     icon_x = is_main ? PhoneMenu::MESSAGE_RIGHT_ICON_X : PhoneMenu::MESSAGE_LEFT_ICON_X
 
-    name_sprite = pmgc_name_sprite(name, img_x, y, is_main, img_w)
+    name_sprite = pmgc_name_sprite(name, img_x, y, is_main, img_w,phone_message_new?(entry,message))
     @contact_messages << name_sprite
 
     img_sprite = Sprite.new
@@ -3104,7 +3615,8 @@ class Scene_Menu < Scene_MenuBase
     bubble_h = lines.size * PhoneMenu::MESSAGE_LINE_SPACING + PhoneMenu::MESSAGE_PADDING_Y * 2
     bubble_x = is_main ? PhoneMenu::MESSAGE_RIGHT_BUBBLE_RIGHT - bubble_w : PhoneMenu::MESSAGE_LEFT_BUBBLE_X
     icon_x = is_main ? PhoneMenu::MESSAGE_RIGHT_ICON_X : PhoneMenu::MESSAGE_LEFT_ICON_X
-    @contact_messages << pmgc_name_sprite(pmgc_sender_name(entry, sender), bubble_x, y, is_main, bubble_w)
+    @contact_messages << pmgc_name_sprite(pmgc_sender_name(entry, sender), bubble_x, y, is_main, bubble_w,
+      phone_message_new?(entry,message))
     bubble = Sprite.new
     bubble.bitmap = make_round_rect_bitmap(bubble_w, bubble_h, 12,
       is_main ? Color.new(78, 96, 159, 248) : Color.new(230, 236, 249, 248))
@@ -3120,10 +3632,11 @@ class Scene_Menu < Scene_MenuBase
       icon_x, bubble.y + bubble_h - PhoneMenu::MESSAGE_ICON_SIZE)
   end
 
-  def pmgc_name_sprite(name, x, y, is_main, width = PhoneMenu::MESSAGE_MAX_WIDTH)
+  def pmgc_name_sprite(name, x, y, is_main, width = PhoneMenu::MESSAGE_MAX_WIDTH, unread = false)
     sprite = Sprite.new
     sprite.bitmap = Bitmap.new(width, 22)
-    phone_text(sprite.bitmap, 0, 0, width, 20, name, 13, Color.new(199, 211, 237), is_main ? 2 : 0, true)
+    phone_text(sprite.bitmap, 0, 0, width-(unread ? 18 : 0), 20, name, 13, Color.new(199, 211, 237), is_main ? 2 : 0, true)
+    phone_unread_dot(sprite.bitmap,width-7,9,3) if unread
     sprite.x, sprite.y, sprite.z = x, y, 102
     sprite
   end
@@ -3179,12 +3692,11 @@ end
 
 module PhoneGroupChatSave
   def self.save_current_cutscene(id = nil)
-    gid = group_id(id)
+    gid = group_id(id).to_sym
     chat = $game_temp.group_chat_data
     return unless chat
 
     group = $game_config.ensure_group_chat(gid)
-    group[:messages].clear
 
     if chat.respond_to?(:actors)
       chat.actors.each do |actor_id, data|
@@ -3192,20 +3704,16 @@ module PhoneGroupChatSave
       end
     end
 
-    if chat.respond_to?(:entries)
-      chat.entries.each do |entry|
-        save_entry(gid, entry)
-      end
+    rows, seen = [], {}
+    chat.entries.each do |entry|
+      rows << transcript_message(entry)
+      seen[rows.size-1] = true if chat.phone_read_entries[entry.object_id]
     end
-
-    WCFEventNotice.new_message if defined?(WCFEventNotice)
 
     result = nil
     result = chat.selected_choice_value if chat.respond_to?(:selected_choice_value)
     result = GroupChat.result if result.nil? && defined?(GroupChat) && GroupChat.respond_to?(:result)
     result = $game_temp.group_chat_result if result.nil?
-
-    return unless result
 
     choice_text = nil
     choice_text = chat.selected_choice_text if chat.respond_to?(:selected_choice_text)
@@ -3214,13 +3722,10 @@ module PhoneGroupChatSave
       choice_text = chosen[:text] if chosen
     end
 
-    choice_text ||= result.to_s
-
-    $game_config.add_group_choice_result(
-      gid,
-      "Quỳ chọn: #{choice_text}",
-      result
-    )
+    if result
+      rows << {:type=>:choice_result,:text=>"Quỳ chọn: #{choice_text || result.to_s}",:value=>result}
+      seen[rows.size-1] = true
+    end
 
     branch_entries = []
     if chat.respond_to?(:selected_branch_entries) && chat.selected_branch_entries
@@ -3230,7 +3735,21 @@ module PhoneGroupChatSave
     end
 
     branch_entries.each do |entry|
-      save_entry(gid, entry)
+      rows << transcript_message(entry)
+      seen[rows.size-1] = true if chat.phone_read_entries[entry.object_id]
+    end
+    fresh = $game_config.replace_phone_transcript(gid,rows,seen)
+    WCFEventNotice.new_message if fresh && defined?(WCFEventNotice)
+  end
+
+  def self.transcript_message(entry)
+    case entry[:type]
+    when :text
+      {:type=>:text,:sender=>entry[:actor],:text=>entry[:text].to_s,:side=>entry[:side]}
+    when :image
+      {:type=>:image,:sender=>entry[:actor],:image=>entry[:image].to_s,:side=>entry[:side]}
+    else
+      {:type=>:system,:text=>entry[:text].to_s}
     end
   end
 end
@@ -3507,6 +4026,15 @@ module WCFPhoneSaveDrawing
     ps_round(bitmap,x+1,y+1,w-2,h-2,11,
       selected ? Color.new(53,66,111,245) : Color.new(18,28,47,235))
   end
+
+  def ps_action_palette(tone)
+    case tone
+    when :save      then [[110,221,173],[26,91,70],[19,62,51],[224,255,239]]
+    when :load      then [[131,193,255],[38,81,137],[24,52,89],[231,245,255]]
+    when :overwrite then [[250,199,109],[111,73,30],[76,51,28],[255,240,207]]
+    when :delete    then [[255,137,147],[145,42,58],[99,30,44],[255,238,240]]
+    end
+  end
 end
 
 class Scene_File < Scene_MenuBase
@@ -3699,13 +4227,14 @@ class Scene_File < Scene_MenuBase
 
   def ps_actions
     slot = ps_slot
-    actions = [["Quay lại",:back]]
+    actions = []
     if ps_loading?
       actions << ["Tiếp tục bản lưu này",:load] if slot[:state] == :ready
     elsif !$game_system.save_disabled
       actions << [slot[:state] == :empty ? "Tạo bản lưu" : "Ghi đè bản lưu",:save]
     end
     actions << ["Xóa bản lưu",:delete] unless slot[:state] == :empty
+    actions << ["Quay lại",:back]
     actions
   end
 
@@ -3732,12 +4261,12 @@ class Scene_File < Scene_MenuBase
       ps_redraw
     end
     return unless Input.trigger?(:C)
-    if @ps_choice == 0
+    action = ps_actions[@ps_choice][1]
+    if action == :back
       Sound.play_cancel
       @ps_mode = :list
       ps_redraw
     else
-      action = ps_actions[@ps_choice][1]
       @ps_pending = action
       @ps_preview = WCFPhoneSaveRecord.capture if action == :save
       @ps_mode, @ps_choice = :confirm,0
@@ -3802,12 +4331,10 @@ class Scene_File < Scene_MenuBase
     else
       ps_draw_detail(bmp)
     end
-    return if @ps_mode == :confirm && @ps_pending == :save
+    return if @ps_mode == :confirm
     bmp.fill_rect(28,294,404,1,Color.new(183,198,231,44))
     footer = if @ps_mode == :list
       "↑↓ Chọn  ←→ Trang  Z Mở  X Về"
-    elsif @ps_mode == :confirm
-      "Z Xác nhận   X Hủy"
     else
       "↑↓ Chọn   Z Mở   X Quay lại"
     end
@@ -3871,11 +4398,31 @@ class Scene_File < Scene_MenuBase
     ps_wrapped(bmp,x+12,132,width-24,text,20,25,3,Color.new(187,201,226))
   end
 
-  def ps_button(bmp, x, y, width, height, label, selected, danger = false)
-    ps_card(bmp,x,y,width,height,selected)
-    color = danger ? Color.new(255,184,170) : nil
+  def ps_button(bmp, x, y, width, height, label, selected, tone = :neutral)
+    palette = ps_action_palette(tone)
+    if palette
+      border, active, idle, text = palette
+      ps_round(bmp,x,y,width,height,12,Color.new(*border))
+      ps_round(bmp,x+1,y+1,width-2,height-2,11,Color.new(*(selected ? active : idle)))
+      color = Color.new(*text)
+    else
+      ps_card(bmp,x,y,width,height,selected)
+      color = nil
+    end
     lines = height > 40 ? 2 : 1
     ps_wrapped(bmp,x+12,y+5,width-24,label,18,22,lines,color,selected)
+  end
+
+  def ps_confirm_help(bmp, tone)
+    # One instruction panel, without individual button shapes or focus states.
+    accent = Color.new(*ps_action_palette(tone)[0])
+    action = {:save=>"lưu",:overwrite=>"ghi đè",:load=>"tải",:delete=>"xóa"}[tone]
+    bmp.fill_rect(26,282,408,40,Color.new(16,25,42,245))
+    bmp.fill_rect(26,282,3,40,accent)
+    bmp.fill_rect(29,282,405,1,Color.new(123,145,183,80))
+    ps_text(bmp,38,284,380,14,"HƯỚNG DẪN PHÍM",13,Color.new(174,191,219))
+    ps_text(bmp,38,299,226,22,"Nhấn Z để #{action}",18,accent,0,true)
+    ps_text(bmp,282,299,140,22,"Nhấn X để hủy",17,Color.new(219,228,244))
   end
 
   def ps_draw_detail(bmp)
@@ -3889,9 +4436,8 @@ class Scene_File < Scene_MenuBase
         ps_draw_empty(bmp,slot,26,198,"Bản lưu %02d" % (@ps_index+1))
       end
       ps_draw_record(bmp,@ps_preview,236,198,"Sẽ lưu")
-      save_label = slot[:state] == :empty ? "Lưu (Z)" : "Ghi đè (Z)"
-      ps_button(bmp,26,282,198,36,"Hủy (X)",false)
-      ps_button(bmp,236,282,198,36,save_label,false)
+      tone = slot[:state] == :empty ? :save : :overwrite
+      ps_confirm_help(bmp,tone)
     else
       if record
         ps_draw_record(bmp,record,26,252,"Bản lưu %02d" % (@ps_index+1))
@@ -3906,17 +4452,464 @@ class Scene_File < Scene_MenuBase
         else
           "Tiếp tục từ bản lưu này?"
         end
-        ps_wrapped(bmp,300,83,124,warning,17,22,4,Color.new(219,214,255))
-        ps_button(bmp,290,178,144,40,"Hủy (X)",false)
-        label = @ps_pending == :load ? "Tải (Z)" : "Xóa (Z)"
-        ps_button(bmp,290,236,144,40,label,false,@ps_pending == :delete)
+        color = @ps_pending == :delete ? Color.new(255,170,180) : Color.new(219,214,255)
+        ps_wrapped(bmp,300,83,124,warning,17,22,4,color)
+        ps_confirm_help(bmp,@ps_pending)
       else
         ps_actions.each_with_index do |option,index|
           label = {:back=>"Quay lại",:load=>"Tiếp tục",:save=>"Tạo bản lưu",:delete=>"Xóa bản lưu"}[option[1]]
           label = "Ghi đè" if option[1] == :save && slot[:state] != :empty
-          ps_button(bmp,290,78+index*66,144,52,label,index == @ps_choice,option[1] == :delete)
+          tone = option[1] == :save && slot[:state] != :empty ? :overwrite : option[1]
+          ps_button(bmp,290,78+index*66,144,52,label,index == @ps_choice,tone)
         end
       end
     end
+  end
+end
+
+#==============================================================================
+# WCF Phone Settings
+# Keep Yanfly's Game_System options and exit handlers; replace its windows only.
+#==============================================================================
+class Scene_System < Scene_MenuBase
+  include WCFPhoneSaveDrawing
+  attr_writer :wcf_phone_origin
+  WSP_VISIBLE = 5
+  WSP_ROWS = [
+    [:bgm,"Nhạc nền",:volume,"Âm nhạc trong các cảnh."],
+    [:bgs,"Âm thanh nền",:volume,"Tiếng gió, không gian và môi trường."],
+    [:sfx,"Hiệu ứng âm thanh",:volume,"Tiếng tương tác và hiệu ứng."],
+    [:autodash,"Tự động chạy",:toggle,"Khi bật, giữ Shift để chuyển sang đi bộ."],
+    [:instantmsg,"Cách hiện thoại",:toggle,""],
+    [:to_title,"Về màn hình chính",:action,"Tiến độ chưa lưu sẽ mất."],
+    [:shutdown,"Thoát game",:action,"Tiến độ chưa lưu sẽ mất."],
+    [:back,"Quay lại",:action,"Trở về màn hình trước."]
+  ]
+
+  def start
+    super
+    wsp_create_settings
+  end
+
+  def transition_speed
+    @wcf_phone_origin == :phone ? 0 : super
+  end
+
+  def wsp_surface(width,height,z)
+    sprite = Sprite.new
+    sprite.bitmap = Bitmap.new(width,height)
+    sprite.z = z
+    @wsp_owned << sprite
+    sprite
+  end
+
+  def create_background
+    @wsp_owned = []
+    backdrop = wsp_surface(Graphics.width,Graphics.height,10)
+    source = SceneManager.background_bitmap
+    backdrop.bitmap.blt(0,0,source,source.rect) if source
+    backdrop.color.set(8,12,24,190)
+    @background_sprite = wsp_surface(PhoneMenu::PHONE_WIDTH,PhoneMenu::PHONE_HEIGHT,50)
+    art = Cache.load_bitmap("Graphics/PhoneMenu/",PhoneMenu::BACKGROUND)
+    @background_sprite.bitmap.stretch_blt(@background_sprite.bitmap.rect,art,art.rect)
+    @wsp_overlay = wsp_surface(PhoneMenu::PHONE_WIDTH,PhoneMenu::PHONE_HEIGHT,60)
+    ps_round(@wsp_overlay.bitmap,12,16,PhoneMenu::PHONE_WIDTH-24,
+      PhoneMenu::PHONE_HEIGHT-32,18,Color.new(9,14,28,PhoneMenu::SUB_OVERLAY_OPACITY))
+    [@background_sprite,@wsp_overlay].each do |sprite|
+      sprite.x, sprite.y = PhoneMenu::PHONE_X,PhoneMenu::PHONE_Y
+    end
+  end
+
+  def wsp_create_settings
+    @wsp_panel = wsp_surface(PhoneMenu::PHONE_WIDTH,PhoneMenu::PHONE_HEIGHT,100)
+    @wsp_panel.x, @wsp_panel.y = PhoneMenu::PHONE_X,PhoneMenu::PHONE_Y
+    @wsp_index, @wsp_top, @wsp_pending = 0,0,nil
+    wsp_redraw
+  end
+
+  def dispose_background
+    Array(@wsp_owned).each do |sprite|
+      sprite.bitmap.dispose if sprite.bitmap && !sprite.bitmap.disposed?
+      sprite.dispose unless sprite.disposed?
+    end
+    @wsp_owned = []
+  end
+
+  def update
+    super
+    wsp_update_input
+  end
+
+  def wsp_update_input
+    if @wsp_pending
+      if Input.trigger?(:B)
+        @wsp_pending = nil
+        Sound.play_cancel
+        wsp_redraw
+      elsif Input.trigger?(:C)
+        Sound.play_ok
+        @wsp_pending == :to_title ? command_to_title : command_shutdown
+      end
+      return
+    end
+    if Input.trigger?(:B)
+      Sound.play_cancel
+      return return_scene
+    end
+    step = Input.repeat?(:DOWN) ? 1 : 0
+    step = -1 if Input.repeat?(:UP)
+    return wsp_move(step) if step != 0
+    direction = Input.repeat?(:RIGHT) ? 1 : 0
+    direction = -1 if Input.repeat?(:LEFT)
+    return wsp_change(direction) if direction != 0
+    return unless Input.trigger?(:C)
+    key, label, kind = WSP_ROWS[@wsp_index]
+    if kind == :toggle
+      wsp_toggle(key,!wsp_enabled?(key))
+    elsif kind == :action
+      Sound.play_ok
+      return return_scene if key == :back
+      @wsp_pending = key
+      wsp_redraw
+    end
+  end
+
+  def wsp_move(step)
+    @wsp_index = (@wsp_index+step) % WSP_ROWS.size
+    @wsp_top = @wsp_index if @wsp_index < @wsp_top
+    @wsp_top = @wsp_index-WSP_VISIBLE+1 if @wsp_index >= @wsp_top+WSP_VISIBLE
+    Sound.play_cursor
+    wsp_redraw
+  end
+
+  def wsp_enabled?(key)
+    key == :autodash ? $game_system.autodash? : $game_system.instantmsg?
+  end
+
+  def wsp_toggle(key,value)
+    return if wsp_enabled?(key) == value
+    key == :autodash ? $game_system.set_autodash(value) : $game_system.set_instantmsg(value)
+    Sound.play_cursor
+    wsp_redraw
+  end
+
+  def wsp_change(direction)
+    key, label, kind = WSP_ROWS[@wsp_index]
+    if kind == :volume
+      before = $game_system.volume(key)
+      $game_system.volume_change(key,direction*(Input.press?(:A) ? 10 : 1))
+      return if before == $game_system.volume(key)
+      # Apply Yanfly's volume scaling at the current playback position.
+      # replay can skip an already-playing track, so use play with its saved pos.
+      if key == :bgm || key == :bgs
+        track = key == :bgm ? RPG::BGM.last : RPG::BGS.last
+        track.play(track.pos) unless track.name.empty?
+      end
+      Sound.play_cursor
+      wsp_redraw
+    elsif kind == :toggle
+      wsp_toggle(key,direction > 0)
+    end
+  end
+
+  def wsp_redraw
+    bmp = @wsp_panel.bitmap
+    bmp.clear
+    return wsp_draw_confirmation(bmp) if @wsp_pending
+    ps_text(bmp,28,25,224,30,"Cài đặt",24,nil,0,true)
+    ps_text(bmp,256,30,52,22,"#{@wsp_index+1}/#{WSP_ROWS.size}",15,Color.new(187,201,226),2)
+    ps_text(bmp,28,57,280,20,"Âm thanh · Trải nghiệm",15,Color.new(187,201,226))
+    WSP_VISIBLE.times do |row|
+      index = @wsp_top+row
+      break if index >= WSP_ROWS.size
+      key, label, kind = WSP_ROWS[index]
+      y = 94+row*50
+      ps_card(bmp,26,y,284,46,index == @wsp_index)
+      color = key == :shutdown ? Color.new(255,170,180) : nil
+      color = Color.new(250,199,109) if key == :to_title
+      label_width = kind == :action ? 260 : key == :instantmsg ? 150 : 180
+      ps_text(bmp,38,y+5,label_width,24,label,18,color,0,index == @wsp_index)
+      if kind == :volume
+        volume = $game_system.volume(key)
+        ps_text(bmp,228,y+5,70,24,"#{volume}%",18,Color.new(199,224,255),2)
+        bmp.fill_rect(38,y+35,260,4,Color.new(81,101,138,150))
+        bmp.fill_rect(38,y+35,260*volume/100,4,Color.new(131,193,255)) if volume > 0
+      elsif kind == :toggle
+        enabled = wsp_enabled?(key)
+        value = key == :instantmsg ? (enabled ? "Cả câu" : "Từng ký tự") : (enabled ? "Bật" : "Tắt")
+        ps_text(bmp,key == :instantmsg ? 202 : 228,y+5,key == :instantmsg ? 96 : 70,24,value,key == :instantmsg ? 16 : 18,
+          enabled ? Color.new(110,221,173) : Color.new(184,197,220),2)
+      end
+    end
+    bmp.fill_rect(315,94,2,246,Color.new(81,101,138,90))
+    bmp.fill_rect(315,94+246*@wsp_top/WSP_ROWS.size,2,246*WSP_VISIBLE/WSP_ROWS.size,
+      Color.new(174,186,255,190))
+    description = WSP_ROWS[@wsp_index][0] == :instantmsg ?
+      ($game_system.instantmsg? ? "Hiện cả câu ngay lập tức." : "Hiện dần từng ký tự.") : WSP_ROWS[@wsp_index][3]
+    ps_wrapped(bmp,28,348,280,description,15,18,2,Color.new(187,201,226))
+    bmp.fill_rect(26,392,284,46,Color.new(16,25,42,245))
+    ps_text(bmp,38,395,260,20,"↑↓ Chọn   X Quay lại",15,Color.new(219,228,244))
+    kind = WSP_ROWS[@wsp_index][2]
+    hint = kind == :volume ? "←→ Điều chỉnh · Shift: nhanh" :
+      kind == :toggle ? (WSP_ROWS[@wsp_index][0] == :instantmsg ? "← Từng ký tự   → Cả câu   Z Đổi" : "← Tắt   → Bật   Z Đổi") :
+      WSP_ROWS[@wsp_index][0] == :back ? "Z Quay lại" : "Z Mở xác nhận"
+    ps_text(bmp,38,416,260,18,hint,14,Color.new(187,201,226))
+  end
+
+  def wsp_draw_confirmation(bmp)
+    title = @wsp_pending == :to_title ? "Về màn hình chính?" : "Thoát game?"
+    tone = @wsp_pending == :to_title ? :overwrite : :delete
+    accent = Color.new(*ps_action_palette(tone)[0])
+    ps_text(bmp,28,25,280,32,title,22,nil,0,true)
+    ps_text(bmp,28,61,280,22,"Xác nhận rời hành trình",16,Color.new(187,201,226))
+    ps_card(bmp,26,104,284,220)
+    ps_wrapped(bmp,42,124,252,"Tiến độ chưa lưu sẽ mất.",21,27,3,accent,true)
+    ps_wrapped(bmp,42,212,252,"Bạn có thể hủy để tiếp tục chơi và lưu game trước.",17,24,4,
+      Color.new(204,216,240))
+    bmp.fill_rect(26,342,284,98,Color.new(16,25,42,245))
+    bmp.fill_rect(26,342,3,98,accent)
+    ps_text(bmp,38,347,260,17,"HƯỚNG DẪN PHÍM",13,Color.new(174,191,219))
+    action = @wsp_pending == :to_title ? "về màn hình chính" : "thoát game"
+    ps_wrapped(bmp,38,368,260,"Nhấn Z để #{action}",17,22,2,accent,true)
+    ps_text(bmp,38,415,260,22,"Nhấn X để hủy",17,Color.new(219,228,244))
+  end
+end
+
+#==============================================================================
+# Item Library: persistent discoveries, separate from the current party inventory.
+#==============================================================================
+class Scene_ItemLibrary < Scene_MenuBase
+  include WCFPhoneSaveDrawing
+  attr_writer :wcf_phone_origin
+  LIB_COLUMNS = 6
+  LIB_ROWS = 3
+  LIB_PER_PAGE = LIB_COLUMNS*LIB_ROWS
+  LIB_WIDTH, LIB_HEIGHT = 460,336
+  LIB_X, LIB_Y = (Graphics.width-LIB_WIDTH)/2,(Graphics.height-LIB_HEIGHT)/2
+  LIB_ROTATION_FRAMES = 24
+  LIB_FOCUS = {"cg2"=>[164,136,190,138],"cg3"=>[184,126,166,174],
+    "cg4"=>[190,132,140,168],"cg5"=>[228,156,104,104]}
+  alias wcf_library_return_scene return_scene
+
+  def start
+    super
+    WCFItemLibrary.encounter_owned_items
+    @lib_entries = WCFItemLibrary.entries
+    @lib_index, @lib_mode = 0,:grid
+    @lib_panel = lib_surface(LIB_WIDTH,LIB_HEIGHT,100)
+    @lib_panel.x, @lib_panel.y = LIB_X,LIB_Y
+    @lib_full = lib_surface(Graphics.width,Graphics.height,400)
+    @lib_full.visible = false
+    @lib_rotation_mode = @wcf_phone_origin == :phone ? :opening : nil
+    @lib_rotation_frame = 0
+    @lib_panel.visible = !@lib_rotation_mode
+    lib_set_angle(@lib_rotation_mode ? 0 : 90)
+    lib_redraw
+  end
+
+  def transition_speed
+    @wcf_phone_origin == :phone ? 0 : super
+  end
+
+  def lib_surface(width,height,z)
+    sprite = Sprite.new
+    sprite.bitmap = Bitmap.new(width,height)
+    sprite.z = z
+    @lib_owned << sprite
+    sprite
+  end
+
+  def create_background
+    @lib_owned = []
+    backdrop = lib_surface(Graphics.width,Graphics.height,10)
+    source = SceneManager.background_bitmap
+    backdrop.bitmap.blt(0,0,source,source.rect) if source
+    backdrop.color.set(8,12,24,190)
+    @background_sprite = lib_surface(PhoneMenu::PHONE_WIDTH,PhoneMenu::PHONE_HEIGHT,50)
+    art = Cache.load_bitmap("Graphics/PhoneMenu/",PhoneMenu::BACKGROUND)
+    @background_sprite.bitmap.stretch_blt(@background_sprite.bitmap.rect,art,art.rect)
+    @lib_overlay = lib_surface(PhoneMenu::PHONE_WIDTH,PhoneMenu::PHONE_HEIGHT,60)
+    @lib_overlay_alpha = nil
+    lib_apply_overlay_alpha(@wcf_phone_origin == :phone ? PhoneMenu::MAIN_OVERLAY_OPACITY : 240)
+    [@background_sprite,@lib_overlay].each do |sprite|
+      sprite.ox, sprite.oy = PhoneMenu::PHONE_WIDTH/2,PhoneMenu::PHONE_HEIGHT/2
+      sprite.x, sprite.y = Graphics.width/2,Graphics.height/2
+    end
+  end
+
+  def lib_apply_overlay_alpha(value)
+    value = value.round
+    return if @lib_overlay_alpha == value
+    @lib_overlay_alpha = value
+    @lib_overlay.bitmap.clear
+    ps_round(@lib_overlay.bitmap,12,16,PhoneMenu::PHONE_WIDTH-24,
+      PhoneMenu::PHONE_HEIGHT-32,18,Color.new(9,14,28,value))
+  end
+
+  def lib_set_angle(angle)
+    radians = angle*Math::PI/180.0
+    width = PhoneMenu::PHONE_WIDTH*Math.cos(radians).abs + PhoneMenu::PHONE_HEIGHT*Math.sin(radians).abs
+    height = PhoneMenu::PHONE_WIDTH*Math.sin(radians).abs + PhoneMenu::PHONE_HEIGHT*Math.cos(radians).abs
+    scale = [1.0,(Graphics.width-20).to_f/width,(Graphics.height-20).to_f/height].min
+    [@background_sprite,@lib_overlay].each do |sprite|
+      sprite.angle = angle
+      sprite.zoom_x = sprite.zoom_y = scale
+    end
+  end
+
+  def lib_update_rotation
+    @lib_rotation_frame += 1
+    progress = [@lib_rotation_frame.to_f/LIB_ROTATION_FRAMES,1.0].min
+    eased = progress*progress*(3.0-2.0*progress)
+    closing = @lib_rotation_mode == :closing
+    lib_set_angle(90.0*(closing ? 1.0-eased : eased))
+    lib_apply_overlay_alpha(PhoneMenu::MAIN_OVERLAY_OPACITY +
+      (240-PhoneMenu::MAIN_OVERLAY_OPACITY)*eased) unless closing
+    return unless progress >= 1.0
+    @lib_rotation_mode = nil
+    if closing
+      wcf_library_return_scene
+    else
+      @lib_panel.visible = true
+    end
+  end
+
+  def return_scene
+    return if @lib_rotation_mode
+    return wcf_library_return_scene unless @wcf_phone_origin == :phone
+    @lib_panel.visible = @lib_full.visible = false
+    @lib_rotation_mode, @lib_rotation_frame = :closing,0
+  end
+
+  def dispose_background
+    Array(@lib_owned).each do |sprite|
+      sprite.bitmap.dispose if sprite.bitmap && !sprite.bitmap.disposed?
+      sprite.dispose unless sprite.disposed?
+    end
+    @lib_owned = []
+  end
+
+  def update
+    super
+    @lib_rotation_mode ? lib_update_rotation : lib_update_input
+  end
+
+  def lib_update_input
+    return if @lib_rotation_mode
+    if Input.trigger?(:B)
+      Sound.play_cancel
+      if @lib_mode == :grid
+        return_scene
+      else
+        @lib_mode = @lib_mode == :full ? :detail : :grid
+        @lib_full.visible = false
+        lib_redraw
+      end
+      return
+    end
+    if @lib_mode == :grid
+      step = Input.repeat?(:RIGHT) ? 1 : 0
+      step = -1 if Input.repeat?(:LEFT)
+      step = LIB_COLUMNS if Input.repeat?(:DOWN)
+      step = -LIB_COLUMNS if Input.repeat?(:UP)
+      step = LIB_PER_PAGE if Input.trigger?(:R)
+      step = -LIB_PER_PAGE if Input.trigger?(:L)
+      if step != 0
+        index = [[@lib_index+step,0].max,@lib_entries.size-1].min
+        if index != @lib_index
+          @lib_index = index
+          Sound.play_cursor
+          lib_redraw
+        end
+      elsif Input.trigger?(:C)
+        if WCFItemLibrary.unlocked?(@lib_entries[@lib_index][:key])
+          Sound.play_ok
+          @lib_mode = :detail
+          lib_redraw
+        else
+          Sound.play_buzzer
+        end
+      end
+    elsif Input.trigger?(:C)
+      @lib_mode = @lib_mode == :detail ? :full : :detail
+      Sound.play_ok
+      lib_redraw
+    end
+  end
+
+  def lib_focus_rect(entry,source)
+    focus = LIB_FOCUS[entry[:picture].downcase]
+    base_w, base_h = focus ? 544.0 : 640.0,focus ? 416.0 : 480.0
+    focus ||= [220,96,204,198]
+    Rect.new((focus[0]*source.width/base_w).round,(focus[1]*source.height/base_h).round,
+      (focus[2]*source.width/base_w).round,(focus[3]*source.height/base_h).round)
+  end
+
+  def lib_art(bmp,entry,x,y,width,height,focus = false)
+    if entry[:picture]
+      source = Cache.picture(entry[:picture])
+      rect = focus ? lib_focus_rect(entry,source) : source.rect
+      scale = [width.to_f/rect.width,height.to_f/rect.height].min
+      w, h = (rect.width*scale).to_i,(rect.height*scale).to_i
+      bmp.stretch_blt(Rect.new(x+(width-w)/2,y+(height-h)/2,w,h),source,rect)
+    else
+      source = Cache.system("Iconset")
+      icon = entry[:icon] || 0
+      size = [width,height,96].min
+      bmp.stretch_blt(Rect.new(x+(width-size)/2,y+(height-size)/2,size,size),source,
+        Rect.new(icon%16*24,icon/16*24,24,24))
+    end
+  end
+
+  def lib_redraw
+    bmp = @lib_panel.bitmap
+    bmp.clear
+    @lib_full.visible = @lib_mode == :full
+    return lib_draw_full if @lib_mode == :full
+    return lib_draw_detail(bmp) if @lib_mode == :detail
+    count = @lib_entries.count { |entry| WCFItemLibrary.unlocked?(entry[:key]) }
+    ps_text(bmp,26,16,280,30,"Thư viện vật phẩm",23,nil,0,true)
+    ps_text(bmp,310,23,122,20,"#{count}/#{@lib_entries.size} đã gặp",15,Color.new(187,201,226),2)
+    page = @lib_index/LIB_PER_PAGE
+    LIB_PER_PAGE.times do |index|
+      entry = @lib_entries[page*LIB_PER_PAGE+index]
+      x, y = 26+index%LIB_COLUMNS*68,70+index/LIB_COLUMNS*68
+      selected = page*LIB_PER_PAGE+index == @lib_index
+      ps_round(bmp,x,y,62,62,6,selected ? Color.new(194,210,255) : Color.new(86,106,136))
+      ps_round(bmp,x+1,y+1,60,60,5,selected ? Color.new(51,67,105) : Color.new(22,34,55))
+      next unless entry
+      if WCFItemLibrary.unlocked?(entry[:key])
+        lib_art(bmp,entry,x+4,y+4,54,54,true)
+      else
+        ps_text(bmp,x+4,y+9,54,44,"?",30,Color.new(131,147,178),1)
+      end
+    end
+    pages = (@lib_entries.size+LIB_PER_PAGE-1)/LIB_PER_PAGE
+    note = WCFItemLibrary.persistence_error? ? "Chưa ghi được bộ sưu tập lên đĩa." : "Bộ sưu tập qua các lượt chơi"
+    ps_text(bmp,28,46,290,18,note,13,Color.new(187,201,226))
+    ps_text(bmp,332,46,100,18,"Trang #{page+1}/#{pages}",14,Color.new(187,201,226),2)
+    entry = @lib_entries[@lib_index]
+    name = WCFItemLibrary.unlocked?(entry[:key]) ? entry[:name] : "Chưa khám phá"
+    ps_text(bmp,28,275,404,23,name,19,nil,1,true)
+    ps_text(bmp,28,305,404,19,"↑↓←→ Chọn   Q/W Trang   Z Xem   X Về",14,nil,1)
+  end
+
+  def lib_draw_detail(bmp)
+    entry = @lib_entries[@lib_index]
+    ps_text(bmp,26,18,408,30,entry[:name],23,nil,0,true)
+    bmp.fill_rect(26,68,220,194,Color.new(0,0,0,240))
+    lib_art(bmp,entry,32,74,208,182,true)
+    ps_wrapped(bmp,262,80,170,entry[:description],17,23,7,Color.new(204,216,240))
+    ps_text(bmp,28,277,404,21,"Đã lưu trong bộ sưu tập.",15,Color.new(187,201,226),1)
+    ps_text(bmp,28,305,404,21,"Z Xem ảnh gốc   X Quay lại",16,nil,1)
+  end
+
+  def lib_draw_full
+    bmp = @lib_full.bitmap
+    bmp.fill_rect(bmp.rect,Color.new(0,0,0))
+    entry = @lib_entries[@lib_index]
+    ps_text(bmp,24,8,Graphics.width-48,30,entry[:name],22,nil,1,true)
+    lib_art(bmp,entry,20,44,Graphics.width-40,Graphics.height-92)
+    ps_text(bmp,24,Graphics.height-32,Graphics.width-48,24,"Z / X Quay lại",17,nil,1)
   end
 end

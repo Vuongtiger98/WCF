@@ -85,10 +85,12 @@ module Graphics
   def self.height; 480; end
 end
 eval(script_source('Custom Menu')[/^module PhoneMenu.*?^end/m], TOPLEVEL_BINDING, 'PhoneMenu configuration')
+eval(script_source('Custom Menu')[/^module WCFPhoneDrawing.*?^end/m], TOPLEVEL_BINDING, 'Shared phone drawing') unless BASELINE
 module Cache
   def self.load_bitmap(_folder, _name); @shared ||= Bitmap.new; end
 end
 class Scene_Menu
+  include WCFPhoneDrawing unless BASELINE
   source = script_source('Custom Menu')
   [:draw_main_panel,:refresh_main_panel,:simple_text_width,:create_foreground,
    :icon_bitmap_name,:make_circle_highlight,:fill_round_rect,:draw_filled_circle,
@@ -97,7 +99,8 @@ class Scene_Menu
   end
   class_eval(method_source(source, :phone_panel_values), 'Custom Menu.rb') unless BASELINE
   unless BASELINE
-    [:phone_text,:phone_card,:phone_footer,:phone_widget_label].each do |name|
+    [:phone_text,:phone_card,:phone_footer,:phone_widget_label,:create_phone_unread_badge,
+     :update_phone_unread_badge].each do |name|
       class_eval(method_source(source,name),'Custom Menu.rb')
     end
   end

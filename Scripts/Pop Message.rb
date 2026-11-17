@@ -351,10 +351,16 @@ class Window_Message < Window_Base
   def pop_message_map_effect_point(screen_x, screen_y)
     effects = $game_map.effects rescue nil
     return [screen_x, screen_y] unless effects && effects.active?
+    scene = SceneManager.scene
+    spriteset = scene && scene.instance_variable_get(:@spriteset)
+    renderer = spriteset && spriteset.instance_variable_get(:@map_effects)
+    if renderer && renderer.respond_to?(:wcf_screen_point)
+      return renderer.wcf_screen_point(screen_x,screen_y).map { |value| value.round }
+    end
     dx = (screen_x - effects.ox) * effects.zoom_x
     dy = (screen_y - effects.oy) * effects.zoom_y
     dx = -dx if effects.mirror
-    angle = effects.angle.to_f * Math::PI / 180.0
+    angle = -effects.angle.to_f * Math::PI / 180.0
     cosine = Math.cos(angle)
     sine = Math.sin(angle)
     x = effects.x + dx * cosine - dy * sine
@@ -490,6 +496,7 @@ class Window_Message < Window_Base
   #--------------------------------------------------------------------------
   def cancel_pop_message
     @pop_message_id = nil
+    @wcf_pop_backdrop.visible = false if @wcf_pop_backdrop
     # Restore the normal 4-line window before calculating its screen
     # position. A pop window is usually much shorter; positioning that short
     # window first and enlarging it afterwards leaves bottom messages below
@@ -504,6 +511,7 @@ class Window_Message < Window_Base
   # called scene is pushed or its arrow remains above that scene.
   def force_clear_pop_message_visuals
     @pop_message_id = nil
+    @wcf_pop_backdrop.visible = false if @wcf_pop_backdrop
     @bubble_sprite.opacity = 0 if @bubble_sprite
     @face_window.hide_face if @face_window
     self.pause = false
@@ -591,6 +599,33 @@ class Window_Message < Window_Base
       @bubble_sprite.update 
       @bubble_sprite.z = self.z
     end
+    update_wcf_pop_backdrop
+  end
+
+  def update_wcf_pop_backdrop
+    shown = @pop_message_id && self.visible && self.openness > 0
+    if shown && !@wcf_pop_backdrop
+      @wcf_pop_backdrop = Sprite.new
+      @wcf_pop_backdrop.bitmap = Bitmap.new(1,1)
+      @wcf_pop_backdrop.bitmap.fill_rect(0,0,1,1,Color.new(6,12,22,160))
+    end
+    return unless @wcf_pop_backdrop
+    @wcf_pop_backdrop.visible = !!shown
+    return unless shown
+    @wcf_pop_backdrop.x,@wcf_pop_backdrop.y = self.x+8,self.y+8
+    @wcf_pop_backdrop.zoom_x,@wcf_pop_backdrop.zoom_y = [self.width-16,1].max,[self.height-16,1].max
+    @wcf_pop_backdrop.z = self.z-1
+    @wcf_pop_backdrop.opacity = self.openness
+  end
+
+  alias wcf_pop_readability_dispose dispose
+  def dispose
+    if @wcf_pop_backdrop
+      @wcf_pop_backdrop.bitmap.dispose
+      @wcf_pop_backdrop.dispose
+      @wcf_pop_backdrop = nil
+    end
+    wcf_pop_readability_dispose
   end
   
   #--------------------------------------------------------------------------

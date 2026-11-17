@@ -70,6 +70,8 @@ module SceneManager
 end
 class Scene_MenuBase
   def transition_speed; 10; end
+  def return_scene; @returned=true; end
+  def update; end
 end
 class Scene_File < Scene_MenuBase
   attr_reader :returned,:loaded,:save_callbacks
@@ -161,7 +163,7 @@ class PhoneSaveLoadTest < Minitest::Test
   def text(obj)
     obj.instance_variable_get(:@ps_panel).bitmap.draws.map { |draw| draw[4] }.join("\n")
   end
-  def choose_action(obj,ordinal=1)
+  def choose_action(obj,ordinal=0)
     press(obj,:C)
     ordinal.times { press(obj,:DOWN) }
     press(obj,:C)
@@ -293,7 +295,9 @@ class PhoneSaveLoadTest < Minitest::Test
     before=File.binread(DataManager.make_filename(0))
     obj=scene
     press(obj,:C)
-    press(obj,:C) # Default action is Back.
+    press(obj,:UP) # Back is last; Up wraps to it from the primary action.
+    press(obj,:C)
+    assert_equal :list,obj.instance_variable_get(:@ps_mode)
     choose_action(obj)
     press(obj,:B) # X directly cancels the confirmation.
     assert_equal before,File.binread(DataManager.make_filename(0))
@@ -306,7 +310,7 @@ class PhoneSaveLoadTest < Minitest::Test
   def test_deletion_is_secondary_and_only_runs_after_confirmation
     put(0,DataManager.make_save_header)
     obj=scene
-    choose_action(obj,2)
+    choose_action(obj,1)
     assert File.exist?(DataManager.make_filename(0))
     confirm(obj)
     refute File.exist?(DataManager.make_filename(0))
@@ -353,7 +357,7 @@ class PhoneSaveLoadTest < Minitest::Test
   def test_every_screen_stays_inside_phone_and_does_not_show_internal_stats
     3.times { |i| put(i,DataManager.make_save_header) }
     obj=scene
-    [lambda {},lambda { press(obj,:C) },lambda { press(obj,:DOWN); press(obj,:C) }].each do |change|
+    [lambda {},lambda { press(obj,:C) },lambda { press(obj,:C) }].each do |change|
       change.call
       bmp=obj.instance_variable_get(:@ps_panel).bitmap
       bmp.draws.each do |x,y,w,h,value,align,measured|
@@ -514,7 +518,7 @@ class PhoneSaveLoadTest < Minitest::Test
   end
 
   def test_x_cancels_each_confirmation_even_if_z_is_pressed_at_the_same_time
-    [[:save,Scene_Save,1],[:load,Scene_Load,1],[:delete,Scene_Save,2]].each do |action,type,ordinal|
+    [[:save,Scene_Save,0],[:load,Scene_Load,0],[:delete,Scene_Save,1]].each do |action,type,ordinal|
       put(0,DataManager.make_save_header)
       before=File.binread(DataManager.make_filename(0))
       obj=scene(type)
@@ -536,9 +540,57 @@ class PhoneSaveLoadTest < Minitest::Test
     choose_action(obj)
     assert_includes text(obj),'Ghi đè Bản lưu 01?'
     assert_includes text(obj),'Đang có · Bản lưu 01'
-    assert_includes text(obj),'Hủy (X)'
-    assert_includes text(obj),'Ghi đè (Z)'
+    assert_includes text(obj),'Nhấn X để hủy'
+    assert_includes text(obj),'Nhấn Z để ghi đè'
     refute_match(/[↑↓←→]/,text(obj))
+  end
+
+  def test_each_confirmation_renders_one_keyboard_guide_without_action_buttons
+    [[:save,:empty,'lưu'],[:save,:ready,'ghi đè'],[:load,:ready,'tải'],[:delete,:ready,'xóa']].each do |action,state,label|
+      if state == :empty
+        File.delete(DataManager.make_filename(0)) if File.exist?(DataManager.make_filename(0))
+      else
+        put(0,DataManager.make_save_header)
+      end
+      obj=scene(action == :load ? Scene_Load : Scene_Save)
+      obj.instance_variable_set(:@ps_mode,:confirm)
+      obj.instance_variable_set(:@ps_pending,action)
+      obj.instance_variable_set(:@ps_preview,WCFPhoneSaveRecord.capture) if action == :save
+      def obj.ps_button(*args); raise 'Confirmation must not draw selectable buttons'; end
+      obj.ps_redraw
+      assert_includes text(obj),'HƯỚNG DẪN PHÍM'
+      assert_includes text(obj),"Nhấn Z để #{label}"
+      assert_includes text(obj),'Nhấn X để hủy'
+      refute_match(/\([ZX]\)|[↑↓←→]/,text(obj))
+    end
+  end
+
+  def test_primary_action_is_first_back_is_last_and_z_opens_confirmation
+    [Scene_Save,Scene_Load].each do |type|
+      put(0,DataManager.make_save_header)
+      obj=scene(type)
+      primary=type == Scene_Save ? :save : :load
+      assert_equal [primary,:delete,:back],obj.ps_actions.map(&:last)
+      press(obj,:C)
+      assert_equal 0,obj.instance_variable_get(:@ps_choice)
+      press(obj,:C)
+      assert_equal :confirm,obj.instance_variable_get(:@ps_mode)
+      assert_equal primary,obj.instance_variable_get(:@ps_pending)
+      assert_nil DataManager.saved
+      assert_nil obj.loaded
+      press(obj,:B)
+    end
+    File.delete(DataManager.make_filename(0))
+    obj=scene
+    assert_equal [:save,:back],obj.ps_actions.map(&:last)
+    $game_system.save_disabled=true
+    assert_equal [:back],obj.ps_actions.map(&:last)
+    put(0,DataManager.make_save_header)
+    obj.instance_variable_get(:@ps_cache).clear
+    assert_equal [:delete,:back],obj.ps_actions.map(&:last)
+    File.binwrite(DataManager.make_filename(0),'broken save')
+    obj=scene(Scene_Load)
+    assert_equal [:delete,:back],obj.ps_actions.map(&:last)
   end
 
   def test_all_phone_hints_use_z_x_and_save_details_have_explicit_field_labels

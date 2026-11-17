@@ -16,14 +16,16 @@ Mọi choice trung gian trong Test Hub phải có phương án Hủy và không 
 ## Siêu thị — 16 tổ hợp quà/người nhận
 
 ```text
-Map010 → Map019 → Map037 → Map038 → Map039 → Map036 → Title
+Map010 → Map019 → Common Event 019 → [Map040 nếu máy pha cà phê]
+→ Map037 → Map038 → Map039 → Map036 → Title
 ```
 
 - Variable 42 `MKT_GIFT`: máy pha cà phê, dao/chảo, đồ đan, bộ phá khóa.
 - Variable 43 `MKT_TARGET`: Leo, Kohi, Shylvie, Hakase.
 - Map037 dùng hai biến này để chọn một trong 16 cảnh chuẩn bị.
 - Map038 chọn đúng scene tiệc và mở free roam/ném tuyết.
-- Map039 chạy epilogue tương ứng. Riêng máy pha cà phê có nhánh cà phê thường hoặc đi câu cà phê Atlantis qua Map040.
+- Common Event 019 xử lý thanh toán và chat chọn người nhận. Máy pha cà phê đi qua Map040 để chọn cà phê thường/đi câu Atlantis **trước Map037**; các quà khác tới thẳng Map037. S52 lưu kết quả cà phê Atlantis để dùng ở các đoạn có điều kiện sau đó.
+- Map039 chạy epilogue tương ứng rồi tới Map036; không chuyển qua Map040. Đường vào Map040 đã được xác nhận bằng lượt [test siêu thị 17/11/2026](../production/market-route-test-2026-11-17.md).
 - Map036 dùng `ENDING_HINT_ID` 2–17.
 
 ## Mì cay cho Leo

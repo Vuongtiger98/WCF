@@ -11,3 +11,12 @@
 
 # Local project archives
 /*.7z
+
+# Local distribution builds and updater state
+/dist/
+/gameupdate/installed.json
+/gameupdate/update.log
+/gameupdate/update.lock
+/gameupdate/pending.json
+/gameupdate/last-success.json
+/gameupdate/backups/
