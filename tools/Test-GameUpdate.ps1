@@ -170,7 +170,8 @@ try {
         $runningProcess.Dispose()
     }
     Set-TestFile $game '.git' 'developer marker'
-    Assert-Update ((Assert-WcfGameRoot $game) -eq [IO.Path]::GetFullPath($game)) 'project folder is accepted even with a Git marker'
+    $accepted=& $module {param($g) Assert-WcfGameRoot $g} $game
+    Assert-Update ($accepted -eq [IO.Path]::GetFullPath($game)) 'project folder is accepted even with a Git marker'
     [IO.File]::Delete((Join-Path $game '.git'))
     $held=New-Object IO.FileStream((Join-Path $game 'gameupdate/update.lock'),[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
     try {Expect-UpdateFailure {Invoke-WcfUpdate -GameRoot $game -PackageDirectory (Join-Path $v2 'release')} 'concurrent updater is rejected'} finally {$held.Dispose()}

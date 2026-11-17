@@ -7,7 +7,12 @@ $script:GameId = 'wonder-christmas-fiesta'
 $script:Utf8 = New-Object System.Text.UTF8Encoding($false)
 
 function Get-WcfHash([string]$Path) {
-    (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+    # RGSS is 32-bit. Use .NET directly instead of relying on the availability
+    # of the Get-FileHash helper in a particular PowerShell/module environment.
+    $stream=[IO.File]::OpenRead($Path)
+    $hash=[Security.Cryptography.SHA256]::Create()
+    try { ([BitConverter]::ToString($hash.ComputeHash($stream))).Replace('-','').ToLowerInvariant() }
+    finally { $hash.Dispose();$stream.Dispose() }
 }
 
 function ConvertTo-WcfVersion([string]$Version) {
@@ -232,6 +237,42 @@ function Select-WcfRelease($Releases,[string]$Channel) {
     $chosen
 }
 
+# Startup only compares versions: never scan/hash the entire game at boot.
+function Get-WcfStartupVersion {
+    param([string]$GameRoot,[string]$CurrentVersion,[object[]]$Releases,[int]$TimeoutSeconds=4)
+    $root=Assert-WcfGameRoot $GameRoot
+    $current=$CurrentVersion
+    $null=ConvertTo-WcfVersion $current
+    $installed=Resolve-WcfChild $root 'gameupdate/installed.json'
+    if (Test-Path -LiteralPath $installed) {
+        try {
+            $state=Read-WcfJson $installed
+            if ($state.gameId -eq $script:GameId -and (Compare-WcfVersion $state.version $current) -gt 0) { $current=$state.version }
+        } catch { }
+    }
+    if (Test-Path -LiteralPath (Resolve-WcfChild $root 'gameupdate/pending.json')) {
+        return [pscustomobject]@{status='recovery';version=$current;current=$current}
+    }
+    $config=Read-WcfJson (Resolve-WcfChild $root 'gameupdate/config.json') 65536
+    if ($config.schemaVersion -ne 1 -or $config.owner -notmatch '^[A-Za-z0-9][A-Za-z0-9-]*$' -or
+        $config.repo -notmatch '^[A-Za-z0-9][A-Za-z0-9_.-]*$') { throw 'Invalid update repository configuration.' }
+    if (!$PSBoundParameters.ContainsKey('Releases')) {
+        [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12
+        $Releases=Invoke-RestMethod -UseBasicParsing -Uri ('https://api.github.com/repos/'+$config.owner+'/'+$config.repo+'/releases?per_page=100') -TimeoutSec $TimeoutSeconds -Headers @{
+            'User-Agent'='WCF-Updater/1';'Accept'='application/vnd.github+json';'X-GitHub-Api-Version'='2026-03-10'
+        }
+    }
+    $release=Select-WcfRelease $Releases $config.channel
+    if (!$release) { return [pscustomobject]@{status='no-release';version=$current;current=$current} }
+    $version=([string]$release.tag_name) -creplace '^v',''
+    $status=if ((Compare-WcfVersion $version $current) -gt 0) {'available'} else {'up-to-date'}
+    [pscustomobject]@{status=$status;version=$version;current=$current}
+}
+
+function Send-WcfProgress([scriptblock]$Callback,[string]$Stage,[int]$Done,[int]$Total) {
+    if ($Callback) { try { & $Callback ([pscustomobject]@{stage=$Stage;done=$Done;total=$Total}) | Out-Null } catch { } }
+}
+
 function Get-WcfRemoteSource([string]$Root,[string]$Work) {
     $config=Read-WcfJson (Resolve-WcfChild $Root 'gameupdate/config.json') 65536
     if ($config.schemaVersion -ne 1 -or $config.owner -notmatch '^[A-Za-z0-9][A-Za-z0-9-]*$' -or
@@ -281,10 +322,12 @@ function Expand-WcfPackage([string]$Archive,[string]$Stage,$Package,$Manifest) {
     } finally { $zip.Dispose() }
 }
 
-function Get-WcfStagedFiles($Source,$Plan,[string]$Work) {
+function Get-WcfStagedFiles($Source,$Plan,[string]$Work,[scriptblock]$Progress) {
     $stage=Join-Path $Work 'files'; [IO.Directory]::CreateDirectory($stage) | Out-Null
     $needed=@($Plan.writes | Select-Object -ExpandProperty package -Unique)
+    $downloaded=0
     foreach ($name in $needed) {
+        Send-WcfProgress $Progress 'download' $downloaded $needed.Count
         $p=@($Source.manifest.packages | Where-Object {$_.name -ceq $name})[0]
         $archive=Join-Path $Work $name
         Write-Host ('Downloading package: '+$name)
@@ -298,6 +341,8 @@ function Get-WcfStagedFiles($Source,$Plan,[string]$Work) {
             Save-WcfDownload $assets[0].browser_download_url $archive ([long]$p.size)
         }
         Expand-WcfPackage $archive $stage $p $Source.manifest
+        $downloaded++
+        Send-WcfProgress $Progress 'download' $downloaded $needed.Count
     }
     $stage
 }
@@ -368,7 +413,7 @@ function Repair-WcfInterruptedUpdate([string]$Root) {
     return $true
 }
 
-function Invoke-WcfTransaction([string]$Root,$Manifest,$Plan,[string]$Stage,[scriptblock]$AfterApply) {
+function Invoke-WcfTransaction([string]$Root,$Manifest,$Plan,[string]$Stage,[scriptblock]$AfterApply,[scriptblock]$Progress) {
     Assert-WcfGameClosed $Root
     $id=[guid]::NewGuid().ToString('N'); $folder=Get-WcfTransactionPath $Root $id
     [IO.Directory]::CreateDirectory($folder) | Out-Null
@@ -400,12 +445,14 @@ function Invoke-WcfTransaction([string]$Root,$Manifest,$Plan,[string]$Stage,[scr
     try {
         Assert-WcfGameClosed $Root
         $index=0
+        Send-WcfProgress $Progress 'install' 0 $Plan.writes.Count
         foreach ($f in @($Plan.writes)) {
             Assert-WcfGameClosed $Root
             $source=Resolve-WcfChild $Stage $f.path
             if ((Get-WcfHash $source) -ne $f.sha256) { throw 'Staged file changed before apply.' }
             Copy-WcfAtomicFile $source (Resolve-WcfChild $Root $f.path)
             $index++
+            if ($index % 25 -eq 0 -or $index -eq $Plan.writes.Count) { Send-WcfProgress $Progress 'install' $index $Plan.writes.Count }
             if ($AfterApply) { & $AfterApply $index }
         }
         foreach ($path in @($Plan.deletes)) { Assert-WcfGameClosed $Root; [IO.File]::Delete((Resolve-WcfChild $Root $path)) }
@@ -428,7 +475,7 @@ function Invoke-WcfTransaction([string]$Root,$Manifest,$Plan,[string]$Stage,[scr
 function Invoke-WcfUpdate {
     [CmdletBinding()]
     param([Parameter(Mandatory=$true)][string]$GameRoot,[string]$PackageDirectory,
-        [switch]$CheckOnly,[switch]$Rollback)
+        [switch]$CheckOnly,[switch]$Rollback,[scriptblock]$Progress)
     $root=Assert-WcfGameRoot $GameRoot
     Assert-WcfGameClosed $root
     $lockPath=Resolve-WcfChild $root 'gameupdate/update.lock'
@@ -439,6 +486,7 @@ function Invoke-WcfUpdate {
     try {
         [IO.Directory]::CreateDirectory($work) | Out-Null
         Write-WcfLog $root 'Update started'
+        Send-WcfProgress $Progress 'checking' 0 0
         $recovered=Repair-WcfInterruptedUpdate $root
         if ($Rollback) {
             $last=Resolve-WcfChild $root 'gameupdate/last-success.json'
@@ -481,8 +529,8 @@ function Invoke-WcfUpdate {
         if ($CheckOnly) {
             return [pscustomobject]@{status='available'; message=('Update '+$manifest.version+' is available. No game files changed.'); writes=$plan.writes.Count; deletes=$plan.deletes.Count}
         }
-        $stage=Get-WcfStagedFiles $source $plan $work
-        $null=Invoke-WcfTransaction $root $manifest $plan $stage
+        $stage=Get-WcfStagedFiles $source $plan $work $Progress
+        $null=Invoke-WcfTransaction $root $manifest $plan $stage -Progress $Progress
         $message='WCF updated to '+$manifest.version+'. Your saves and settings have been kept.'
         if ($manifest.requiresNewGame) { $message += ' Start a New Game for this version.' }
         [pscustomobject]@{status='updated'; message=$message}
@@ -501,4 +549,4 @@ function Invoke-WcfUpdate {
 }
 
 Export-ModuleMember -Function Get-WcfHash,ConvertTo-WcfVersion,Compare-WcfVersion,Assert-WcfRelativePath,
-    Test-WcfManagedPath,Resolve-WcfChild,Write-WcfJson,Read-WcfJson,Read-WcfManifest,Select-WcfRelease,Invoke-WcfUpdate
+    Test-WcfManagedPath,Resolve-WcfChild,Write-WcfJson,Read-WcfJson,Read-WcfManifest,Select-WcfRelease,Get-WcfStartupVersion,Invoke-WcfUpdate

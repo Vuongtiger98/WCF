@@ -15,7 +15,7 @@ Bộ cập nhật đọc Release đã công bố của `Vuongtiger98/WCF`, tìm 
 
 Draft luôn bị bỏ qua. Phiên bản thấp hơn bản đã cài không được tự động cài đè. Cùng một phiên bản có thể sửa lại file bị thiếu hoặc hỏng.
 
-Đây là bộ cập nhật bên ngoài game. Chưa thêm thông báo kiểm tra phiên bản trong menu RGSS3.
+Từ `0.1.0-test.3`, `Game.exe` có màn hình kiểm tra phiên bản trước Title và tự chuyển sang cửa sổ cập nhật khi có bản mới; hoàn tất thì tự mở lại game. Không có bản mới/mất mạng thì vào game. Tải/cài vẫn chạy ngoài RGSS, giữ nguyên cơ chế backup/rollback. [Thiết kế và bằng chứng startup](../scripts/startup-update-2026-11-17.md).
 
 ## Phạm vi file và dữ liệu người chơi
 

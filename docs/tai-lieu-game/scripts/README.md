@@ -65,3 +65,5 @@ ruby -W0 tools/script_inventory.rb check-phone-shortcuts-scope
 Khi thay script runtime, chỉ thay source nén của đúng slot đã xác định theo tên. Giữ nguyên số slot, ID, tên và thứ tự; tạo backup trước khi sửa và kiểm tra các slot ngoài phạm vi không thay đổi.
 
 Save/Load theo theme điện thoại và cách kiểm tra: [phone-save-load-2026-11-16.md](phone-save-load-2026-11-16.md).
+
+Kiểm tra cập nhật trước Title, chuyển sang updater và tự mở lại game: [startup-update-2026-11-17.md](startup-update-2026-11-17.md).
