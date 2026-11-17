@@ -52,6 +52,7 @@ try {
         Set-TestFile $seed $p ('v1 '+$p)
     }
     Set-TestFile $seed 'Game.ini' "[Game]`r`nTitle=Wonder Christmas Fiesta`r`nLibrary=System\RGSS301.dll`r`nScripts=Data\Scripts.rvdata2`r`n"
+    Set-TestFile $seed 'Game.rvproj2' 'RPGVXAce 1.02'
     $image='Graphics/Pictures/$H'+[char]0x1EA3+'i Qu'+[char]0x1EF3+' [1]! %.png'
     Set-TestFile $seed $image 'picture one'
     Set-TestFile $seed 'Graphics/Pictures/source.psd' 'not for players'
@@ -169,7 +170,7 @@ try {
         $runningProcess.Dispose()
     }
     Set-TestFile $game '.git' 'developer marker'
-    Expect-UpdateFailure {Invoke-WcfUpdate -GameRoot $game -PackageDirectory (Join-Path $v2 'release')} 'source checkout is protected'
+    Assert-Update ((Assert-WcfGameRoot $game) -eq [IO.Path]::GetFullPath($game)) 'project folder is accepted even with a Git marker'
     [IO.File]::Delete((Join-Path $game '.git'))
     $held=New-Object IO.FileStream((Join-Path $game 'gameupdate/update.lock'),[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
     try {Expect-UpdateFailure {Invoke-WcfUpdate -GameRoot $game -PackageDirectory (Join-Path $v2 'release')} 'concurrent updater is rejected'} finally {$held.Dispose()}

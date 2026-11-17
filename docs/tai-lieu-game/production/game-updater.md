@@ -1,6 +1,6 @@
 # Bộ cập nhật game trên Windows
 
-Trạng thái ngày 17/11/2026: đã công bố [bản tester **0.1.0-test.1**](https://github.com/Vuongtiger98/WCF/releases/tag/v0.1.0-test.1), gắn với commit `2a8cfd7a5127a02db7b221eb9fe24156ac296257`; [ghi chú bản phát hành](releases/0.1.0-test.1.md). Đã kiểm tra cập nhật qua đường tải công khai không dùng tài khoản GitHub. Thư mục `dist/` chứa kết quả đóng gói và được Git bỏ qua.
+Trạng thái ngày 17/11/2026: đã công bố [bản tester **0.1.0-test.1**](https://github.com/Vuongtiger98/WCF/releases/tag/v0.1.0-test.1), gắn với commit `2a8cfd7a5127a02db7b221eb9fe24156ac296257`; [ghi chú bản phát hành](releases/0.1.0-test.1.md). Bản tiếp theo [0.1.0-test.2](releases/0.1.0-test.2.md) bỏ chốt chặn thư mục dự án và bổ sung `Game.rvproj2`; tác giả yêu cầu không chạy lại test và sẽ tự kiểm tra. Thư mục `dist/` chứa kết quả đóng gói và được Git bỏ qua.
 
 ## Cách hoạt động
 
@@ -19,7 +19,7 @@ Draft luôn bị bỏ qua. Phiên bản thấp hơn bản đã cài không đư�
 
 ## Phạm vi file và dữ liệu người chơi
 
-Các file chính thức được quản lý gồm `Game.exe`, `Game.ini`, DLL Khas, `Data/*.rvdata2`, tài nguyên ảnh/âm thanh/video, thư viện `System` và bản thân bộ cập nhật. Gói tải chia theo Data, System, từng nhóm Graphics/Audio và phần runtime. Chỉ nhóm có file khác bản cài đặt mới cần tải; sau khi xác minh, chỉ file khác hoặc thiếu được thay.
+Các file chính thức được quản lý gồm `Game.exe`, `Game.ini`, `Game.rvproj2`, DLL Khas, `Data/*.rvdata2`, tài nguyên ảnh/âm thanh/video, thư viện `System` và bản thân bộ cập nhật. Gói tải chia theo Data, System, từng nhóm Graphics/Audio và phần runtime. Chỉ nhóm có file khác bản cài đặt mới cần tải; sau khi xác minh, chỉ file khác hoặc thiếu được thay.
 
 Manifest mô tả toàn bộ phiên bản đích. Vì vậy có thể cập nhật qua nhiều phiên bản, không cần lần lượt cài từng bản vá. File chính thức bị bỏ ở phiên bản mới chỉ được xóa nếu manifest đã cài trước đó xác nhận nó thuộc game. File lạ không tự động bị xóa. Mod trùng đường dẫn với file chính thức có thể được thay bằng bản chính thức.
 
@@ -36,7 +36,9 @@ Các dữ liệu sau không nằm trong gói cập nhật:
 
 Giữ save không có nghĩa mọi save đều tương thích. Tác giả có thể đánh dấu `requiresNewGame`; updater sẽ hiện yêu cầu chơi mới nhưng vẫn giữ save cũ. Cờ này chỉ thông báo, không tự đổi hoặc xóa dữ liệu save.
 
-Không chạy updater trong thư mục làm việc RPG Maker: nó chủ động từ chối thư mục có `.git`, `Game.rvproj2` hoặc danh mục xuất script. Chỉ hỗ trợ bản game giải nén, không trộn với `Game.rgss3a`.
+Từ `0.1.0-test.2`, theo yêu cầu tác giả, updater không chặn thư mục dự án, `.git`, `Game.rvproj2` hoặc danh mục xuất script. Bản tester có `Game.rvproj2` để mở trong RPG Maker UI. Đóng game và RPG Maker trước khi cập nhật. Chỉ hỗ trợ bản game giải nén, không trộn với `Game.rgss3a`.
+
+Người đang dùng updater `0.1.0-test.1` cần giải nén gói bootstrap mới một lần trước khi cập nhật: bản cũ còn chốt chặn và chưa cho phép đường dẫn `Game.rvproj2` trong manifest. Bootstrap mới gồm project file, launcher, hai script updater và config.
 
 ## Kiểm tra gói và phục hồi
 
@@ -84,7 +86,7 @@ dist/wcf-0.1.0-test.1/
   build-report.json             Báo cáo build, không phát cho người chơi
 ```
 
-Các nhóm rỗng không tạo ZIP. Bản đầy đủ chứa config và manifest đã cài. Gói bootstrap chỉ chứa launcher, hai script updater và config; dùng một lần để thêm bộ cập nhật vào bản game giải nén cũ. Bộ cập nhật chỉ dùng các ZIP nhóm, không tải lại ZIP game đầy đủ.
+Các nhóm rỗng không tạo ZIP. Bản đầy đủ chứa config và manifest đã cài. Gói bootstrap chứa `Game.rvproj2`, launcher, hai script updater và config; dùng một lần để thêm hoặc nâng bộ cập nhật trong bản game cũ. Bộ cập nhật chỉ dùng các ZIP nhóm, không tải lại ZIP game đầy đủ.
 
 Build lấy đúng trạng thái file đang có, kể cả sửa đổi chưa commit; `sourceCommit` và `sourceDirty` ghi rõ điều đó. Nó không export/repack script, dựng lại map, thay tọa độ event, chỉnh BGM hoặc cập nhật web app. Nên đóng RPG Maker hoặc ngừng lưu project trong lúc build để nguồn không thay đổi giữa các lần đọc.
 

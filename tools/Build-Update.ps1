@@ -19,7 +19,7 @@ foreach ($folder in @('Data','Audio','Graphics','Movies','System','gameupdate'))
     $prefix=(Join-Path $source $folder).TrimEnd('\')+'\'
     if ($out.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase)) { throw 'Output cannot be placed inside runtime source directories.' }
 }
-foreach ($required in @('Game.exe','Game.ini','Data/Scripts.rvdata2','GameUpdate.bat','gameupdate/Update.ps1','gameupdate/WcfUpdater.psm1','gameupdate/config.json')) {
+foreach ($required in @('Game.exe','Game.ini','Game.rvproj2','Data/Scripts.rvdata2','GameUpdate.bat','gameupdate/Update.ps1','gameupdate/WcfUpdater.psm1','gameupdate/config.json')) {
     $path=Resolve-WcfChild $source $required
     if (!(Test-Path -LiteralPath $path -PathType Leaf)) { throw "Missing build input: $required" }
 }
@@ -27,7 +27,7 @@ $release=Join-Path $out 'release'; $game=Join-Path $out 'game'
 [IO.Directory]::CreateDirectory($release) | Out-Null
 [IO.Directory]::CreateDirectory($game) | Out-Null
 $paths=New-Object 'System.Collections.Generic.List[string]'
-foreach ($name in @('Game.exe','Game.ini','Khas Graphics Library.dll','GameUpdate.bat','gameupdate/Update.ps1','gameupdate/WcfUpdater.psm1')) {
+foreach ($name in @('Game.exe','Game.ini','Game.rvproj2','Khas Graphics Library.dll','GameUpdate.bat','gameupdate/Update.ps1','gameupdate/WcfUpdater.psm1')) {
     if (Test-Path -LiteralPath (Join-Path $source $name) -PathType Leaf) { $paths.Add($name) }
 }
 $skipped=@()
@@ -93,7 +93,7 @@ $fullEntries=@($ordered)+@('gameupdate/config.json','gameupdate/installed.json')
 New-WcfBuildZip (Join-Path $release ('wcf-game-'+$Version+'.zip')) $game $fullEntries
 # First-time testers can add the updater to an existing unpacked game without
 # downloading the full game. No installed manifest or player data is included.
-$bootstrapEntries=@('GameUpdate.bat','gameupdate/Update.ps1','gameupdate/WcfUpdater.psm1','gameupdate/config.json')
+$bootstrapEntries=@('Game.rvproj2','GameUpdate.bat','gameupdate/Update.ps1','gameupdate/WcfUpdater.psm1','gameupdate/config.json')
 New-WcfBuildZip (Join-Path $release 'wcf-updater-bootstrap.zip') $game $bootstrapEntries
 Write-WcfJson (Join-Path $out 'build-report.json') ([pscustomobject]@{version=$Version; files=$files.Count;
     packages=$packages.Count; skipped=@($skipped); sourceCommit=$commit; sourceDirty=$dirty; published=$false})

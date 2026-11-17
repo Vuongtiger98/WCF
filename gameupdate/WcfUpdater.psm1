@@ -59,7 +59,7 @@ function Assert-WcfRelativePath([string]$Path) {
 
 function Test-WcfManagedPath([string]$Path) {
     Assert-WcfRelativePath $Path
-    if ($Path -in @('Game.exe','Game.ini','Khas Graphics Library.dll','GameUpdate.bat',
+    if ($Path -in @('Game.exe','Game.ini','Game.rvproj2','Khas Graphics Library.dll','GameUpdate.bat',
         'gameupdate/Update.ps1','gameupdate/WcfUpdater.psm1')) { return $true }
     if ($Path -match '^Data/[^/]+\.rvdata2$') { return $true }
     if ($Path -match '^Graphics/.+\.(png|jpg|jpeg|bmp)$') { return $true }
@@ -146,9 +146,6 @@ function Read-WcfManifest([string]$Path) {
 function Assert-WcfGameRoot([string]$Root) {
     if (!(Test-Path -LiteralPath $Root -PathType Container)) { throw 'Game directory does not exist.' }
     $Root=[IO.Path]::GetFullPath($Root).TrimEnd('\','/')
-    foreach ($marker in @('.git','Game.rvproj2','Scripts/!script_order.csv')) {
-        if (Test-Path -LiteralPath (Join-Path $Root $marker)) { throw 'This is a development project. Update a packaged copy, not your RPG Maker workspace.' }
-    }
     foreach ($p in @('Game.exe','Game.ini','Data/Scripts.rvdata2')) {
         $target=Resolve-WcfChild $Root $p
         if (!(Test-Path -LiteralPath $target -PathType Leaf)) { throw "Not a WCF game installation: $p missing." }
