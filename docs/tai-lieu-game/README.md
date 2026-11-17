@@ -114,7 +114,8 @@ Tên và cách chia file dưới đây là cấu trúc đang được sử dụn
 | `production/post-bus-test-plan-2026-11-17.md` | Kế hoạch kiểm tra sau xe bus, ma trận route và phần loại trừ minigame | Đã chạy siêu thị; các nhóm khác chưa chạy |
 | `production/market-route-test-2026-11-17.md` | 16 tổ hợp siêu thị, 4 lượt cà phê Atlantis giả lập, lỗi tương tác và review nội dung | Đã test, chưa sửa runtime |
 | `production/item-library-descriptions-draft-2026-11-17.md` | Mô tả 45 mục trong Thư viện vật phẩm; loại đèn thử KUL | Đã duyệt và đưa vào game |
-| `production/game-updater.md` | Bộ cập nhật Windows, đóng gói, bảo toàn save và phục hồi | Triển khai cục bộ, chưa tạo Release |
+| `production/game-updater.md` | Bộ cập nhật Windows, đóng gói, bảo toàn save và phục hồi | Đã công bố và kiểm tra cập nhật công khai |
+| `production/releases/0.1.0-test.1.md` | Hướng dẫn tải/cập nhật, thay đổi và lỗi còn biết của bản tester | Đã phát hành 17/11/2026 |
 | `archive/source-map.md` | Ánh xạ từ tài liệu cũ sang tài liệu mới | Bản ánh xạ ban đầu |
 
 ## Mô hình nội dung

@@ -1,6 +1,6 @@
 # Bộ cập nhật game trên Windows
 
-Trạng thái ngày 17/11/2026: đã có bộ cập nhật ngoài game, công cụ đóng gói và kiểm thử cục bộ. Đang chuẩn bị bản tester **0.1.0-test.1** theo yêu cầu tác giả; [ghi chú bản phát hành](releases/0.1.0-test.1.md). Thư mục `dist/` chứa kết quả đóng gói và được Git bỏ qua.
+Trạng thái ngày 17/11/2026: đã công bố [bản tester **0.1.0-test.1**](https://github.com/Vuongtiger98/WCF/releases/tag/v0.1.0-test.1), gắn với commit `2a8cfd7a5127a02db7b221eb9fe24156ac296257`; [ghi chú bản phát hành](releases/0.1.0-test.1.md). Đã kiểm tra cập nhật qua đường tải công khai không dùng tài khoản GitHub. Thư mục `dist/` chứa kết quả đóng gói và được Git bỏ qua.
 
 ## Cách hoạt động
 
@@ -90,7 +90,7 @@ Build lấy đúng trạng thái file đang có, kể cả sửa đổi chưa co
 
 `Game.ini` hiện vẫn có `RTP=RPGVXAce`. Công cụ không thu gom RTP từ máy tác giả; bản đóng gói này vẫn yêu cầu RTP RPG Maker VX Ace. Đây chưa phải bản phát hành độc lập với RTP.
 
-Khi được yêu cầu phát hành sau này: review nội dung bản build, playtest, rồi tạo Release có tag khớp `v<version>` và đính kèm manifest cùng **đầy đủ các ZIP nhóm** của đúng một build. Các file này cần có đủ trong từng Release để người chơi ở bất kỳ phiên bản trước nào cũng cập nhật được. Có thể đính kèm thêm ZIP game đầy đủ cho người tải lần đầu. Hiện chưa thực hiện bước này.
+Quy trình phát hành: review nội dung bản build, playtest, rồi tạo Release nháp có tag khớp `v<version>` và đính kèm manifest cùng **đầy đủ các ZIP nhóm** của đúng một build. Đối chiếu đủ asset/kích thước/SHA-256 trên GitHub rồi mới công bố. Các file này cần có đủ trong từng Release để người chơi ở bất kỳ phiên bản trước nào cũng cập nhật được. Đính kèm ZIP game đầy đủ cho người tải lần đầu và gói bootstrap cho người chưa có updater. Bản `v0.1.0-test.1` đã thực hiện theo quy trình này.
 
 ## Kiểm tra cục bộ, không công bố
 
@@ -118,17 +118,25 @@ pwsh -NoProfile -File .\tools\Test-GameUpdate.ps1
 
 Các fixture ở `Save/UpdaterQA/<id>/` chứa game giả và kết quả riêng; không dùng save thật, không cần GitHub hoặc chạy game. Bộ thử kiểm tra: build độc lập; tên Unicode và ký tự đặc biệt; giữ dữ liệu người chơi; chỉ tải nhóm thay đổi; xóa file cũ có quản lý; chống hạ phiên bản; rollback thủ công/tự động; gói hỏng; đường dẫn nguy hiểm/junction; khóa file; game đang chạy (tiến trình giả cục bộ); chạy trùng updater; thứ tự SemVer/kênh Release; ngắt tiến trình giữa lần ghi; tự cập nhật updater. Kết quả từng lượt nằm trong `results.json` của fixture.
 
-Tải asset từ một Release thật chưa thể kiểm thử đầy đủ trước khi có Release. Bộ thử cục bộ xác minh cùng đường giải nén/kiểm tra/áp dụng/phục hồi, còn lần kiểm tra GitHub hiện chỉ xác minh trường hợp chưa có bản công bố.
+Đã kiểm tra tải từ Release thật sau khi công bố `v0.1.0-test.1`: tải bootstrap ẩn danh, thêm vào bản game QA cũ chưa có manifest, dùng config kênh tester để phát hiện/tải/cài bản mới, đối chiếu SHA-256 toàn bộ 1.097 file rồi kiểm tra lần sau báo `up-to-date`. Các file save, ItemLibrary, GlobalGallery và thiết lập KUL giữ nguyên. Không chạy updater trên bản game thật của người dùng hoặc thư mục dự án.
 
 Kết quả xác minh ngày 17/11/2026:
 
 - 60 kiểm tra đạt trên Windows PowerShell `5.1.26100.9818` và 60 kiểm tra đạt trên PowerShell `7.6.10`.
 - Build cục bộ `dist/wcf-0.1.0-preview.1`: 1.097 file runtime, gồm đủ 79 file Data gốc, chia thành 26 gói cập nhật.
 - Đã giải nén/xác minh cả 26 gói; đối chiếu SHA-256 với nguồn và kiểm tra đủ 1.099 entry trong ZIP game đầy đủ (thêm config và manifest đã cài).
-- Kiểm tra repo GitHub thật trả về chưa có Release phù hợp; đối chiếu sau đó xác nhận 1.097 file game giữ nguyên.
+- Lượt kiểm tra trước khi công bố trả về chưa có Release phù hợp; đối chiếu sau đó xác nhận 1.097 file game giữ nguyên.
 - Audit nguồn xác nhận thứ tự 222 script và các map vẫn giữ nguyên; updater không thay dữ liệu game trong dự án.
 
 Bản preview chứa những sửa đổi game đang có trên máy, có `sourceDirty=true`; đây chỉ là kiểm tra đóng gói, không phải xác nhận toàn bộ nội dung game đã sẵn sàng phát hành.
+
+Kết quả phát hành `0.1.0-test.1`:
+
+- Build từ commit `2a8cfd7`, `sourceDirty=false`, có `requiresNewGame=true`.
+- 1.097 file runtime, 26 gói cập nhật, 29 asset công bố (manifest, 26 ZIP nhóm, ZIP đầy đủ và bootstrap).
+- Đối chiếu từng entry của 26 ZIP nhóm và 1.099 entry ZIP đầy đủ với nguồn; bootstrap có đúng 4 file. Mọi asset trên GitHub có SHA-256 khớp bản build.
+- 60 kiểm tra updater cục bộ đạt sau khi thêm bootstrap. Bản game QA thử cập nhật cục bộ rồi rollback thành công; sau đó thử cập nhật từ Release công khai thành công.
+- Bằng chứng cục bộ: `Save/ReleaseQA_20261117/build-verification.json`, `github-release-draft.json`, `public-update-verification.json`; không đóng gói hoặc push các dữ liệu QA này.
 
 ## File triển khai
 
