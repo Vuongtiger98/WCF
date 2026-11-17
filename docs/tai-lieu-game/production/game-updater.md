@@ -1,6 +1,6 @@
 # Bộ cập nhật game trên Windows
 
-Trạng thái ngày 17/11/2026: đã công bố [bản tester **0.1.0-test.1**](https://github.com/Vuongtiger98/WCF/releases/tag/v0.1.0-test.1), gắn với commit `2a8cfd7a5127a02db7b221eb9fe24156ac296257`; [ghi chú bản phát hành](releases/0.1.0-test.1.md). Bản tiếp theo [0.1.0-test.2](releases/0.1.0-test.2.md) bỏ chốt chặn thư mục dự án và bổ sung `Game.rvproj2`; tác giả yêu cầu không chạy lại test và sẽ tự kiểm tra. Thư mục `dist/` chứa kết quả đóng gói và được Git bỏ qua.
+Trạng thái ngày 17/11/2026: đã công bố [bản tester **0.1.0-test.3**](https://github.com/Vuongtiger98/WCF/releases/tag/v0.1.0-test.3), gắn với commit `7996c5e1fd0ea455def9f271f7e3495986f5bc6d`, bổ sung kiểm tra cập nhật lúc mở game; [ghi chú phát hành](releases/0.1.0-test.3.md). Bản [0.1.0-test.2](releases/0.1.0-test.2.md) trước đó bỏ chốt chặn thư mục dự án và bổ sung `Game.rvproj2`; không chạy lại test cho riêng thay đổi bản 2 theo yêu cầu tác giả. Tính năng startup mới được kiểm tra riêng như tài liệu bên dưới. Thư mục `dist/` chứa kết quả đóng gói và được Git bỏ qua.
 
 ## Cách hoạt động
 

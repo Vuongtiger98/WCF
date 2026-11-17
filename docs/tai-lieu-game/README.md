@@ -117,7 +117,7 @@ Tên và cách chia file dưới đây là cấu trúc đang được sử dụn
 | `production/game-updater.md` | Bộ cập nhật Windows, đóng gói, bảo toàn save và phục hồi | Đã công bố và kiểm tra cập nhật công khai |
 | `production/releases/0.1.0-test.1.md` | Hướng dẫn tải/cập nhật, thay đổi và lỗi còn biết của bản tester | Đã phát hành 17/11/2026 |
 | `production/releases/0.1.0-test.2.md` | Bỏ chốt chặn dự án, thêm project file và hướng dẫn thay bootstrap cũ | Không chạy lại test theo yêu cầu tác giả |
-| `production/releases/0.1.0-test.3.md` | Kiểm tra bản mới khi mở game, cửa sổ cập nhật và tự mở lại | Bản tester có startup update |
+| `production/releases/0.1.0-test.3.md` | Kiểm tra bản mới khi mở game, cửa sổ cập nhật và tự mở lại | Đã phát hành 17/11/2026 |
 | `archive/source-map.md` | Ánh xạ từ tài liệu cũ sang tài liệu mới | Bản ánh xạ ban đầu |
 
 ## Mô hình nội dung
