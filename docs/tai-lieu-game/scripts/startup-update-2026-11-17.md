@@ -29,13 +29,13 @@ Mọi code vẫn ở các file đã có trong manifest của bản 0.1.0-test.2.
 - API startup có timeout 4 giây. RGSS chờ tối đa 6 giây cho kết quả; khi hết hạn ghi cancel và vào Title.
 - Sau thông báo bản mới, chờ một giây rồi mở helper. Nếu helper không báo sẵn sàng trong 6 giây, tiếp tục game và hủy phiên đó; không đóng game chỉ vì PowerShell đã được tạo process.
 - Cửa sổ updater đợi game cũ thoát tối đa 20 giây; không cưỡng bức kill game.
-- `WCFStartupUpdate::VERSION` là source floor (hiện `0.1.0-test.3`). So sánh dùng giá trị cao hơn giữa source floor và `installed.json` để không kéo code đang phát triển về Release cũ.
+- `WCFStartupUpdate::VERSION` là source floor (hiện `0.1.0-test.4`). So sánh dùng giá trị cao hơn giữa source floor và `installed.json` để không kéo code đang phát triển về Release cũ.
 - Check chỉ chạy một lần mỗi tiến trình, không chạy lại khi trở về Title. Battle Test bỏ qua startup.
 - Khi có `pending.json`, chuyển tới quy trình phục hồi trước khi chơi.
 
 ## Tiến trình, file và hiệu năng
 
-Không chạy HTTP đồng bộ trong RGSS. Main chỉ đọc file nhỏ và vẽ vài lần mỗi giây. Helper dùng Windows PowerShell/WinForms và child process riêng; tải mạng/cài file không khóa vòng lặp giao diện updater.
+Không chạy HTTP đồng bộ trong RGSS. Main chỉ đọc file nhỏ; nền/chữ chỉ vẽ lại khi nội dung đổi. Helper dùng Windows PowerShell/WinForms và child process riêng; tải mạng/cài file không khóa vòng lặp giao diện updater.
 
 Session tạm ở `gameupdate/startup-<pid>-<time>-<random>/`. Check và GUI dọn các file phẳng của đúng session, không xóa đệ quy vào thư mục con bất ngờ. Không đóng gói session, log hoặc dữ liệu người chơi. Nhật ký lỗi chính ở `gameupdate/update.log`.
 
@@ -52,6 +52,18 @@ Helper tự sao chép script/module vào thư mục tạm trước khi thay upda
 - Lượt fixture có ký tự `ộ` trong đường dẫn bị chính Game.exe từ chối nạp RGSS DLL trước khi chạy script; lượt được chấp nhận dùng đường dẫn ASCII với khoảng trắng, `[]` và `!`. Không coi lỗi loader đó là lỗi startup script hoặc tuyên bố đã xác minh game chạy được ở mọi đường dẫn Unicode.
 
 Backup: `Data/codex_backup_startup_update_20261117/`. Các case native trước lượt `[5]` là lượt điều tra, không dùng làm bằng chứng đạt toàn luồng.
+
+## Giao diện alien — 18/11/2026
+
+- Cả màn hình kiểm tra trong RGSS và cửa sổ tải/cài WinForms dùng năm ảnh `Graphics/Invaders/alien0.png` đến `alien4.png`. Đây là năm PNG đơn 50×50; không gọi logic của minigame Invaders.
+- Alien nhún lên xuống, co giãn nhẹ và nghiêng luân phiên theo cùng chu kỳ 40 frame quy đổi 60 fps (90 nhịp/phút). Đây là nhịp hình ảnh, không thêm nhạc hoặc âm thanh.
+- Thanh bo tròn màu pastel chạy qua lại khi đang kiểm tra/chưa biết tổng số. Khi tải/cài có số lượng thật, thanh mới hiển thị tiến độ tương ứng; không giả lập phần trăm kiểm tra phiên bản.
+- RGSS cập nhật sprite mỗi frame, thanh mỗi ba frame; WinForms dùng timer 50 ms và panel double-buffer. Ảnh/brush nạp một lần, không đọc PNG trên từng frame. RGSS chỉ giải phóng sprite và bitmap do màn hình tự tạo, giữ bitmap chung trong Cache; WinForms clone ảnh vào bộ nhớ để không khóa file khi cập nhật rồi giải phóng khi đóng.
+- Giữ nguyên timeout/offline, handoff, tải/cài, retry và restart. Không sửa map/event, dữ liệu save hoặc vị trí/thứ tự các script.
+
+Xác minh bản giao diện: `tools/test_startup_update.rb` đạt 10 case / 35 assertion; inventory đạt 222 slot / 221 dòng CSV, không lệch token giữa runtime/export. So với backup `Data/codex_backup_startup_aliens_20261118/`, trong Data/script chỉ Main và pack Scripts thay đổi; mọi slot ngoài Main giữ nguyên cả ID, tên, thứ tự và source.
+
+Fixture `Save/StartupAliensQA_20261118/` chạy Game.exe/RGSS, ShellExecuteW, WinForms và apply gói cục bộ thật; trạng thái có bản mới được giả lập. Đã xem ảnh `startup-10.png`, `startup-30.png`, `updater-1.png`, `updater-2.png`, xác nhận các tư thế khác nhau và đủ năm alien. Kết quả handoff/restart đạt như lượt native trước; `scope.json` lưu kết quả đối chiếu. Không dùng lượt này để suy ra FPS toàn game hoặc xác minh cập nhật công khai qua Internet.
 
 ## Tham khảo kỹ thuật
 

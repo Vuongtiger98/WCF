@@ -15,7 +15,8 @@ module Input; def self.update;end;end
 Color=Struct.new(:red,:green,:blue,:alpha)
 class Bitmap
   attr_accessor :font
-  def initialize(*);@font=Struct.new(:name,:size,:bold,:color).new;end
+  attr_reader :width,:height
+  def initialize(width,height);@width,@height=width,height;@font=Struct.new(:name,:size,:bold,:color).new;end
   def clear;end
   def rect;nil;end
   def fill_rect(*);end
@@ -24,7 +25,7 @@ class Bitmap
   def disposed?;!!@disposed;end
 end
 class Sprite
-  attr_accessor :z,:bitmap
+  attr_accessor :z,:bitmap,:x,:y,:ox,:oy,:zoom_x,:zoom_y,:angle
   def dispose;@disposed=true;end
   def disposed?;!!@disposed;end
 end

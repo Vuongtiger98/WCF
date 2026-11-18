@@ -34,7 +34,7 @@ main_index=original.index{|entry|entry[1]=='Main'}
           alias startup_qa_update update
           def update
             @startup_qa_frames=(@startup_qa_frames||0)+1
-            if [20,180].include?(@startup_qa_frames)
+            if [1,10,20,30,40,180].include?(@startup_qa_frames)
               b=snap_to_bitmap;b.save('startup-'+@startup_qa_frames.to_s+'.png');b.dispose
             end
             sleep(0.005)
@@ -51,7 +51,7 @@ main_index=original.index{|entry|entry[1]=='Main'}
             alias startup_qa_launch launch
             def launch(mode)
               if mode=='Check'
-                File.open(@folder+'/check.txt','wb'){|f|f.write("status=available\nversion=0.1.0-test.4\n")}
+                File.open(@folder+'/check.txt','wb'){|f|f.write("status=available\nversion=0.1.0-test.5\n")}
                 true
               else
                 startup_qa_launch(mode)

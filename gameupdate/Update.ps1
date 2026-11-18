@@ -9,7 +9,7 @@ param(
     [ValidateSet('','Check','Update','Apply')][string]$StartupMode='',
     [string]$Session,
     [int]$ParentId=0,
-    [string]$CurrentVersion='0.1.0-test.3'
+    [string]$CurrentVersion='0.1.0-test.4'
 )
 $ErrorActionPreference = 'Stop'
 if (!$GameRoot) { $GameRoot=Split-Path -Parent $PSScriptRoot }
@@ -83,23 +83,100 @@ function Show-StartupUpdater([string]$WorkerScript) {
     [Windows.Forms.Application]::EnableVisualStyles()
     $form=New-Object Windows.Forms.Form
     $form.Text='Wonder Christmas Fiesta — Cập nhật'
-    $form.ClientSize=New-Object Drawing.Size(560,274)
+    $form.ClientSize=New-Object Drawing.Size(560,360)
     $form.StartPosition='CenterScreen';$form.FormBorderStyle='FixedDialog';$form.MaximizeBox=$false
     $form.BackColor=[Drawing.Color]::FromArgb(15,23,39);$form.ForeColor=[Drawing.Color]::FromArgb(235,241,255)
     $form.Font=New-Object Drawing.Font('Segoe UI',11)
     $heading=New-Object Windows.Forms.Label
     $heading.SetBounds(24,20,512,36);$heading.Text='Đang cập nhật game';$heading.Font=New-Object Drawing.Font('Segoe UI',18,[Drawing.FontStyle]::Bold)
     $detail=New-Object Windows.Forms.Label
-    $detail.SetBounds(26,73,506,55);$detail.Text='Đang chờ game đóng để cập nhật…'
-    $bar=New-Object Windows.Forms.ProgressBar
-    $bar.SetBounds(28,140,504,14);$bar.Style='Marquee'
+    $detail.SetBounds(26,70,506,44);$detail.Text='Đang chờ game đóng để cập nhật…'
+    $detail.ForeColor=[Drawing.Color]::FromArgb(211,201,244)
+    $bar=[pscustomobject]@{Style='Marquee';Value=0}
+    $stage=New-Object Windows.Forms.Panel
+    $stage.SetBounds(28,122,504,128)
+    $doubleBuffer=$stage.GetType().GetProperty('DoubleBuffered',[Reflection.BindingFlags]'Instance,NonPublic')
+    $doubleBuffer.SetValue($stage,$true,$null)
+    $palette=@([Drawing.Color]::FromArgb(255,183,118),[Drawing.Color]::FromArgb(239,174,216),
+        [Drawing.Color]::FromArgb(242,126,153),[Drawing.Color]::FromArgb(190,143,250),[Drawing.Color]::FromArgb(117,219,244))
+    $brushes=@($palette|ForEach-Object {New-Object Drawing.SolidBrush($_)})
+    $shadow=New-Object Drawing.SolidBrush([Drawing.Color]::FromArgb(10,18,33))
+    $trackBrush=New-Object Drawing.SolidBrush([Drawing.Color]::FromArgb(80,83,119))
+    $insideBrush=New-Object Drawing.SolidBrush([Drawing.Color]::FromArgb(12,20,37))
+    $shineBrush=New-Object Drawing.SolidBrush([Drawing.Color]::FromArgb(150,255,255,255))
+    $alienImages=@()
+    foreach($i in 0..4) {
+        $image=$null
+        try {
+            # Detach from disk so future asset updates never hit a held PNG file.
+            $bytes=[IO.File]::ReadAllBytes((Join-Path $GameRoot ('Graphics/Invaders/alien'+$i+'.png')))
+            $stream=New-Object IO.MemoryStream(,$bytes)
+            try {
+                $original=[Drawing.Image]::FromStream($stream)
+                try {$image=New-Object Drawing.Bitmap($original)} finally {$original.Dispose()}
+            } finally {$stream.Dispose()}
+        } catch { }
+        $alienImages+=,$image
+    }
+    $danceClock=[Diagnostics.Stopwatch]::StartNew()
+    $stage.Add_Paint({param($sender,$event)
+        $g=$event.Graphics
+        $g.InterpolationMode=[Drawing.Drawing2D.InterpolationMode]::NearestNeighbor
+        $g.PixelOffsetMode=[Drawing.Drawing2D.PixelOffsetMode]::Half
+        $frame=$danceClock.Elapsed.TotalSeconds*60
+        foreach($i in 0..4) {
+            $beat=($frame+$i*6)*[Math]::PI*2/40
+            $bounce=([Math]::Sin($beat)+1)/2
+            $cx=$sender.Width/2-156+$i*78
+            $g.FillEllipse($shadow,([single]($cx-17)),[single]80,[single]34,[single]7)
+            $saved=$g.Save()
+            try {
+                $g.TranslateTransform([single]$cx,[single](78-$bounce*$bounce*12))
+                $g.RotateTransform([single]([Math]::Sin($beat)*5))
+                $sx=1-($bounce-0.5)*0.10;$sy=1+($bounce-0.5)*0.16
+                if($alienImages[$i]) {
+                    $rect=New-Object Drawing.RectangleF([single](-25*$sx),[single](-50*$sy),[single](50*$sx),[single](50*$sy))
+                    $g.DrawImage($alienImages[$i],$rect)
+                } else {$g.FillEllipse($brushes[$i],-15,-30,30,30)}
+            } finally {$g.Restore($saved)}
+        }
+        $x=16;$y=104;$w=$sender.Width-32;$h=18
+        $outer=New-Object Drawing.Drawing2D.GraphicsPath
+        $inner=New-Object Drawing.Drawing2D.GraphicsPath
+        try {
+            foreach($shape in @(@($outer,$x,$y,$w,$h),@($inner,($x+2),($y+2),($w-4),($h-4)))) {
+                $path=$shape[0];$px=[int]$shape[1];$py=[int]$shape[2];$pw=[int]$shape[3];$ph=[int]$shape[4]
+                $path.AddArc($px,$py,$ph,$ph,90,180);$path.AddArc($px+$pw-$ph,$py,$ph,$ph,270,180);$path.CloseFigure()
+            }
+            $g.SmoothingMode=[Drawing.Drawing2D.SmoothingMode]::AntiAlias
+            $g.FillPath($trackBrush,$outer);$g.FillPath($insideBrush,$inner)
+            $saved=$g.Save()
+            try {
+                $g.SetClip($inner)
+                if($bar.Style -eq 'Marquee') {
+                    $lead=([Math]::Sin($frame/36)+1)*0.5*($w-110)
+                    foreach($i in 0..4) {
+                        $g.FillEllipse($brushes[$i],[single]($x+$lead+5+$i*20),[single]($y+3),[single]22,[single]12)
+                        $g.FillRectangle($brushes[$i],[single]($x+$lead+15+$i*20),[single]($y+3),[single]12,[single]12)
+                    }
+                } else {
+                    $fill=($w-4)*[Math]::Min(100,[Math]::Max(0,$bar.Value))/100
+                    foreach($i in 0..4) {
+                        $segment=($w-4)/5;$width=[Math]::Min($segment,$fill-$i*$segment)
+                        if($width -gt 0){$g.FillRectangle($brushes[$i],[single]($x+2+$i*$segment),[single]($y+2),[single]$width,[single]($h-4))}
+                    }
+                }
+                $g.FillRectangle($shineBrush,$x+8,$y+3,$w-16,2)
+            } finally {$g.Restore($saved)}
+        } finally {$outer.Dispose();$inner.Dispose()}
+    })
     $foot=New-Object Windows.Forms.Label
-    $foot.SetBounds(26,170,506,30);$foot.Text='Vui lòng chờ. Save và bộ sưu tập được giữ nguyên.';$foot.Font=New-Object Drawing.Font('Segoe UI',9)
+    $foot.SetBounds(26,268,506,30);$foot.Text='Vui lòng chờ. Save và bộ sưu tập được giữ nguyên.';$foot.Font=New-Object Drawing.Font('Segoe UI',9)
     $retry=New-Object Windows.Forms.Button
-    $retry.SetBounds(270,218,126,34);$retry.Text='Thử lại';$retry.Visible=$false
+    $retry.SetBounds(270,310,126,34);$retry.Text='Thử lại';$retry.Visible=$false
     $play=New-Object Windows.Forms.Button
-    $play.SetBounds(405,218,126,34);$play.Text='Chơi bản hiện tại';$play.Visible=$false
-    $form.Controls.AddRange(@($heading,$detail,$bar,$foot,$retry,$play))
+    $play.SetBounds(405,310,126,34);$play.Text='Chơi bản hiện tại';$play.Visible=$false
+    $form.Controls.AddRange(@($heading,$detail,$stage,$foot,$retry,$play))
     $state=@{process=$null;started=$false;failed=$false;canPlay=$false;launch=$false;doneAt=$null;waitUntil=[DateTime]::UtcNow.AddSeconds(20)}
     $startApply={
         $retry.Visible=$false;$play.Visible=$false;$state.failed=$false;$state.doneAt=$null
@@ -181,10 +258,15 @@ function Show-StartupUpdater([string]$WorkerScript) {
     })
     $form.Add_Shown({$form.Activate()})
     [IO.File]::WriteAllText((Join-Path $folder 'ready'),'1')
+    $danceTimer=New-Object Windows.Forms.Timer
+    $danceTimer.Interval=50;$danceTimer.Add_Tick({$stage.Invalidate()});$danceTimer.Start()
     $timer.Start()
     try { $null=$form.ShowDialog() }
     finally {
+        $danceTimer.Stop();$danceTimer.Dispose();$danceClock.Stop()
         $timer.Stop();$timer.Dispose();$form.Dispose()
+        foreach($image in $alienImages){if($image){$image.Dispose()}}
+        foreach($brush in @($brushes)+@($shadow,$trackBrush,$insideBrush,$shineBrush)){$brush.Dispose()}
         if ($state.process) { $state.process.Dispose() }
         Clear-StartupFolder $folder
     }
