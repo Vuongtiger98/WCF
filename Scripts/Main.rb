@@ -181,7 +181,7 @@ module WCFStartupUpdate
         return true if elapsed>=MIN_DISPLAY_TIME
         if frame%8==0
           title=state['status']=='up-to-date' ? 'Game đã ở phiên bản mới nhất' : 'Chưa kiểm tra được phiên bản'
-          draw(sprite,title,'Chuẩn bị vào game — cùng nhún nhảy một chút nhé!',frame)
+          draw(sprite,title,'Chuẩn bị vào game...',frame)
         end
       elsif frame%8==0
         draw(sprite,'Đang kiểm tra phiên bản','Đang kết nối tới máy chủ cập nhật',frame)
