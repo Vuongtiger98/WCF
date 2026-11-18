@@ -76,6 +76,21 @@
 
   let state = load();
 
+  // Navigation state is separate from the tester's persisted results.
+  const views = new Map();
+  let activeView = null;
+  let restoringView = false;
+  let viewRevision = 0;
+
+  function rememberView() {
+    if (restoringView || !activeView || activeView !== (location.hash || '#dashboard')) return;
+    const search = $('#listSearch');
+    views.set(activeView, {
+      x: window.scrollX, y: window.scrollY,
+      filters: search ? { search: search.value, group: $('#groupFilter').value, status: $('#statusFilter').value } : null
+    });
+  }
+
   function save() {
     state.updatedAt = now();
     try {
@@ -189,6 +204,22 @@
   }
 
   function route() {
+    rememberView();
+    activeView = location.hash || '#dashboard';
+    const view = views.get(activeView) || { x: 0, y: 0 };
+    const revision = ++viewRevision;
+    restoringView = true;
+    renderRoute();
+    window.scrollTo(view.x, view.y);
+    requestAnimationFrame(() => {
+      if (revision !== viewRevision) return;
+      window.scrollTo(view.x, view.y);
+      restoringView = false;
+      rememberView();
+    });
+  }
+
+  function renderRoute() {
     const hash = (location.hash || '#dashboard').slice(1);
     $$('.nav a').forEach(link => link.classList.toggle('active', Boolean(link.dataset.nav && hash.startsWith(link.dataset.nav))));
     if (hash === 'dashboard') return renderDashboard();
@@ -241,6 +272,12 @@
       $('#listGrid').innerHTML = filtered.length ? filtered.map(item => itemCard(type, item)).join('') : '<div class="empty">Không có kết quả.</div>';
     };
     $$('#content .toolbar input,#content .toolbar select').forEach(element => element.addEventListener('input', apply));
+    const filters = views.get(activeView)?.filters;
+    if (filters) {
+      $('#listSearch').value = filters.search;
+      $('#groupFilter').value = filters.group;
+      $('#statusFilter').value = filters.status;
+    }
     apply();
   }
 
@@ -583,6 +620,12 @@
   }
 
   function init() {
+    if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+    window.addEventListener('scroll', rememberView, { passive: true });
+    // Snapshot before a hash link changes the URL or the browser moves the page.
+    document.addEventListener('click', event => {
+      if (event.target.closest('a[href^="#"]')) rememberView();
+    }, true);
     updateNavCounts(); route(); globalSearch();
     window.addEventListener('hashchange', route);
     $('#exportBtn').onclick = exportResults;

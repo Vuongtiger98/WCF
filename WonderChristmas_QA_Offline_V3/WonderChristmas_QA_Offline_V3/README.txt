@@ -2,6 +2,16 @@ WONDER CHRISTMAS FIESTA — OFFLINE PLAYTEST
 
 Mở index.html bằng Chrome hoặc Edge.
 
+CẬP NHẬT GIAO DIỆN 2026-11-19
+- Sau khi lưu đề xuất/báo lỗi, dùng Back của trình duyệt hoặc đường dẫn quay
+  lại danh sách sẽ giữ vị trí cuộn, từ khóa tìm kiếm và các bộ lọc đang dùng.
+- Bản sửa không thay dữ liệu thoại, ID khung hoặc mã lưu tiến độ. Giữ nguyên
+  OK, báo lỗi, đề xuất và khung đang xem, kể cả sau khi tải lại trang.
+- Khi cài bản vá, chép đè app/app.js và README.txt vào đúng folder app cũ rồi
+  tải lại trang. Giữ nguyên đường dẫn index.html và trình duyệt đang sử dụng;
+  không xóa dữ liệu trình duyệt. Vị trí cuộn/bộ lọc chỉ được nhớ trong lượt mở
+  app hiện tại; kết quả test vẫn được lưu lâu dài như trước.
+
 CẬP NHẬT NỘI DUNG 2026-09-30
 - Đã sinh lại toàn bộ thoại từ dữ liệu game hiện tại; thoại, lựa chọn, face,
   chỉ số face, pop message và xuống dòng cũ không còn trong game đã bị loại.

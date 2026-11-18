@@ -27,7 +27,8 @@ Mọi code vẫn ở các file đã có trong manifest của bản 0.1.0-test.2.
 ## Thời gian chờ và phiên bản
 
 - API startup có timeout 4 giây. RGSS chờ tối đa 6 giây cho kết quả; khi hết hạn ghi cancel và vào Title.
-- Sau thông báo bản mới, chờ một giây rồi mở helper. Nếu helper không báo sẵn sàng trong 6 giây, tiếp tục game và hủy phiên đó; không đóng game chỉ vì PowerShell đã được tạo process.
+- Màn hình chờ hiển thị ít nhất 5 giây (bổ sung ngày 19/11), kể cả API trả không có bản mới hoặc không có mạng. Thời gian đã chờ mạng được tính vào 5 giây, không chờ thêm 5 giây sau khi nhận kết quả.
+- Sau thông báo bản mới, chờ ít nhất một giây và đủ thời gian hiển thị tối thiểu rồi mở helper. Nếu helper không báo sẵn sàng trong 6 giây, tiếp tục game và hủy phiên đó; không đóng game chỉ vì PowerShell đã được tạo process.
 - Cửa sổ updater đợi game cũ thoát tối đa 20 giây; không cưỡng bức kill game.
 - `WCFStartupUpdate::VERSION` là source floor (hiện `0.1.0-test.4`). So sánh dùng giá trị cao hơn giữa source floor và `installed.json` để không kéo code đang phát triển về Release cũ.
 - Check chỉ chạy một lần mỗi tiến trình, không chạy lại khi trở về Title. Battle Test bỏ qua startup.
@@ -64,6 +65,14 @@ Backup: `Data/codex_backup_startup_update_20261117/`. Các case native trước 
 Xác minh bản giao diện: `tools/test_startup_update.rb` đạt 10 case / 35 assertion; inventory đạt 222 slot / 221 dòng CSV, không lệch token giữa runtime/export. So với backup `Data/codex_backup_startup_aliens_20261118/`, trong Data/script chỉ Main và pack Scripts thay đổi; mọi slot ngoài Main giữ nguyên cả ID, tên, thứ tự và source.
 
 Fixture `Save/StartupAliensQA_20261118/` chạy Game.exe/RGSS, ShellExecuteW, WinForms và apply gói cục bộ thật; trạng thái có bản mới được giả lập. Đã xem ảnh `startup-10.png`, `startup-30.png`, `updater-1.png`, `updater-2.png`, xác nhận các tư thế khác nhau và đủ năm alien. Kết quả handoff/restart đạt như lượt native trước; `scope.json` lưu kết quả đối chiếu. Không dùng lượt này để suy ra FPS toàn game hoặc xác minh cập nhật công khai qua Internet.
+
+## Thời gian tối thiểu — 19/11/2026
+
+`MIN_DISPLAY_TIME=5.0` chỉ điều khiển thời gian trình bày, không kéo dài timeout API hoặc dùng sleep khóa RGSS. Vòng lặp tiếp tục cập nhật alien/thanh loading. Không có bản mới: thông báo đã ở phiên bản mới nhất trong thời gian còn lại; lỗi kết nối: tiếp tục vào game sau thời gian tối thiểu. Helper check không khởi động được cũng giữ màn hình 5 giây. Sau khi updater mở lại game vẫn bỏ qua check một lần; Battle Test và lượt trở về Title trong cùng tiến trình không phải chờ lại.
+
+`tools/test_startup_update.rb` hiện đạt 12 case / 44 assertion, gồm phản hồi sớm, offline, lỗi mở helper và phản hồi muộn sau 4,5 giây vẫn kết thúc ở khoảng 5 giây. Native fixture được chấp nhận: `Save/StartupMinimumQA_20261119_2/real-check/`, API thật trả `up-to-date`, thời gian `WCFStartupUpdate.run` đo được 5,093 giây rồi tiếp tục. Fixture dùng snapshot renderer và vòng cập nhật thay thế vì Graphics.update gốc dừng khi cửa sổ ẩn không có focus; không dùng lượt này để xác nhận FPS hay điều khiển game. Lượt đầu bị dừng bởi cơ chế focus này đã được đóng và không tính là kết quả đạt.
+
+Backup: `Data/codex_backup_startup_minimum_20261119/`. Pack chỉ thay Main tại slot 220; giữ nguyên 222 slot, 221 dòng CSV, ID/thứ tự và mọi map/event.
 
 ## Tham khảo kỹ thuật
 

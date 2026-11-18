@@ -9,6 +9,7 @@
 module WCFStartupUpdate
   VERSION = "0.1.0-test.4"
   CHECK_TIMEOUT = 6.0
+  MIN_DISPLAY_TIME = 5.0
   UPDATE_NOTICE = 1.0
   ALIEN_COLORS = [[255,183,118],[239,174,216],[242,126,153],[190,143,250],[117,219,244]]
   class << self
@@ -147,19 +148,23 @@ module WCFStartupUpdate
     draw(sprite,'Đang kiểm tra phiên bản','Bạn có thể tiếp tục chơi khi không có kết nối mạng.',0)
     animate(0)
     Graphics.transition(0)
-    return true unless launch('Check')
-    started=Time.now;frame=0;notice=nil;state={}
+    started=Time.now;launched=launch('Check');frame=0;notice=nil
+    state=launched ? {} : {'status'=>'offline'}
     loop do
       Graphics.update;Input.update;frame+=1
       animate(frame)
-      state=read_status if frame%3==0
+      state=read_status if launched && frame%3==0
+      elapsed=Time.now-started
       if ['available','recovery'].include?(state['status'])
         version=state['version'].to_s
-        return true unless version =~ /\A[0-9A-Za-z.+-]{1,80}\z/
+        unless version =~ /\A[0-9A-Za-z.+-]{1,80}\z/
+          return true if elapsed>=MIN_DISPLAY_TIME
+          next
+        end
         notice ||= Time.now
         title=state['status']=='recovery' ? 'Đang phục hồi cập nhật' : 'Có bản cập nhật mới'
         draw(sprite,title,"Phiên bản #{version} — vui lòng chờ cập nhật.",frame) if frame%8==0
-        if Time.now-notice>=UPDATE_NOTICE
+        if elapsed>=MIN_DISPLAY_TIME && Time.now-notice>=UPDATE_NOTICE
           if @update_started
             if File.file?(@folder+'/ready')
               @handed_off=true
@@ -172,8 +177,12 @@ module WCFStartupUpdate
             return true
           end
         end
-      elsif !state['status'].to_s.empty? || Time.now-started>=CHECK_TIMEOUT
-        return true
+      elsif !state['status'].to_s.empty? || elapsed>=CHECK_TIMEOUT
+        return true if elapsed>=MIN_DISPLAY_TIME
+        if frame%8==0
+          title=state['status']=='up-to-date' ? 'Game đã ở phiên bản mới nhất' : 'Chưa kiểm tra được phiên bản'
+          draw(sprite,title,'Chuẩn bị vào game — cùng nhún nhảy một chút nhé!',frame)
+        end
       elsif frame%8==0
         draw(sprite,'Đang kiểm tra phiên bản','Đang kết nối tới máy chủ cập nhật',frame)
       end

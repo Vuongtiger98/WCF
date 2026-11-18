@@ -110,6 +110,7 @@ Tên và cách chia file dưới đây là cấu trúc đang được sử dụn
 | `production/assets.md` | Sprite, CG, BG, BGM, SFX, voice và trạng thái | Đang duy trì |
 | `production/open-issues.md` | Mâu thuẫn và câu hỏi cần quyết định | Đang mở |
 | `production/tester-web-app-content-spec.md` | Đặc tả nội dung web app theo dõi playtest dành cho người chơi | Đang sử dụng |
+| `production/qa-navigation-fix-2026-11-19.md` | Giữ vị trí/bộ lọc khi quay lại sau góp ý, cài bản vá giữ tiến độ | Đã kiểm tra trên Chromium |
 | `production/test-hub.md` | Quy tắc Map069 và state checkpoint | Hiện hành |
 | `production/post-bus-test-plan-2026-11-17.md` | Kế hoạch kiểm tra sau xe bus, ma trận route và phần loại trừ minigame | Đã chạy siêu thị; các nhóm khác chưa chạy |
 | `production/market-route-test-2026-11-17.md` | 16 tổ hợp siêu thị, 4 lượt cà phê Atlantis giả lập, lỗi tương tác và review nội dung | Đã test, chưa sửa runtime |

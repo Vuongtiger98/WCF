@@ -229,7 +229,7 @@ Snapshot đối chiếu trực tiếp `Data/Scripts.rvdata2`. Slot là chỉ s�
 | 217 | ▼ Main Process | Rỗng/separator | — | `e3b0c44298fc` |
 | 218 | [WCF Storage Memory Transition](<../../../Scripts/WCF Storage Memory Transition.rb>) | Có mã | exact | `12873b29e63e` |
 | 219 | [WCF Test Hub](<../../../Scripts/WCF Test Hub.rb>) | Có mã | exact | `26b17a6b92ca` |
-| 220 | [Main](<../../../Scripts/Main.rb>) | Có mã | exact | `86ebe74c30ce` |
+| 220 | [Main](<../../../Scripts/Main.rb>) | Có mã | exact | `92d519dfddc6` |
 | 221 | (slot rỗng) | Rỗng/separator | — | `e3b0c44298fc` |
 
 ## Phạm vi xác minh

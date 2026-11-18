@@ -75,15 +75,17 @@ class StartupUpdateTest < Minitest::Test
   def test_up_to_date_and_offline_continue_without_updater
     assert run_case('up-to-date')
     assert_equal ['Check'],@calls
-    assert_operator Graphics.frames,:<,10
+    assert_includes 300..301,Graphics.frames
     WCFStartupUpdate.checked=false;@calls=[]
+    previous_frames=Graphics.frames
     assert run_case('offline')
     assert_equal ['Check'],@calls
+    assert_includes 300..301,Graphics.frames-previous_frames
   end
   def test_available_waits_for_notice_and_ready_then_hands_off_once
     refute run_case('available')
     assert_equal ['Check','Update'],@calls
-    assert_operator Graphics.frames,:>=,60
+    assert_operator Graphics.frames,:>=,300
     refute File.exist?(WCFStartupUpdate.instance_variable_get(:@folder)+'/cancel')
   end
   def test_recovery_also_hands_off
@@ -97,13 +99,28 @@ class StartupUpdateTest < Minitest::Test
   def test_started_process_without_ready_does_not_close_game
     assert run_case('available',update: :no_ready)
     assert_equal ['Check','Update'],@calls
-    assert_operator Graphics.frames,:<=,430
+    assert_operator Graphics.frames,:<=,670
     assert File.exist?(WCFStartupUpdate.instance_variable_get(:@folder)+'/cancel')
   end
   def test_no_worker_reply_has_a_bounded_timeout
     assert run_case(nil)
     assert_operator Graphics.frames,:<=,361
     assert_equal ['Check'],@calls
+  end
+  def test_check_launch_failure_still_shows_five_seconds_without_network_wait
+    clock=lambda{Time.at(Graphics.frames/60.0)}
+    result=Time.stub(:now,clock){WCFStartupUpdate.stub(:launch,false){WCFStartupUpdate.run}}
+    assert result
+    assert_includes 300..301,Graphics.frames
+  end
+  def test_late_reply_counts_time_already_spent_showing_the_screen
+    clock=lambda{Time.at(Graphics.frames/60.0)}
+    status=lambda{Graphics.frames>=270 ? {'status'=>'up-to-date'} : {}}
+    result=Time.stub(:now,clock) do
+      WCFStartupUpdate.stub(:read_status,status){WCFStartupUpdate.stub(:launch,true){WCFStartupUpdate.run}}
+    end
+    assert result
+    assert_includes 300..301,Graphics.frames
   end
   def test_restart_skip_is_consumed_only_once
     ENV['WCF_SKIP_STARTUP_CHECK']='1'

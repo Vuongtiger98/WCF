@@ -33,6 +33,8 @@ main_index=original.index{|entry|entry[1]=='Main'}
         class << self
           alias startup_qa_update update
           def update
+            # Native update pauses while a hidden RGSS window lacks focus.
+            # Render snapshots and measure wall time without taking user focus.
             @startup_qa_frames=(@startup_qa_frames||0)+1
             if [1,10,20,30,40,180].include?(@startup_qa_frames)
               b=snap_to_bitmap;b.save('startup-'+@startup_qa_frames.to_s+'.png');b.dispose
@@ -80,10 +82,11 @@ main_index=original.index{|entry|entry[1]=='Main'}
     end
     code+=<<~'RUBY'
       rgss_main do
+        started=Time.now
         result=WCFStartupUpdate.run
         rows=Dir['gameupdate/startup-*/check.txt'].map{|p|File.open(p,'rb'){|f|f.read}}
         ready=!Dir['gameupdate/startup-*/ready'].empty?
-        File.open('native-result.marshal','wb'){|f|f.write(Marshal.dump({:result=>result,:ready=>ready,:checked=>WCFStartupUpdate.checked,:status=>rows}))}
+        File.open('native-result.marshal','wb'){|f|f.write(Marshal.dump({:result=>result,:ready=>ready,:checked=>WCFStartupUpdate.checked,:elapsed=>Time.now-started,:status=>rows}))}
       end
     RUBY
   end
