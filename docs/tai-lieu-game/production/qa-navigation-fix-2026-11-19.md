@@ -22,3 +22,5 @@ Trước sửa (`Save/QANavigationQA-ZyIckG/results.json`): Back và breadcrumb 
 Gói `dist/wcf-qa-scroll-fix-2026-11-19.zip` chỉ chứa `app/app.js` và `README.txt`. Giải nén chép đè vào folder app đang dùng, tại nơi có index.html, rồi tải lại trang trong cùng trình duyệt. Giữ nguyên tên/vị trí index.html, không xóa dữ liệu trình duyệt. Chuyển sang đường dẫn khác có thể khiến trình duyệt dùng vùng lưu khác; nếu phải chuyển, xuất báo cáo ở app cũ rồi nhập vào app mới như hướng dẫn hiện hành.
 
 Bản vá web app được phân phối riêng; gói cập nhật game không chứa web app QA. Backup source trước sửa ở `Data/codex_backup_startup_minimum_20261119/`.
+
+Đã đính kèm bản vá vào Release [0.1.0-test.5](https://github.com/Vuongtiger98/WCF/releases/tag/v0.1.0-test.5); [tải ZIP](https://github.com/Vuongtiger98/WCF/releases/download/v0.1.0-test.5/wcf-qa-scroll-fix-2026-11-19.zip).

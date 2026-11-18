@@ -120,7 +120,7 @@ Tên và cách chia file dưới đây là cấu trúc đang được sử dụn
 | `production/releases/0.1.0-test.2.md` | Bỏ chốt chặn dự án, thêm project file và hướng dẫn thay bootstrap cũ | Không chạy lại test theo yêu cầu tác giả |
 | `production/releases/0.1.0-test.3.md` | Kiểm tra bản mới khi mở game, cửa sổ cập nhật và tự mở lại | Đã phát hành 17/11/2026 |
 | `production/releases/0.1.0-test.4.md` | Năm alien nhún nhảy và thanh loading pastel | Đã phát hành 18/11/2026 |
-| `production/releases/0.1.0-test.5.md` | Chờ ít nhất 5 giây và bản vá cuộn web app giữ tiến độ | Chuẩn bị phát hành 19/11/2026 |
+| `production/releases/0.1.0-test.5.md` | Chờ ít nhất 5 giây và bản vá cuộn web app giữ tiến độ | Đã phát hành 19/11/2026 |
 | `archive/source-map.md` | Ánh xạ từ tài liệu cũ sang tài liệu mới | Bản ánh xạ ban đầu |
 
 ## Mô hình nội dung
