@@ -281,6 +281,9 @@ class Window_Message < Window_Base
     hash = $game_map.events
     character = id <= 0 ? $game_player : hash[id]
     return unless character
+    # Off-screen speakers may use a screen anchor without impersonating an
+    # on-map actor. Restore the tag for the next ordinary pop automatically.
+    @bubble_sprite.visible = !character.instance_variable_get(:@pop_message_hide_tail) if @bubble_sprite
     anchor_x, baseline_y, top_y = pop_message_anchor(character)
     @bubble_sprite.src_rect.set(0, 0, @bubble_sprite.bitmap.width,
       @bubble_sprite.bitmap.height / 2) if @bubble_sprite

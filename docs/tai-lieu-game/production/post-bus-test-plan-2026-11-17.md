@@ -4,6 +4,8 @@ Trạng thái: **đã chạy nhóm siêu thị; các nhóm khác chưa chạy**.
 
 Giả định phạm vi để review: phần thử thách mê cung/rượt đuổi (clone, bẫy, choáng, QTE) cũng để ngoài đợt này, nhưng các đoạn truyện và chuyển cảnh bao quanh vẫn nằm trong kế hoạch. Không dùng cách phân loại này để bỏ qua cả route phòng kho.
 
+Cập nhật 19/11: đã sửa và [kiểm tra riêng 28 ending hint trên Map036](../scripts/ending-hints-2026-11-19.md), gồm 204 khung thoại, ánh sáng/pop/fade và về Title. Đây là lượt kiểm tra đoạn cuối theo Hint ID, không thay thế việc chạy các nhóm route còn lại từ bus tới ending.
+
 ## Điểm bắt đầu và kết thúc
 
 Báo cáo `scripts/prologue-review-2026-11-16.md` đã xác nhận Title → Silver Wing → thành phố → xe bus và bốn điểm đến. Chỉ nhánh siêu thị đã tới free roam; ba nhánh còn lại dừng ở thoại vào map. Không coi các đoạn phía sau là đã đạt.

@@ -53,7 +53,7 @@ Các file được script tham chiếu trong `Graphics/PhoneMenu/` gồm nền �
 - `$Cage_1`, `$Cage_2`, `$Cage_3`: ba sheet liên tiếp của kết giới nguyên vẹn, nứt vỡ và tan rã trên Map053/055. Runtime giữ lâu các frame nứt đầu rồi tăng tốc phần vỡ.
 - `Monster.png`: tái sử dụng overlay `AtlantisMonsterDisplay` ở chế độ `:bound`; event map chỉ là anchor mang tên `ABYSS-MONSTER`.
 - Chưa có CG đúng chỉ dẫn `[CG Hải Quỳ mỉm cười]`; Map055 để dòng placeholder rõ cho artist thay sau, không unlock nhầm CG khác.
-- Chưa có sprite/face Drosalya; Map036 hint 21 hiện tên Drosalya bằng thoại thường và giữ face Bully Quỳ ở các câu của cô.
+- Chưa có sprite/face Drosalya; Map036 hint 21/24 dùng pop giọng ngoài khung hình, không có đuôi và không gán face nhân vật khác. Các câu Bully Quỳ vẫn dùng face của Bully Quỳ. Xem [đồng bộ hint 19/11](../scripts/ending-hints-2026-11-19.md).
 - Chưa có parallax tiệm sách đổ nát/đấu trường riêng; Map053/055 tạm dùng nền Atlantis tối đã có.
 
 ## Route hỏi Leo

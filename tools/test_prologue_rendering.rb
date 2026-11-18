@@ -47,6 +47,11 @@ class PopBackdropProbe
   def wcf_pop_readability_dispose; @disposed=true; end
 end
 class PrologueRenderingTest < Minitest::Test
+  def setup
+    # Inherited performance tests also use $game_map. Start with an isolated
+    # scene/map instead of depending on the randomized order of test classes.
+    SceneManager.scene=nil; $game_map=nil
+  end
   def data
     d=OpenStruct.new(active?:true,refresh_motion_blur?:false,refresh_bitmap?:false,
       tilemap_wave_sync:0,blur_animation_offset:0,zoom_x:1.3,zoom_y:1.3,

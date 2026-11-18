@@ -67,3 +67,5 @@ Khi thay script runtime, chỉ thay source nén của đúng slot đã xác đ�
 Save/Load theo theme điện thoại và cách kiểm tra: [phone-save-load-2026-11-16.md](phone-save-load-2026-11-16.md).
 
 Kiểm tra cập nhật trước Title, chuyển sang updater và tự mở lại game; giao diện năm alien nhún nhảy bổ sung ngày 18/11: [startup-update-2026-11-17.md](startup-update-2026-11-17.md).
+
+Đồng bộ 28 ending hint: pop, key light KUL, camera và fade; bằng chứng 204 khung thoại trong RGSS: [ending-hints-2026-11-19.md](ending-hints-2026-11-19.md).

@@ -37,6 +37,8 @@ class Game_Map
   # * Setup
   #--------------------------------------------------------------------------
   def setup(map_id)
+    WCFEndingHint.leave_map(self) if @map_id == WCFEndingHint::MAP_ID
+    WCFEndingHint.prepare_map(self) if map_id == WCFEndingHint::MAP_ID
     @map_id = map_id
     @map = load_data(sprintf("Data/Map%03d.rvdata2", @map_id))
     @tileset_id = @map.tileset_id

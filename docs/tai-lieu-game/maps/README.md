@@ -24,7 +24,7 @@ Số liệu dưới đây được đối chiếu trực tiếp từ `MapInfos.r
 | 29 | Hành lang truy đuổi | 20×40 | 22 | Chase QTE 11 clone |
 | 34 | Vòng vây bản thể | 20×20 | 17 | Clone, jumpscare và chuyển sang chase |
 | 35 | Phòng Hải Quỳ — Đêm muộn | 21×17 | 2 | Epilogue chase |
-| 36 | After Ending Hint | 17×13 | 2 | Router hint bằng Variable 41 |
+| 36 | After Ending Hint | 17×13 | 2 | 28 hint bằng Variable 41; pop/KUL/fade dùng chung |
 | 37 | Phòng Hải Quỳ — Chuẩn bị quà | 21×17 | 3 | Stage dùng chung, Variable 83 chọn variant |
 | 38 | Wanderer Office — Giáng sinh | 45×43 | 33 | Tiệc, free roam, Snowball, RAM/Diana |
 | 39 | Wanderer Office — Sáng hôm sau | 45×43 | 16 | Epilogue siêu thị |

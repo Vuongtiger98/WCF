@@ -1411,3 +1411,107 @@ class Game_Interpreter
     eval(script)
   end
 end
+
+# Shared presentation for every authored page of the after-ending hint map.
+# Route conditions, dialogue, faces and Title artwork remain in Map036.
+module WCFEndingHint
+  MAP_ID = 36
+  SPEAKER_EVENT_ID = 2
+  FADE_FRAMES = 30
+  AMBIENT_OPACITY = 185
+  VOICE_ANCHORS = [:@pop_message_screen_x, :@pop_message_top_y,
+    :@pop_message_baseline_y, :@pop_message_hide_tail]
+
+  def self.clear_voice_anchor
+    return unless $game_player
+    VOICE_ANCHORS.each { |name| $game_player.instance_variable_set(name,nil) }
+  end
+
+  def self.prepare_map(map)
+    # Run before the first spriteset/transition, not only after autorun starts.
+    # Map notes supply KUL black; a carried exploration lamp must not leak in.
+    $game_player.drop_light if $game_player && $game_player.respond_to?(:drop_light)
+    $game_switches[17] = $game_switches[18] = false
+    map.screen.clear
+    map.effects.clear
+    map.effects.active = false
+    map.instance_variable_set(:@wcf_hint_name_display,map.name_display)
+    map.name_display = false
+  end
+
+  def self.leave_map(map)
+    clear_voice_anchor
+    previous = map.instance_variable_get(:@wcf_hint_name_display)
+    map.name_display = previous unless previous.nil?
+    map.instance_variable_set(:@wcf_hint_name_display,nil)
+  end
+end
+
+class Game_Interpreter
+  def wcf_ending_hint_start
+    return unless $game_map.map_id == WCFEndingHint::MAP_ID
+    $game_player.transparent = true
+    map_effects.clear
+    map_effects.active = true
+    map_effects.refresh_rate = 60
+    ms_pro_cam_unlock_camera
+    ms_pro_cam_ignore_player(true)
+    # No event relocation: centre the existing actor on the black stage. The
+    # normal small-map camera clamp would offset it from the KUL spotlight.
+    actor = $game_map.events[WCFEndingHint::SPEAKER_EVENT_ID]
+    ms_pro_cam_lock_camera
+    $game_map.instance_variable_set(:@display_x,actor.real_x+0.5-Graphics.width/64.0)
+    $game_map.instance_variable_set(:@display_y,actor.real_y+0.5-Graphics.height/64.0)
+    $game_map.shadows.set_color(0,0,0)
+    $game_map.shadows.show
+    $game_map.shadows.set_opacity(255)
+    $game_map.events[WCFEndingHint::SPEAKER_EVENT_ID].give_light('cutscene_actor')
+    $game_map.events[WCFEndingHint::SPEAKER_EVENT_ID].light.set_opacity(0,0)
+    char_effect(WCFEndingHint::SPEAKER_EVENT_ID,'Breath')
+    # Drosalya has no authored sprite/face yet. Her pop is a voice above the
+    # stage, with no tag pointing at Bully Quy or at the invisible player.
+    $game_player.instance_variable_set(:@pop_message_screen_x,Graphics.width/2)
+    $game_player.instance_variable_set(:@pop_message_top_y,Graphics.height/2-64)
+    $game_player.instance_variable_set(:@pop_message_baseline_y,Graphics.height/2)
+    $game_player.instance_variable_set(:@pop_message_hide_tail,true)
+  end
+
+  def wcf_ending_hint_reveal
+    $game_map.shadows.set_opacity(WCFEndingHint::AMBIENT_OPACITY,WCFEndingHint::FADE_FRAMES)
+    # Animate scale directly: set_zoom also calls Player.center every tick,
+    # which re-applies the normal small-map camera clamp to this fixed stage.
+    map_effects.animate(:@zoom_x,1.1,WCFEndingHint::FADE_FRAMES)
+    map_effects.animate(:@zoom_y,1.1,WCFEndingHint::FADE_FRAMES)
+    light=$game_map.events[WCFEndingHint::SPEAKER_EVENT_ID].light
+    WCFEndingHint::FADE_FRAMES.times do |step|
+      light.set_opacity(255*(step+1)/WCFEndingHint::FADE_FRAMES,0)
+      Fiber.yield
+    end
+  end
+
+  def wcf_ending_hint_fade_out
+    $game_map.shadows.set_opacity(255,WCFEndingHint::FADE_FRAMES)
+    map_effects.animate(:@zoom_x,1.0,WCFEndingHint::FADE_FRAMES)
+    map_effects.animate(:@zoom_y,1.0,WCFEndingHint::FADE_FRAMES)
+    light=$game_map.events[WCFEndingHint::SPEAKER_EVENT_ID].light
+    WCFEndingHint::FADE_FRAMES.times do |step|
+      light.set_opacity(255*(WCFEndingHint::FADE_FRAMES-step-1)/WCFEndingHint::FADE_FRAMES,0)
+      Fiber.yield
+    end
+  end
+
+  def wcf_ending_hint_finish
+    $game_map.events[WCFEndingHint::SPEAKER_EVENT_ID].drop_light
+    char_effect(WCFEndingHint::SPEAKER_EVENT_ID,'Clear')
+    WCFEndingHint.clear_voice_anchor
+    map_effects.clear
+    map_effects.active = false
+    ms_pro_cam_unlock_camera
+    ms_pro_cam_ignore_player(false)
+    ms_pro_cam_focus_on(-1)
+    ms_pro_cam_reset_str
+    scene = SceneManager.scene
+    window = scene && scene.instance_variable_get(:@message_window)
+    window.force_clear_pop_message_visuals if window
+  end
+end

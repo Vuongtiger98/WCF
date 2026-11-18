@@ -610,6 +610,12 @@ class Spriteset_Map
     end
     dh = [Graphics.height, $game_map.height * 32].min
     dh = Graphics.height if $game_map.loop_vertical?
+    # The black hint stage uses screen-space KUL and a zoomed map snapshot.
+    # A centred small-map rect offsets those layers differently.
+    if $game_map.map_id == 36
+      dx = dy = 0
+      dw, dh = Graphics.width, Graphics.height
+    end
     @viewport1 = Viewport.new(dx, dy, dw, dh)
     @viewport2 = Viewport.new(dx, dy, dw, dh)
     @viewport3 = Viewport.new(dx, dy, dw, dh)
@@ -635,6 +641,10 @@ class Spriteset_Map
     end
     dh = [Graphics.height, $game_map.height * 32].min
     dh = Graphics.height if $game_map.loop_vertical?
+    if $game_map.map_id == 36
+      dx = dy = 0
+      dw, dh = Graphics.width, Graphics.height
+    end
     rect = Rect.new(dx, dy, dw, dh)
     for viewport in [@viewport1, @viewport2, @viewport3]
       viewport.rect = rect
