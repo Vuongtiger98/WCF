@@ -54,8 +54,6 @@ module PhoneMenu
   APP_CARD_H = 84
   APP_LABELS = ["Túi đồ", "Lưu game", "Tải game", "Cài đặt", "Tin nhắn", "Thư viện"]
   UI_FONT = ["Segoe UI", "Arial"]
-  # Review prototype: home + saved messages only. Other apps keep their theme.
-  PIXEL_PREVIEW = true
   UI_WORDS = {
     "Cloudy"=>"Nhiều mây", "Clear"=>"Trời quang", "Indoors"=>"Trong nhà", "Snowy"=>"Tuyết rơi",
     "Calendar"=>"Lịch", "Status"=>"Pin", "Battery"=>"còn lại", "December"=>"Tháng 12",
@@ -487,108 +485,8 @@ end
 #==============================================================================
 # Scene_Menu
 #==============================================================================
-module WCFPhonePixel
-  FONT = "VT323"
-  COLORS = {
-    :ink=>[28,23,42], :shell=>[218,144,171], :cream=>[255,237,205],
-    :screen=>[34,34,55], :panel=>[47,43,69], :edge=>[111,91,133],
-    :selected=>[71,51,86], :mint=>[139,209,191], :pink=>[239,174,201],
-    :blue=>[135,177,217], :purple=>[183,155,222], :gold=>[235,190,112]
-  }
-  def self.color(key)
-    Color.new(*COLORS[key])
-  end
-  def self.font
-    Font.exist?(FONT) ? FONT : PhoneMenu::UI_FONT
-  end
-  def self.size(value)
-    value <= 13 ? 18 : value <= 18 ? 22 : value <= 24 ? 28 : 36
-  end
-  # Stepped corners, drawn on integer coordinates, with no rounded/soft edge.
-  def self.panel(bitmap,x,y,width,height,color)
-    x,y,width,height=x.to_i,y.to_i,width.to_i,height.to_i
-    return if width<=0 || height<=0
-    corner=[4,width/2,height/2].min
-    bitmap.fill_rect(x+corner,y,width-corner*2,height,color)
-    bitmap.fill_rect(x,y+corner,width,height-corner*2,color)
-    bitmap.fill_rect(x+2,y+2,width-4,height-4,color) if width>4 && height>4
-  end
-  def self.device
-    bmp=Bitmap.new(PhoneMenu::PHONE_WIDTH,PhoneMenu::PHONE_HEIGHT)
-    panel(bmp,0,0,336,460,color(:ink))
-    panel(bmp,2,2,332,456,color(:shell))
-    panel(bmp,6,6,324,448,color(:ink))
-    panel(bmp,12,22,312,422,color(:screen))
-    bmp.fill_rect(146,12,44,4,color(:edge))
-    bmp.fill_rect(196,12,4,4,color(:mint))
-    bmp.fill_rect(150,450,36,2,color(:shell))
-    18.times do |i|
-      x=22+(i*43)%292;y=30+(i*67)%396
-      bmp.fill_rect(x/2*2,y/2*2,2,2,Color.new(183,155,222,36))
-    end
-    bmp
-  end
-  def self.icon(symbol)
-    bmp=Bitmap.new(50,50)
-    draw=lambda{|key,x,y,w,h|bmp.fill_rect(x*2,y*2,w*2,h*2,color(key))}
-    # Each app is a tiny original rectangle drawing; no scaled legacy icon.
-    case symbol
-    when :item
-      [[:ink,8,2,9,8],[:cream,9,3,7,6],[:ink,11,5,3,3],
-       [:ink,3,8,19,14],[:mint,4,9,17,12],[:cream,4,9,17,2],
-       [:edge,5,13,15,7],[:mint,6,13,13,6],[:cream,11,13,3,3],
-       [:ink,5,21,3,2],[:ink,17,21,3,2]].each{|r|draw.call(*r)}
-    when :save
-      [[:ink,4,2,17,21],[:pink,5,3,15,19],[:cream,7,3,11,8],
-       [:ink,14,4,2,5],[:ink,7,13,11,9],[:cream,8,14,9,8],
-       [:edge,9,16,7,1],[:edge,9,19,7,1]].each{|r|draw.call(*r)}
-    when :load
-      [[:ink,3,12,19,11],[:blue,4,13,17,9],[:cream,4,18,17,3],
-       [:ink,9,2,7,12],[:cream,10,3,5,10],[:ink,6,9,13,5],
-       [:cream,7,10,11,3],[:cream,9,13,7,2],[:cream,11,15,3,2]].each{|r|draw.call(*r)}
-    when :system
-      [[:ink,9,2,7,21],[:ink,2,9,21,7],[:ink,5,5,15,15],
-       [:purple,10,3,5,19],[:purple,3,10,19,5],[:purple,6,6,13,13],
-       [:cream,8,8,9,9],[:ink,10,10,5,5],[:mint,11,11,3,3]].each{|r|draw.call(*r)}
-    when :contacts
-      [[:ink,2,3,21,16],[:mint,3,4,19,14],[:ink,4,18,8,5],
-       [:mint,5,17,6,4],[:cream,6,8,3,3],[:cream,11,8,3,3],
-       [:cream,16,8,3,3],[:ink,6,14,13,1]].each{|r|draw.call(*r)}
-    when :gallery
-      [[:ink,3,2,19,22],[:cream,4,3,17,20],[:ink,6,5,13,13],
-       [:purple,7,6,11,11],[:gold,14,7,3,3],[:mint,7,13,4,4],
-       [:mint,9,11,3,6],[:blue,12,13,6,4],[:edge,10,20,5,1]].each{|r|draw.call(*r)}
-    end
-    bmp
-  end
-  def self.avatar(source,size)
-    bmp=Bitmap.new(size,size)
-    # Sample once at a 2px grid. Owned by its sprite; never alter Cache images.
-    (size/2).times do |y|
-      (size/2).times do |x|
-        sx=[((x*2+1)*source.width/size).to_i,source.width-1].min
-        sy=[((y*2+1)*source.height/size).to_i,source.height-1].min
-        bmp.fill_rect(x*2,y*2,2,2,source.get_pixel(sx,sy))
-      end
-    end
-    bmp
-  end
-end
-
 module WCFPhoneDrawing
-  def phone_pixel_preview?
-    false
-  end
-  def phone_draw_font(size)
-    [phone_pixel_preview? ? WCFPhonePixel.font : PhoneMenu::UI_FONT,
-     phone_pixel_preview? ? WCFPhonePixel.size(size) : size]
-  end
   def phone_unread_dot(bitmap,x,y,radius = 5)
-    if phone_pixel_preview?
-      bitmap.fill_rect(x-radius-1,y-radius-1,radius*2+2,radius*2+2,WCFPhonePixel.color(:cream))
-      bitmap.fill_rect(x-radius+1,y-radius+1,radius*2-2,radius*2-2,Color.new(244,91,119))
-      return
-    end
     draw_filled_circle(bitmap,x,y,radius+1,Color.new(245,246,255))
     draw_filled_circle(bitmap,x,y,radius,Color.new(244,91,119))
   end
@@ -598,7 +496,7 @@ module WCFPhoneDrawing
       @phone_measure_bitmap = Bitmap.new(1, 1)
     end
     temp = @phone_measure_bitmap
-    temp.font.name, size = phone_draw_font(size)
+    temp.font.name = PhoneMenu::UI_FONT
     temp.font.bold = false
     temp.font.size = size
     temp.font.outline = false
@@ -607,7 +505,6 @@ module WCFPhoneDrawing
   end
 
   def fill_round_rect(bitmap, x, y, width, height, radius, color)
-    return WCFPhonePixel.panel(bitmap,x,y,width,height,color) if phone_pixel_preview?
     return if width <= 0 || height <= 0
     radius = [radius, width / 2, height / 2].min
     bitmap.fill_rect(x + radius, y, width - radius * 2, height, color)
@@ -626,12 +523,13 @@ module WCFPhoneDrawing
   end
 
   def phone_text(bitmap, x, y, width, height, text, size = 16, color = nil, align = 0, bold = false)
-    bitmap.font.name, bitmap.font.size = phone_draw_font(size)
-    bitmap.font.bold = phone_pixel_preview? ? false : bold
+    bitmap.font.name = PhoneMenu::UI_FONT
+    bitmap.font.size = size
+    bitmap.font.bold = bold
     bitmap.font.italic = false
     bitmap.font.shadow = false
     bitmap.font.outline = false
-    bitmap.font.color = color || (phone_pixel_preview? ? WCFPhonePixel.color(:cream) : Color.new(245, 246, 255))
+    bitmap.font.color = color || Color.new(245, 246, 255)
     value = text.to_s
     if bitmap.text_size(value).width > width
       clusters = value.scan(/\P{M}\p{M}*/)
@@ -650,11 +548,6 @@ module WCFPhoneDrawing
   end
 
   def phone_card(bitmap, x, y, width, height, selected = false)
-    if phone_pixel_preview?
-      WCFPhonePixel.panel(bitmap,x,y,width,height,WCFPhonePixel.color(selected ? :cream : :edge))
-      WCFPhonePixel.panel(bitmap,x+2,y+2,width-4,height-4,WCFPhonePixel.color(selected ? :selected : :panel))
-      return
-    end
     edge = selected ? Color.new(174, 186, 255, 235) : Color.new(119, 140, 181, 65)
     fill_round_rect(bitmap, x, y, width, height, 12, edge)
     fill_round_rect(bitmap, x + 1, y + 1, width - 2, height - 2, 11,
@@ -662,7 +555,6 @@ module WCFPhoneDrawing
   end
 
   def phone_footer(bitmap, text)
-    text = text.gsub("↑↓","Lên/Xuống") if phone_pixel_preview?
     bitmap.fill_rect(28, PhoneMenu::PHONE_HEIGHT - 42, PhoneMenu::PHONE_WIDTH - 56, 1,
       Color.new(183, 198, 231, 44))
     phone_text(bitmap, 24, PhoneMenu::PHONE_HEIGHT - 35, PhoneMenu::PHONE_WIDTH - 48, 18,
@@ -707,10 +599,6 @@ end
 class Scene_Menu < Scene_MenuBase
   include WCFPhoneDrawing
   alias phone_menu_return_scene return_scene
-
-  def phone_pixel_preview?
-    PhoneMenu::PIXEL_PREVIEW && !@gallery_screen
-  end
 
   def start
     @phone_menu_disposed = false
@@ -772,10 +660,6 @@ class Scene_Menu < Scene_MenuBase
 
   def refresh_phone_background(filename)
     @background_sprite.bitmap.dispose if @background_sprite.bitmap && !@background_sprite.bitmap.disposed?
-    if phone_pixel_preview?
-      @background_sprite.bitmap = WCFPhonePixel.device
-      return
-    end
     bitmap = Cache.load_bitmap("Graphics/PhoneMenu/", filename)
     @background_sprite.bitmap = Bitmap.new(PhoneMenu::PHONE_WIDTH, PhoneMenu::PHONE_HEIGHT)
     @background_sprite.bitmap.stretch_blt(@background_sprite.bitmap.rect, bitmap, bitmap.rect)
@@ -963,7 +847,7 @@ class Scene_Menu < Scene_MenuBase
     # All six highlights have identical pixels; opacity belongs to each sprite.
     @phone_highlight_bitmap = Bitmap.new(PhoneMenu::APP_CARD_W, PhoneMenu::APP_CARD_H)
     fill_round_rect(@phone_highlight_bitmap, 0, 0, PhoneMenu::APP_CARD_W, PhoneMenu::APP_CARD_H,
-      12, phone_pixel_preview? ? WCFPhonePixel.color(:cream) : Color.new(179, 191, 255, 235))
+      12, Color.new(179, 191, 255, 235))
     fill_round_rect(@phone_highlight_bitmap, 2, 2, PhoneMenu::APP_CARD_W - 4, PhoneMenu::APP_CARD_H - 4,
       10, Color.new(148, 162, 250, 30))
 
@@ -983,7 +867,7 @@ class Scene_Menu < Scene_MenuBase
       @highlight_sprites << highlight
 
       sprite = Sprite.new
-      sprite.bitmap = phone_pixel_preview? ? WCFPhonePixel.icon(sym) : Cache.load_bitmap("Graphics/PhoneMenu/", icon_bitmap_name(sym)).clone
+      sprite.bitmap = Cache.load_bitmap("Graphics/PhoneMenu/", icon_bitmap_name(sym)).clone
       sprite.ox = sprite.bitmap.width / 2
       sprite.oy = sprite.bitmap.height / 2
       sprite.x = x
@@ -1251,7 +1135,7 @@ class Scene_Menu < Scene_MenuBase
     @icon_sprites.each_with_index do |sprite, index|
       selected = index == @selected_index
       progress = (@animation_frame % PhoneMenu::ANIMATION_DURATION).to_f / PhoneMenu::ANIMATION_DURATION
-      pulse = selected && !phone_pixel_preview? ? 1.0 + (PhoneMenu::ICON_SCALE - 1.0) * Math.sin(progress * Math::PI) : 1.0
+      pulse = selected ? 1.0 + (PhoneMenu::ICON_SCALE - 1.0) * Math.sin(progress * Math::PI) : 1.0
       scale = PhoneMenu::ICON_DISPLAY_SIZE.to_f / [sprite.bitmap.width, sprite.bitmap.height].max
       sprite.zoom_x = sprite.zoom_y = scale * pulse
       sprite.opacity = selected ? 255 : PhoneMenu::ICON_IDLE_OPACITY
@@ -3408,8 +3292,7 @@ class Scene_Menu < Scene_MenuBase
       @contact_panels << panel
 
       sprite = Sprite.new
-      source = Cache.load_bitmap("Graphics/PhoneMenu/", entry[:avatar])
-      sprite.bitmap = phone_pixel_preview? ? WCFPhonePixel.avatar(source,44) : source.clone
+      sprite.bitmap = Cache.load_bitmap("Graphics/PhoneMenu/", entry[:avatar]).clone
       sprite.zoom_x = sprite.zoom_y = 44.0 / [sprite.bitmap.width, sprite.bitmap.height].max
       sprite.x, sprite.y, sprite.z, sprite.visible = PhoneMenu::CONTACT_ICON_X, y + 20, 100, false
       @contact_sprites << sprite
@@ -3735,12 +3618,8 @@ class Scene_Menu < Scene_MenuBase
     @contact_messages << pmgc_name_sprite(pmgc_sender_name(entry, sender), bubble_x, y, is_main, bubble_w,
       phone_message_new?(entry,message))
     bubble = Sprite.new
-    bubble_color = if phone_pixel_preview?
-      WCFPhonePixel.color(is_main ? :selected : :cream)
-    else
-      is_main ? Color.new(78, 96, 159, 248) : Color.new(230, 236, 249, 248)
-    end
-    bubble.bitmap = make_round_rect_bitmap(bubble_w, bubble_h, 12,bubble_color)
+    bubble.bitmap = make_round_rect_bitmap(bubble_w, bubble_h, 12,
+      is_main ? Color.new(78, 96, 159, 248) : Color.new(230, 236, 249, 248))
     bubble.x, bubble.y, bubble.z = bubble_x, y + 22, 99
     lines.each_with_index do |line, index|
       phone_text(bubble.bitmap, PhoneMenu::MESSAGE_PADDING_X,
@@ -3764,8 +3643,7 @@ class Scene_Menu < Scene_MenuBase
 
   def pmgc_icon_sprite(filename, x, y)
     sprite = Sprite.new
-    source = Cache.load_bitmap("Graphics/PhoneMenu/", filename)
-    sprite.bitmap = phone_pixel_preview? ? WCFPhonePixel.avatar(source,PhoneMenu::MESSAGE_ICON_SIZE) : source.clone
+    sprite.bitmap = Cache.load_bitmap("Graphics/PhoneMenu/", filename).clone
     sprite.x, sprite.y, sprite.z = x, y, 101
     scale = PhoneMenu::MESSAGE_ICON_SIZE.to_f / [sprite.bitmap.width, sprite.bitmap.height].max
     sprite.zoom_x = sprite.zoom_y = scale
