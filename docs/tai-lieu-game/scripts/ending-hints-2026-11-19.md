@@ -28,6 +28,8 @@ Chỉ Map036 dùng viewport `(0,0,640,480)`. Camera căn giữa theo vị trí h
 
 Giữ nguyên 222 slot, ID/tên/thứ tự và 221 dòng CSV. Backup: `Data/codex_backup_ending_hint_20261119/`. Không cập nhật web app QA, không sửa các map route hay hai lỗi tương tác siêu thị còn mở.
 
+Bản sửa đã được phát hành trong [0.1.0-test.6](../production/releases/0.1.0-test.6.md).
+
 ## Kiểm tra
 
 - Native `Save/EndingHintQA_20261119_verified/`: đủ 28 hint, 204 khung thoại, về Title đúng nền và không crash. Các lượt vào được cố tình chuẩn bị KUL tắt/đen, đèn mê cung trên player, camera xoay/zoom, tone/fade cũ. Kiểm tra rect pop, đuôi theo người nói, key light, pixel mask tại vị trí sprite sau render, zoom, BGM, cleanup và pixel đen cuối fade.
