@@ -9,7 +9,7 @@ param(
     [ValidateSet('','Check','Update','Apply')][string]$StartupMode='',
     [string]$Session,
     [int]$ParentId=0,
-    [string]$CurrentVersion='0.1.0-test.5'
+    [string]$CurrentVersion='0.1.0-test.6'
 )
 $ErrorActionPreference = 'Stop'
 if (!$GameRoot) { $GameRoot=Split-Path -Parent $PSScriptRoot }

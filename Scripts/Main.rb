@@ -7,7 +7,7 @@
 # Keep the same script slot/order. The network runs in a detached PowerShell
 # helper; RGSS only renders a small wait screen and polls a local status file.
 module WCFStartupUpdate
-  VERSION = "0.1.0-test.5"
+  VERSION = "0.1.0-test.6"
   CHECK_TIMEOUT = 6.0
   MIN_DISPLAY_TIME = 5.0
   UPDATE_NOTICE = 1.0
