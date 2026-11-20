@@ -69,7 +69,7 @@ Pop Message dùng `\bm[id]`; `\cbm` quay về khung thường. Thoại thường
 - `WCFGalleryScene.show(id)`, `hide`, `hold(frames)` trình bày CG/vật phẩm và đồng bộ unlock.
 - `WCF_SNOWBALL.start(event_id)` dùng `3` Shylvie, `4` Kohi, `5` Leo, `6` Hakase trên Map038.
 - `WCFTestHub.prepare(key, overrides)` chuẩn bị checkpoint và điện thoại; event hub chịu trách nhiệm chọn branch và teleport.
-- Common Event 20 nhận Item 18 và kiểm tra Diana. Cutscene threshold hiện chỉ chạy tại Map038; mở rộng RAM sang map khác cần giữ việc nhận item tách khỏi thời điểm gặp Diana.
+- Common Event 20 nhận Item 18 và gọi CE21 để kiểm tra Diana. CE21 là cutscene duy nhất cho điều kiện 10 RAM tại Map038 và mở thẻ Diana sau thoại; mang đủ RAM từ map khác về sẽ được gọi khi free roam, không cấp thêm RAM.
 
 ## ID và tài nguyên cần tra trước khi sửa
 

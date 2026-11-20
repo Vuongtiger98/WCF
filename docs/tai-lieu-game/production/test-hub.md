@@ -1,6 +1,6 @@
 # Map069 — Route Checkpoint Hub
 
-Map069 là map playtest-only `44×32` với 40 event. Không có production transfer dẫn tới đây. Tester vào hub từ New Game/Test Play để rút ngắn thời gian chạy lại route.
+Map069 là map playtest-only `44×32` với 41 event. Không có production transfer dẫn tới đây. Tester vào hub từ New Game/Test Play để rút ngắn thời gian chạy lại route.
 
 ## Quy tắc bảo toàn dữ liệu
 
@@ -35,6 +35,7 @@ Trước khi áp checkpoint, runtime reset Switch 30–81 cùng các switch dùn
 - Hỏi Shylvie: tiệm đá, preparation, party và ending; choice giữ đủ bốn loại đá/người nhận.
 - Các event bữa tiệc/hậu truyện phải cho chọn biến thể trước khi teleport, không mặc định một trường hợp.
 - Một event riêng cho phép nghe thử danh sách BGM đã duyệt và dừng nhạc.
+- **E043 — Thử biến hình**, tại `(6,7)`, sprite `!$HaiQuyRiu`. Riu có sẵn. Menu gồm **Thử biến hình**, **Mở từng thẻ** (Gamemerr/Sanic/Diana), **Thiết lập nhanh** (mở cả bốn hoặc chỉ giữ Riu), **Hủy**. Thử dùng đúng các thẻ đã mở, không tự mở tất cả. Reset chỉ khóa ba phép trong lượt hiện tại và khôi phục dạng gốc, giữ bộ sưu tập/quest/điện thoại. X trong màn hình chọn form trả về dạng gốc qua 127. Mọi menu tối đa bốn lựa chọn, có Hủy bằng X. Vị trí, sprite và thiết lập event được giữ; 40 event khác không thay đổi.
 
 ## Kiểm tra sau khi thêm checkpoint
 

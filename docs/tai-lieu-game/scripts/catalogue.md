@@ -97,7 +97,7 @@ Ngày 15/11/2026, `Game_Map` (slot 31) được sửa để các truy vấn even
 | 198 | Custom Menu | Project/custom; tích hợp MOG Gallery và patch WCF | Menu điện thoại, Contacts, timeline, Gallery, saved chat và thông báo; [bố cục/cleanup mới](phone-ui-review-2026-11-15.md) |
 | 201 | Easy Script Importer-Exporter | KK20; 4.0 | Công cụ export/import; runtime và export đều đặt mode 0 |
 | 203 | Pop Message | Yami; cập nhật 2013-01-29 + WCF patches | Bubble bám target, face phụ, đo chữ tiếng Việt và cleanup qua scene |
-| 206 | Transform Form Selection | Project/custom; header không ghi tác giả | Chọn hình dạng, Variable 4 và thay sprite |
+| 206 | Transform Form Selection | Project/custom; header không ghi tác giả | Bốn dạng TFCard1–4, Variable 4; animation 125 → chọn dạng → 127 |
 | 210 | Multi Switch Condition Helper | Project/custom; header không ghi tác giả | Helper điều kiện switch; cần kiểm tra script call trước khi đổi API |
 | 218 | WCF Storage Memory Transition | WCF/custom; header không ghi cá nhân | Sàn kho vỡ, parallax rời màn hình, sprite rơi/xoay và cleanup |
 | 219 | WCF Test Hub | WCF/custom; header không ghi cá nhân | Seed checkpoint, route flags, sprite, KUL và toàn bộ điện thoại |

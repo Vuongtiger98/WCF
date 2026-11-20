@@ -30,7 +30,7 @@ Mọi code vẫn ở các file đã có trong manifest của bản 0.1.0-test.2.
 - Màn hình chờ hiển thị ít nhất 5 giây (bổ sung ngày 19/11), kể cả API trả không có bản mới hoặc không có mạng. Thời gian đã chờ mạng được tính vào 5 giây, không chờ thêm 5 giây sau khi nhận kết quả.
 - Sau thông báo bản mới, chờ ít nhất một giây và đủ thời gian hiển thị tối thiểu rồi mở helper. Nếu helper không báo sẵn sàng trong 6 giây, tiếp tục game và hủy phiên đó; không đóng game chỉ vì PowerShell đã được tạo process.
 - Cửa sổ updater đợi game cũ thoát tối đa 20 giây; không cưỡng bức kill game.
-- `WCFStartupUpdate::VERSION` là source floor (hiện `0.1.0-test.6`). So sánh dùng giá trị cao hơn giữa source floor và `installed.json` để không kéo code đang phát triển về Release cũ.
+- `WCFStartupUpdate::VERSION` là source floor (hiện `0.1.0-test.7`). So sánh dùng giá trị cao hơn giữa source floor và `installed.json` để không kéo code đang phát triển về Release cũ.
 - Check chỉ chạy một lần mỗi tiến trình, không chạy lại khi trở về Title. Battle Test bỏ qua startup.
 - Khi có `pending.json`, chuyển tới quy trình phục hồi trước khi chơi.
 

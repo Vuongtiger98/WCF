@@ -21591,12 +21591,20 @@ module RVData2Audit
     errors << "CE20 does not grant Item 18" unless list && list.any? do |command|
       command_code(command) == 126 && command_parameters(command) == [18, 0, 0, 1]
     end
+    if Array(list).any? { |command| command_code(command) == 117 && command_parameters(command) == [21] }
+      encounter = common_events[21]
+      encounter_list = encounter && encounter.instance_variable_get(:@list)
+      errors << "CE21 Diana encounter missing" unless encounter_list
+      errors << "CE21 must not award another RAM" if Array(encounter_list).any? { |command| command_code(command) == 126 }
+      list = Array(list) + Array(encounter_list)
+    end
     scripts = Array(list).select { |command| [355, 655].include?(command_code(command)) }
       .map { |command| command_parameters(command)[0].to_s }.join("\n")
     errors << "CE20 ten-RAM one-time condition missing" unless Array(list).any? do |command|
       command_code(command) == 111 && command_parameters(command)[0].to_i == 12 &&
-        command_parameters(command)[1].to_s.include?("item_number($data_items[18]) >= 10") &&
-        command_parameters(command)[1].to_s.include?("!$game_switches[82]")
+        (command_parameters(command)[1].to_s == "TransformMagic.diana_ready?" ||
+        (command_parameters(command)[1].to_s.include?("item_number($data_items[18]) >= 10") &&
+        command_parameters(command)[1].to_s.include?("!$game_switches[82]")))
     end
     errors << "CE20 Diana staging missing" unless scripts.include?("WCF_RAM_DIANA_STAGE")
     errors << "CE20 camera sequence missing" unless scripts.include?("WCF_RAM_DIANA_CAMERA") &&

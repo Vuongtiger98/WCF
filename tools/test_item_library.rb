@@ -119,7 +119,7 @@ class ItemLibraryTest < Minitest::Test
     refute WCFItemLibrary.entries.any? { |entry| entry[:key]=='item:1' }
     $game_party.gain_item($data_items[1],1)
     assert WCFItemLibrary.entries.any? { |entry| entry[:key]=='item:1' }
-    assert_equal 46,WCFItemLibrary.entries.size
+    assert_equal 50,WCFItemLibrary.entries.size
   end
   def test_all_gift_images_are_excluded_from_gallery_without_renumbering_cgs
     probe=ItemGalleryProbe.new
@@ -131,7 +131,7 @@ class ItemLibraryTest < Minitest::Test
     PhoneMenu::ITEM_PICTURE_IDS.each do |id|
       assert File.file?(File.join(ROOT_LIBRARY_TEST,'Graphics/Pictures',PhoneMenu::GALLERY_PICTURE_FILES[id]+'.png'))
     end
-    assert_equal 45,WCFItemLibrary.entries.size
+    assert_equal 49,WCFItemLibrary.entries.size
   end
   def test_kul_lantern_stays_out_of_the_library_even_after_gain_or_legacy_discovery
     Dir.mkdir('Save')
@@ -146,14 +146,14 @@ class ItemLibraryTest < Minitest::Test
     refute WCFItemLibrary.encounter_item($data_items[17])
     assert_nil WCFItemLibrary.database_entry('item:17')
     refute WCFItemLibrary.entries.any? { |entry| entry[:key]=='item:17' }
-    assert_equal 45,WCFItemLibrary.entries.size
+    assert_equal 49,WCFItemLibrary.entries.size
     $data_weapons[17]=RPG::Weapon.new(17,'Test sword')
     $game_party.gain_item($data_weapons[17],1)
     assert WCFItemLibrary.unlocked?('weapon:17')
   end
   def test_every_default_item_has_its_approved_description
     entries=WCFItemLibrary.entries
-    assert_equal 45,entries.size
+    assert_equal 49,entries.size
     entries.each do |entry|
       refute_empty entry[:description],entry[:key]
       refute_equal 'Vật phẩm đã gặp trong hành trình.',entry[:description],entry[:key]
@@ -161,6 +161,29 @@ class ItemLibraryTest < Minitest::Test
     assert_equal 'Bánh phô mai cam',entries.find { |entry| entry[:key]=='picture:banhkemcam' }[:name]
     assert_equal 'Kim cương hình hạt cà phê',entries.find { |entry| entry[:key]=='picture:diamondcoffee' }[:name]
     assert_equal 'Váy tặng Hải Quỳ',entries.find { |entry| entry[:key]=='picture:vayquy' }[:name]
+  end
+  def test_transform_cards_have_separate_persistent_discoveries
+    cards=WCFItemLibrary.entries.select { |entry| entry[:picture].to_s.start_with?('TFCard') }
+    assert_equal %w[TFCard1 TFCard2 TFCard3 TFCard4],cards.map { |entry| entry[:picture] }
+    refute PhoneMenu::GALLERY_PICTURE_FILES.values.any? { |file| file.start_with?('TFCard') }
+    assert WCFItemLibrary.encounter_picture('TFCard3')
+    reload_collection
+    assert WCFItemLibrary.unlocked?('picture:tfcard3')
+    refute WCFItemLibrary.unlocked?('picture:tfcard2')
+    assert_equal 'Gêm Mờ khẩm dô. Chẳng chơi được Game mấy, toàn để bị Game chơi.',cards[1][:description]
+  end
+  def test_forms_in_an_existing_save_are_added_without_erasing_collection
+    WCFItemLibrary.encounter_picture('CG2')
+    fake = Module.new
+    def fake.unlocked_forms; [Struct.new(:picture).new('TFCard2')]; end
+    Object.const_set(:TransformMagic,fake)
+    WCFItemLibrary.encounter_owned_items
+    reload_collection
+    assert WCFItemLibrary.unlocked?('picture:tfcard2')
+    assert WCFItemLibrary.unlocked?('picture:cg2')
+    refute WCFItemLibrary.unlocked?('picture:tfcard3')
+  ensure
+    Object.send(:remove_const,:TransformMagic) if defined?(TransformMagic)
   end
   def test_equipment_discoveries_use_distinct_database_keys
     $data_weapons[1]=RPG::Weapon.new(1,'Sword')
@@ -237,7 +260,7 @@ class ItemLibraryTest < Minitest::Test
     assert @scene.instance_variable_get(:@lib_full).visible
     press(:B); press(:B)
     100.times { press(:R) }
-    assert_equal 44,@scene.instance_variable_get(:@lib_index)
+    assert_equal 48,@scene.instance_variable_get(:@lib_index)
     press(:C)
     assert_equal :detail,@scene.instance_variable_get(:@lib_mode)
     assert_equal 1,$game_party.item_number($data_items[18])

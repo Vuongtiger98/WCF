@@ -122,6 +122,7 @@ Tên và cách chia file dưới đây là cấu trúc đang được sử dụn
 | `production/releases/0.1.0-test.4.md` | Năm alien nhún nhảy và thanh loading pastel | Đã phát hành 18/11/2026 |
 | `production/releases/0.1.0-test.5.md` | Chờ ít nhất 5 giây và bản vá cuộn web app giữ tiến độ | Đã phát hành 19/11/2026 |
 | `production/releases/0.1.0-test.6.md` | Đồng bộ 28 ending hint: pop, KUL, fade và camera | Đã phát hành 19/11/2026 |
+| `production/releases/0.1.0-test.7.md` | Bốn dạng biến hình, animation 125/127, thẻ sưu tập và điều kiện mở | Chuẩn bị phát hành 20/11/2026 |
 | `archive/source-map.md` | Ánh xạ từ tài liệu cũ sang tài liệu mới | Bản ánh xạ ban đầu |
 
 ## Mô hình nội dung

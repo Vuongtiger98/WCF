@@ -9,8 +9,8 @@
 - Mũi tên chọn (↑↓ di chuyển sáu ô), Q/W đổi trang, Z mở chi tiết. Chi tiết ngang có ảnh cận vật phẩm bên trái và mô tả bên phải; Z xem ảnh gốc toàn màn hình, X quay lại từng bước.
 - Mở từ menu: điện thoại xoay dọc→ngang trong 24 frame, khóa input và ẩn nội dung trong lúc xoay. X ở lưới xoay ngang→dọc rồi mới trở về menu, không lặp slide-in. Caller trực tiếp dùng ngang tĩnh, không xoay về dọc khi trả về. Xem vật phẩm không sử dụng, cấp thêm hoặc trừ vật phẩm trong gameplay.
 - Thumbnail cắt cận vật phẩm thay vì thu nhỏ nguyên ảnh có nhiều nền trống. `LIB_FOCUS` định vùng riêng cho CG2–CG5; các ảnh quà còn lại dùng vùng phía trong khung trưng bày 640×480, tự tỉ lệ theo kích cỡ bitmap. Chỉ thay vùng nguồn khi vẽ UI, không sửa file ảnh; chế độ ảnh gốc vẫn giữ đầy đủ hình.
-- Có 44 ảnh vật phẩm đã đăng ký (CG2–CG5 và các mã ảnh cũ 42–81), cùng item 18 RAM: tổng mặc định **45 mục**. Item 17 là đèn thử cơ chế KUL và bị loại khỏi thư viện, kể cả khi đã nhận/đã lưu trong dữ liệu thư viện cũ. Các vật phẩm Database khác chỉ thêm vào danh mục sau khi thực sự nhận được; không bày toàn bộ item/equipment RTP mặc định như các mục khóa.
-- Cả 45 mục có mô tả riêng đã được tác giả duyệt, lưu trong `WCFItemLibrary::DESCRIPTIONS`. Tên hiển thị đổi thành **Bánh phô mai cam** và **Kim cương hình hạt cà phê** cho đúng bản chất vật phẩm; file ảnh/key giữ nguyên. [Danh sách mô tả đã duyệt](../production/item-library-descriptions-draft-2026-11-17.md).
+- Có 44 ảnh vật phẩm đã đăng ký (CG2–CG5 và các mã ảnh cũ 42–81), item 18 RAM và bốn thẻ biến hình TFCard1–4: tổng mặc định **49 mục**. Item 17 là đèn thử cơ chế KUL và bị loại khỏi thư viện, kể cả khi đã nhận/đã lưu trong dữ liệu thư viện cũ. Các vật phẩm Database khác chỉ thêm vào danh mục sau khi thực sự nhận được; không bày toàn bộ item/equipment RTP mặc định như các mục khóa.
+- 45 mục quà/RAM có mô tả đã duyệt; bốn thẻ có mô tả do tác giả cung cấp ngày 20/11/2026, lưu trong `WCFItemLibrary::DESCRIPTIONS`. Tên hiển thị đổi thành **Bánh phô mai cam** và **Kim cương hình hạt cà phê** cho đúng bản chất vật phẩm; file ảnh/key giữ nguyên. [Danh sách mô tả đã duyệt](../production/item-library-descriptions-draft-2026-11-17.md).
 - Một số ảnh đã có tài nguyên nhưng chưa có cảnh tham chiếu vẫn giữ khóa. Không tự chèn cảnh hoặc bịa điều kiện mở để làm đầy bộ sưu tập.
 
 ## Điều kiện khám phá
@@ -18,7 +18,8 @@
 1. `Game_Party#gain_item` với số lượng dương: mở mục Database tương ứng (item/weapon/armor), ngoại trừ `item:17`; gọi tiếp toàn bộ logic gốc gồm cơ chế RAM.
 2. `Game_Picture#show`: nếu ảnh là một trong 44 ảnh vật phẩm đã đăng ký thì mở mục ảnh đó.
 3. `GlobalGallery.unlock(ID)` và `enable_picture(ID)` cũ: nếu ID thuộc ảnh vật phẩm thì chuyển sang thư viện, không mở slot ảnh đó trong Gallery và không phát thông báo “CG mới”. Điều này giữ nguyên các điểm mở khóa event đang có, kể cả CG có khung đen dùng `WCFGalleryScene`.
-4. Khi mở thư viện, vật phẩm đang có trong inventory được ghi nhận để phù hợp trạng thái lượt chơi hiện tại.
+4. Khi mở thư viện, vật phẩm trong inventory và các thẻ biến hình đã mở trong save được ghi nhận để phù hợp trạng thái lượt chơi hiện tại.
+5. `TransformMagic.unlock` ghi nhận TFCard tương ứng. Riu mở ở New Game; Gamemerr qua 1.000 điểm Invaders siêu thị, Sanic qua 1.000 điểm CattoPetting phòng Kohi, Diana sau cuộc gặp 10 RAM tại Map038. Thẻ vẫn giấu ảnh/tên trước khi khám phá, không nằm trong Gallery. Lưới/chi tiết crop mặt trước của thẻ, xem ảnh gốc giữ đủ bố cục TFCard.
 
 “Đã gặp” đối với ảnh nghĩa là được hiện trong cảnh/điểm mở khóa đã có, không bắt buộc còn sở hữu món đó. Chỉ đọc tên trong một dòng thoại không tự mở mục; không đoán theo từ khóa. Tải bitmap vào Cache để dựng menu không mở khóa mục. Vật phẩm đã tặng, dùng hoặc tiêu hao vẫn được giữ trong bộ sưu tập.
 
@@ -67,3 +68,5 @@ Lượt mô tả đã duyệt dùng `Save/PhoneSaveLoadQA_20261117_192552/`: 243
 ## Mô tả cách hiện thoại
 
 Settings đổi tên mục thành **Cách hiện thoại**, giá trị **Cả câu** hoặc **Từng ký tự**. Mô tả thay theo trạng thái: **“Hiện cả câu ngay lập tức.”** hoặc **“Hiện dần từng ký tự.”**. ← chọn từng ký tự, → chọn cả câu, Z đổi chế độ; vẫn dùng tùy chọn `instantmsg` của Yanfly, không đổi cách chuyển khung thoại.
+
+Cập nhật thẻ 20/11/2026: bốn TFCard làm tổng mặc định thành 49. Bộ test hiện đạt 56 case / 2.076 assertion; kiểm tra native đo đủ bốn mô tả bằng font thật và xem các ảnh `library-cards-card-*.png` trong `Save/TransformCardRewards/verified/captures`. [Chi tiết biến hình và các mốc mở](transform-review-2026-11-20.md).

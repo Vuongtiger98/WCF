@@ -1947,6 +1947,8 @@ end
 
 module WCFItemLibrary
   FILE_NAME = "Save/ItemLibrary.rvdata2"
+  CARD_PICTURES = {"TFCard1"=>"Thẻ Riu", "TFCard2"=>"Thẻ Gamemerr",
+    "TFCard3"=>"Thẻ Sanic", "TFCard4"=>"Thẻ Diana"}
   # Database item 17 belongs to the KUL lantern demo, not this collection.
   EXCLUDED_KEYS = ["item:17"]
   DESCRIPTIONS = {
@@ -1994,7 +1996,11 @@ module WCFItemLibrary
     "picture:tuideocheo" => "Chiếc túi Kohi tặng Shylvie, đính những hạt cườm xanh trong vắt. Nhìn là đoán được người nhận.",
     "picture:vaycv" => "Chiếc váy dạ hội Kohi dành cho Shylvie. Một dịp để thử phong cách khác với những bộ đồ quen thuộc.",
     "picture:vayquy" => "Chiếc váy xanh đính nơ vàng dành cho Hải Quỳ. Một món quà để diện trong những dịp đặc biệt.",
-    "item:18" => "Một thanh RAM trông khá có giá trị. Với Diana, góp đủ mười thanh là đủ cho một bữa no."
+    "item:18" => "Một thanh RAM trông khá có giá trị. Với Diana, góp đủ mười thanh là đủ cho một bữa no.",
+    "picture:tfcard1" => "Hình dạng nguyên thuỷ của Hải Quỳ.",
+    "picture:tfcard2" => "Gêm Mờ khẩm dô. Chẳng chơi được Game mấy, toàn để bị Game chơi.",
+    "picture:tfcard3" => "Một con nhím màu xanh di chuyển rất nhanh nhưng trông hơi kỳ quặc.",
+    "picture:tfcard4" => "Bé gái người máy dễ thương."
   }
 
   def self.picture_gallery_id?(id)
@@ -2003,6 +2009,8 @@ module WCFItemLibrary
 
   def self.picture_key(name)
     name = name.to_s.sub(/\.(png|jpg|jpeg|bmp)\z/i,"")
+    card = CARD_PICTURES.keys.find { |file| file.downcase == name.downcase }
+    return "picture:"+card.downcase if card
     id = PhoneMenu::ITEM_PICTURE_IDS.find { |n| PhoneMenu::GALLERY_PICTURE_FILES[n].downcase == name.downcase }
     id ? "picture:"+PhoneMenu::GALLERY_PICTURE_FILES[id].downcase : nil
   end
@@ -2122,6 +2130,10 @@ module WCFItemLibrary
       {:key=>key,:name=>PhoneMenu::GALLERY_PICTURE_NAMES[id],:picture=>file,
         :description=>DESCRIPTIONS[key] || "Vật phẩm đã gặp trong hành trình."}
     end
+    CARD_PICTURES.each do |file,name|
+      key = picture_key(file)
+      result << {:key=>key,:name=>name,:picture=>file,:description=>DESCRIPTIONS[key]}
+    end
     keys = ["item:18"] + @keys.keys.reject { |key| key.start_with?("picture:") }.sort
     keys.uniq.each do |key|
       entry = database_entry(key)
@@ -2133,6 +2145,9 @@ module WCFItemLibrary
   def self.encounter_owned_items
     return unless $game_party
     $game_party.all_items.each { |item| encounter_item(item) }
+    if defined?(TransformMagic)
+      TransformMagic.unlocked_forms.each { |form| encounter_picture(form.picture) }
+    end
   end
 end
 
@@ -4838,6 +4853,10 @@ class Scene_ItemLibrary < Scene_MenuBase
   end
 
   def lib_focus_rect(entry,source)
+    if WCFItemLibrary::CARD_PICTURES.key?(entry[:picture])
+      return Rect.new((210*source.width/640.0).round,(77*source.height/480.0).round,
+        (220*source.width/640.0).round,(314*source.height/480.0).round)
+    end
     focus = LIB_FOCUS[entry[:picture].downcase]
     base_w, base_h = focus ? 544.0 : 640.0,focus ? 416.0 : 480.0
     focus ||= [220,96,204,198]

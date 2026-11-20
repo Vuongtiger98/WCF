@@ -207,7 +207,7 @@ Snapshot đối chiếu trực tiếp `Data/Scripts.rvdata2`. Slot là chỉ s�
 | 195 | [MOG_Picture_Gallery](<../../../Scripts/MOG_Picture_Gallery.rb>) | Có mã | exact | `edc0c0b45563` |
 | 196 | [Move the Menu](<../../../Scripts/Move the Menu.rb>) | Có mã | exact | `deac30decd8b` |
 | 197 | [Cutscene Group Chat](<../../../Scripts/Cutscene Group Chat.rb>) | Có mã | exact | `888f8ece463d` |
-| 198 | [Custom Menu](<../../../Scripts/Custom Menu.rb>) | Có mã | exact | `2ed43a75ff63` |
+| 198 | [Custom Menu](<../../../Scripts/Custom Menu.rb>) | Có mã | exact | `5755669bf259` |
 | 199 | [BulletHell](<../../../Scripts/BulletHell.rb>) | Có mã | line-endings-only | `5f046f2e6063` |
 | 200 | [Random Event Patch](<../../../Scripts/Random Event Patch.rb>) | Có mã | line-endings-only | `72e08c8015f5` |
 | 201 | [Easy Script Importer-Exporter  ](<../../../Scripts/Easy Script Importer-Exporter  .rb>) | Có mã | exact | `fb255a4fadff` |
@@ -215,10 +215,10 @@ Snapshot đối chiếu trực tiếp `Data/Scripts.rvdata2`. Slot là chỉ s�
 | 203 | [Pop Message](<../../../Scripts/Pop Message.rb>) | Có mã | exact | `d7a99a1660b7` |
 | 204 | [Enhanced Camera ](<../../../Scripts/Enhanced Camera .rb>) | Có mã | exact | `97172d461ad0` |
 | 205 | [The Art of Screenshake](<../../../Scripts/The Art of Screenshake.rb>) | Có mã | exact | `2594f422a3a6` |
-| 206 | [Transform Form Selection](<../../../Scripts/Transform Form Selection.rb>) | Có mã | line-endings-only | `561dd6c82726` |
+| 206 | [Transform Form Selection](<../../../Scripts/Transform Form Selection.rb>) | Có mã | exact | `1693002f9a64` |
 | 207 | (slot rỗng) | Rỗng/separator | — | `e3b0c44298fc` |
 | 208 | (slot rỗng) | Rỗng/separator | — | `e3b0c44298fc` |
-| 209 | [Catto Petting Minigame](<../../../Scripts/Catto Petting Minigame.rb>) | Có mã | line-endings-only | `2c24b77cbfec` |
+| 209 | [Catto Petting Minigame](<../../../Scripts/Catto Petting Minigame.rb>) | Có mã | exact | `593acf9bbf80` |
 | 210 | [Multi Switch Condition Helper](<../../../Scripts/Multi Switch Condition Helper.rb>) | Có mã | exact | `644db3d1e285` |
 | 211 | [Atlantis Shrimp Fishing](<../../../Scripts/Atlantis Shrimp Fishing.rb>) | Có mã | exact | `e08e6aa18af6` |
 | 212 | (slot rỗng) | Rỗng/separator | — | `e3b0c44298fc` |
@@ -229,7 +229,7 @@ Snapshot đối chiếu trực tiếp `Data/Scripts.rvdata2`. Slot là chỉ s�
 | 217 | ▼ Main Process | Rỗng/separator | — | `e3b0c44298fc` |
 | 218 | [WCF Storage Memory Transition](<../../../Scripts/WCF Storage Memory Transition.rb>) | Có mã | exact | `12873b29e63e` |
 | 219 | [WCF Test Hub](<../../../Scripts/WCF Test Hub.rb>) | Có mã | exact | `26b17a6b92ca` |
-| 220 | [Main](<../../../Scripts/Main.rb>) | Có mã | exact | `858145a09a6e` |
+| 220 | [Main](<../../../Scripts/Main.rb>) | Có mã | exact | `c1c1160f0ba7` |
 | 221 | (slot rỗng) | Rỗng/separator | — | `e3b0c44298fc` |
 
 ## Phạm vi xác minh

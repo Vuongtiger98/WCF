@@ -409,6 +409,7 @@ class Scene_CattoPetting < Scene_Base
 
     @score += SCORE_PER_MOVE
     refresh_score
+    TransformMagic.reward_score(:sanic, @score, 46)
     true
   end
 
