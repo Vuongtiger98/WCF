@@ -71,3 +71,7 @@ Kiểm tra cập nhật trước Title, chuyển sang updater và tự mở lạ
 Đồng bộ 28 ending hint: pop, key light KUL, camera và fade; bằng chứng 204 khung thoại trong RGSS: [ending-hints-2026-11-19.md](ending-hints-2026-11-19.md).
 
 Bốn dạng TFCard1–4, chuỗi magical girl 125 → chọn dạng → 127; X hủy để khôi phục dạng gốc: [transform-review-2026-11-20.md](transform-review-2026-11-20.md).
+
+Animation đã trở về chuyển động ban đầu: bốn lá bài, 48/32 frame cho 125/127; giữ mặt lưng bài mới không lộ hình nhân vật. Các thử nghiệm thêm bài, xoay riêng, xòe quạt và vòng sáu lá đã được bỏ. Xem phần **Khôi phục chuyển động ban đầu** của tài liệu biến hình ở trên.
+
+Phản hồi NPC theo biến hình (21/11/2026) dùng script chung trong slot 206, tự nhận diện NPC/hitbox, tiếp tục phản hồi khi còn biến hình và random không lặp; thoại thường trở lại sau hủy phép: xem phần **Phản hồi NPC** trong [tài liệu biến hình](transform-review-2026-11-20.md).

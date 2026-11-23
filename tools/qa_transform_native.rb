@@ -31,13 +31,22 @@ module TransformQA
   def self.cast_and_choose(scene,id,cancel=false,film=false)
     self.case_id=id.to_s+(cancel ? '-cancel' : '')
     assert(TransformMagic.start_cast,'free roam starts 125 for '+case_id)
+    cast_updates=TransformMagic.animation_duration(125)
+    reveal_updates=TransformMagic.animation_duration(127)
+    reveal_base=cast_updates+60
     tick=0
-    while SceneManager.scene.equal?(scene) && tick<155
+    while SceneManager.scene.equal?(scene) && tick<cast_updates+8
       scene.update;tick+=1
       record(scene,tick,film)
       assert(sprite(scene).color.alpha==255,'body reaches opaque magical colour') if tick==100
+      if tick==(cast_updates*0.75).floor
+        cards=sprite(scene).animation.sprites.select{|cell|cell.visible && cell.opacity>0 && cell.src_rect.y==384}
+        assert(cards.size==4,'original four face-down cards restored')
+        assert(cards.any?{|cell|cell.z<sprite(scene).z} && cards.any?{|cell|cell.z>sprite(scene).z},'original card depth moves behind and in front of the character')
+        assert(cards.all?{|cell|(cell.zoom_x-cell.zoom_y).abs<0.001 && [cell.angle%360,360-cell.angle%360].min<=10.01},'original cards keep uniform scale and a small authored lean')
+      end
     end
-    assert(tick==146,'125 finishes after 144 animation updates plus handoff')
+    assert(tick==cast_updates,'125 completes the original timing plus handoff')
     assert(TransformMagic.phase==:choose,'selector holds the transformation state')
     assert(TransformMagic.body_alpha==255,'body remains #FFBF9B across selector')
     assert(!sprite(scene).animation?,'125 is complete before map teardown')
@@ -51,8 +60,8 @@ module TransformQA
     assert(preview.equal?(Cache.picture('TFCard'+(index+1).to_s)),'correct TFCard selected')
     selector_file=shot('selector')
     if film
-      frames[case_id] << {:tick=>146,:image=>selector_file}
-      frames[case_id] << {:tick=>206,:image=>selector_file}
+      frames[case_id] << {:tick=>cast_updates,:image=>selector_file}
+      frames[case_id] << {:tick=>reveal_base,:image=>selector_file}
     end
     original_name=$game_party.leader.tm_original_character_name || $game_party.leader.character_name
     self.key=cancel ? :B : :C;selector.update;self.key=nil
@@ -68,7 +77,7 @@ module TransformQA
     assert($game_variables[4]==0 && $game_party.leader.tm_original_character_name.nil?,'cancel restores original form and clears transformation state') if cancel
     last_alpha=255
     elapsed=0
-    while TransformMagic.casting? && elapsed<105
+    while TransformMagic.casting? && elapsed<reveal_updates+8
       scene.update;elapsed+=1
       current=sprite(scene).color.alpha
       if elapsed==30
@@ -77,9 +86,9 @@ module TransformQA
       end
       assert(current<=last_alpha,'127 body colour fades monotonically') if elapsed%12==0
       last_alpha=current
-      record(scene,206+elapsed,film)
+      record(scene,reveal_base+elapsed,film)
     end
-    assert(elapsed==98,'127 finishes after 96 animation updates plus margin')
+    assert(elapsed==reveal_updates,'127 completes the original dissolve timing plus margin')
     assert(sprite(scene).color.alpha==0,'body returns completely to normal')
     assert(!sprite(scene).animation? && $game_player.movable?,'animation cells and input lock are cleared')
     assert($game_temp.tm_snapshot.nil?,'selector snapshot was released')
@@ -125,6 +134,14 @@ module TransformQA
     SceneManager.instance_variable_set(:@scene,previous)
   end
   def self.run
+    # Re-running a disposable fixture must not inherit cards unlocked by the
+    # previous QA run. Refuse to touch collection files outside an isolated CWD.
+    qa_folder=File.expand_path('.').tr('\\','/')
+    qa_prefix=File.expand_path(TRANSFORM_QA_PROJECT_ROOT+'/Save').tr('\\','/')+'/'
+    raise 'Transform QA must run in its isolated Save folder' unless qa_folder.start_with?(qa_prefix)
+    ['Save/ItemLibrary.rvdata2','Save/ItemLibrary.rvdata2.bak'].each do |path|
+      File.delete(path) if File.file?(path)
+    end
     log('BOOT Ruby '+RUBY_VERSION)
     DataManager.init;DataManager.setup_new_game
     $data_animations[125]=load_data('animation125.rvdata2')
@@ -141,7 +158,7 @@ module TransformQA
     assert(!TransformMagic.unlock(:undefined_form),'unknown form cannot enter unlock storage')
     TransformMagic.unlock(:sanic);TransformMagic.unlock(:diana) # Local QA only.
     assert($data_animations[123].name.empty? && $data_animations[124].name.empty?,'obsolete database variants removed')
-    assert($data_animations[125].frames.size==48 && $data_animations[127].frames.size==32,'both editable animation halves present')
+    assert($data_animations[125].frames.size==48 && $data_animations[127].frames.size==32,'original cast/reveal use 48 and 32 editable frames')
     fish_map=load_data('Data/Map013.rvdata2')
     [97,98].each do |id|
       event=Game_Event.allocate
@@ -149,13 +166,14 @@ module TransformQA
       page=fish_map.events[id].pages[3]
       [1,2,3,4].each do |value|
         $game_variables[4]=value
-        assert(event.conditions_met?(page)==(value==1),'fish-only page matches form 1, not '+value.to_s)
+        assert(!event.conditions_met?(page),'legacy fish page is superseded by shared reactions for form '+value.to_s)
       end
     end
     $game_variables[4]=0
     scene=map_scene
     [:riu,:gamemerr,:sanic,:diana].each_with_index do |id,index|
-      scene=cast_and_choose(scene,id,false,true)
+      # One complete film is sufficient: all forms still run every assertion.
+      scene=cast_and_choose(scene,id,false,index==0)
       assert($game_variables[4]==index+1,'form event variable matches '+id.to_s)
       assert($game_player.character_index==0,'single-character sheet index is zero')
       [2,4,6,8].each do |direction|
@@ -170,11 +188,12 @@ module TransformQA
     code='tm_change_actor_graphic('+[actor.id,'!$HaiQuy',0,actor.face_name,actor.face_index].map{|p|p.inspect}.join(',')+')'
     $game_map.interpreter.setup([RPG::EventCommand.new(355,0,[code]),RPG::EventCommand.new(0)])
     elapsed=0
+    event_limit=TransformMagic.animation_duration(125)+TransformMagic.animation_duration(127)+30
     begin
       scene.update;elapsed+=1
       assert(SceneManager.scene.equal?(scene),'scripted change never opens selector') if elapsed%60==0
-    end while $game_map.interpreter.running? && elapsed<270
-    assert(elapsed<270 && !TransformMagic.casting?,'scripted two-part change finishes')
+    end while $game_map.interpreter.running? && elapsed<event_limit
+    assert(elapsed<event_limit && !TransformMagic.casting?,'scripted two-part change finishes')
     assert(actor.character_name=='!$HaiQuy' && sprite(scene).color.alpha==0,'scripted change restores the requested sprite and colour')
     assert($game_variables[4]==0 && actor.tm_original_character_name.nil?,'authored human outfit resets form and original-sprite bookkeeping')
     $game_map.interpreter.setup([RPG::EventCommand.new(355,0,['TransformMagic.request_cast']),RPG::EventCommand.new(0)])
@@ -196,7 +215,8 @@ module TransformQA
     SceneManager.instance_variable_set(:@scene,Scene_Base.new);scene.terminate
     assert(!TransformMagic.casting?,'external scene exit clears input lock')
     library_cards(false)
-    File.open('result.marshal','wb'){|f|f.write(Marshal.dump({:complete=>true,:checks=>checks,:films=>frames,:ruby=>RUBY_VERSION}))}
+    timing={:cast=>TransformMagic.animation_duration(125),:selector_hold=>60,:reveal=>TransformMagic.animation_duration(127)}
+    File.open('result.marshal','wb'){|f|f.write(Marshal.dump({:complete=>true,:checks=>checks,:films=>frames,:timing=>timing,:ruby=>RUBY_VERSION}))}
     log('COMPLETE checks='+checks.to_s)
   rescue Exception=>error
     log('FAIL '+error.class.to_s+': '+error.message+"\r\n"+error.backtrace.join("\r\n"))

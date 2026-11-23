@@ -427,3 +427,282 @@ class Scene_TransformMagic < Scene_Base
     TransformMagic.finish unless SceneManager.scene_is?(Scene_Map)
   end
 end
+
+# NPC_FORM_REACTIONS: shared manual-interaction layer; no event data edits.
+module NPCFormReaction
+  SPECIAL = {
+    :leo => {
+      :riu => 'Quỳ hả? Bà định nói gì thì biến lại một chút coi. Tui chưa học tiếng ọc ọc đâu!',
+      :gamemerr => 'Bà chơi game tới mức biến thành máy luôn hả? Có chạy được đống đĩa trong phòng tui không?',
+      :sanic => 'Chạy nhanh vậy thì tiện ghê! Tui còn một chồng hồ sơ cần chuyển—Ơ, đứng lại coi!',
+      :diana => 'Ủa, khách tới nữa hả? …Quỳ? Bà lại tính để tui chào nhầm thêm lần nữa đúng không?'
+    },
+    :shylvie => {
+      :riu => 'Ọc ọc cái gì. Muốn nhờ tôi làm việc thì ít nhất phải để tôi hiểu bà đang nhờ gì chứ.',
+      :gamemerr => 'Có hình dạng chuyên chơi game rồi, chắc lần này bà thắng được chứ?',
+      :sanic => 'Chạy nhanh thế thì tự đi mua đồ nhé. Đừng có đứng đây nhờ tôi dịch chuyển nữa.',
+      :diana => 'Lại một bé gái dễ thương. Gu chọn hình dạng của bà nhất quán thật đấy.'
+    },
+    :kohi => {
+      :riu => 'Quỳ có uống cà phê được trong dạng này không? …Thôi, đừng thử ngay trên bàn làm việc của tôi.',
+      :gamemerr => 'Nếu tôi đặt ly cà phê cạnh bà thì có cần giữ khoảng cách như với máy tính không?',
+      :sanic => 'Quỳ đi chậm chút coi! Tôi vừa pha xong ly này, chưa muốn lau sàn đâu!',
+      :diana => 'Dễ thương ghê! Nhưng nếu Quỳ đói thì báo trước nha. Chỗ RAM của Hakase tôi không dám tự lấy đâu.'
+    },
+    :hakase => {
+      :riu => 'Nhí nhí, mấy cái tua đó cử động riêng được hả? Cậu thử vẫy từng cái một coi!',
+      :gamemerr => 'Nhí nhí, tôi có mấy ý tưởng nâng cấp! …Sao cậu lùi lại? Tôi còn chưa lấy dụng cụ ra mà!',
+      :sanic => 'Nếu vừa chạy vừa lắp mô hình thì có nhanh hơn không ta? …Không được hả?',
+      :diana => 'Khoan, để tôi nhìn kỹ chút! …Chỉ nhìn thôi mà! Tôi cất tua vít rồi, thấy chưa?'
+    },
+    :alpha => {:gamemerr => 'D-13, bà biến thành máy chơi game luôn rồi hả? Cho tôi mượn một lát—Beta, đừng nhìn tôi như thế!'},
+    :beta => {:sanic => 'Nếu di chuyển nhanh hơn thì tốt. Nhưng nhớ giao hồ sơ đúng bàn, đừng thả chúng bay khắp phòng.'},
+    :diana => {:diana => 'Ơ? Sao chị lại giống em vậy? Chị cũng đang đói RAM ạ?'}
+  }
+  SHORT = {
+    :leo => {:riu=>'Tui hiểu mỗi đoạn bà đang bất mãn thôi.',
+      :gamemerr=>'Có chạy được đống đĩa trong phòng tui không?', :sanic=>'Ơ, đứng lại coi!',
+      :diana=>'Bà lại tính để tui chào nhầm thêm lần nữa đúng không?'},
+    :shylvie => {:riu=>'Ọc ọc cái gì.', :gamemerr=>'Tôi đang nhớ lại kết quả lần trước.',
+      :sanic=>'Đừng có đứng đây nhờ tôi dịch chuyển nữa.', :diana=>'Gu chọn hình dạng của bà nhất quán thật đấy.'},
+    :kohi => {:riu=>'…Thôi, đừng thử ngay trên bàn làm việc của tôi.',
+      :gamemerr=>'Nếu tôi đặt ly cà phê cạnh bà thì có cần giữ khoảng cách như với máy tính không?',
+      :sanic=>'Tôi vừa pha xong ly này, chưa muốn lau sàn đâu!', :diana=>'Chỗ RAM của Hakase tôi không dám tự lấy đâu.'},
+    :hakase => {:riu=>'Cậu thử vẫy từng cái một coi!',
+      :gamemerr=>'…Sao cậu lùi lại? Tôi còn chưa lấy dụng cụ ra mà!',
+      :sanic=>'…Không được hả?', :diana=>'Tôi cất tua vít rồi, thấy chưa?'}
+  }
+  COMMON = {
+    :riu => ['Ơ? Bé này đi lạc à?', 'Mấy cái tua kia cử động được thật kìa.',
+      'Bạn đang muốn nói gì với tôi sao?', 'Nhìn dễ thương ghê. Nhưng tôi không biết nên chào kiểu gì.'],
+    :gamemerr => ['Người máy này tự đi mua sắm luôn à?', 'Trông như bước ra từ một trò chơi cũ vậy.',
+      'Bạn tới chơi hay tới tìm người chơi cùng?', 'Tôi chưa thấy mẫu người máy này bao giờ.'],
+    :sanic => ['Tôi vừa thấy một vệt xanh chạy ngang… Là bạn hả?', 'Đi chậm chút nhé, ở đây đông người lắm.',
+      'Nhìn quen quen, nhưng có gì đó hơi khác.', 'Bạn không cần lấy đà chỉ để bước tới đây đâu.'],
+    :diana => ['Bé đi cùng ai vậy?', 'Ồ, là người máy à? Trông giống người thật ghê.',
+      'Chào bé. Bé đang tìm ai sao?', 'Mẫu người máy này dễ thương thật.']
+  }
+  SHOP = {:riu=>'Bạn chỉ vào món muốn xem nhé.',
+    :gamemerr=>'Nếu muốn xem máy chơi game thì ở phía bên kia.',
+    :sanic=>'Trong cửa hàng mình đi bộ thôi nhé!', :diana=>'Bé muốn xem món nào?'}
+  # Baked NPCs have no character filename. Use IDs, never tile coordinates.
+  PARALLAX = {
+    3=>{22=>[:beta,4],27=>[:alpha,5]}, 13=>{97=>[:leo,97],98=>[:shylvie,98]},
+    19=>{5=>[:shop,5],8=>[:shop,8]},
+    58=>{2=>[:shop,9],6=>[:common,6],8=>[:common,8],11=>[:common,11],
+      12=>[:common,12],18=>[:common,18],20=>[:common,20],25=>[:common,25]}
+  }
+  NORMAL_FACES = {:leo=>'Leo_Normal_Emote',:shylvie=>'CV_Normal',
+    :alpha=>'AlphaC61_Emote',:beta=>'BetaM34_Emote'}
+  CHRISTMAS_FACES = {:leo=>'Leo_Giangsinh_Emote',:shylvie=>'CV_Giangsinh_Emote1',
+    :kohi=>'Kohi_Giangsinh_Emote1',:hakase=>'Hakase_Giangsinh_Emote'}
+  STORY_CODES = [103,104,126,127,128,201,202,301,302,303,351,352,353,354]
+  class << self
+    def action?; $game_temp && $game_temp.nfr_action_depth.to_i > 0; end
+    def iv(object,name); object.instance_variable_get('@'+name.to_s); end
+    def current_form
+      return nil unless $game_player && $game_variables && !TransformMagic.casting?
+      TransformMagic::FORMS.values.find do |entry|
+        entry.value == $game_variables[4] && entry.char_name == $game_player.character_name &&
+          entry.char_idx == $game_player.character_index
+      end
+    end
+    def legacy_riu_page?(map_id,event_id,page)
+      return false unless map_id == 13 && [97,98].include?(event_id)
+      first = page.list[0]
+      first && first.code == 108 && first.parameters == ['<transform form: riu>']
+    end
+    def empty_diana?(event)
+      action? && $game_map.map_id == 38 && event.id == 18 && $game_switches[48] &&
+        $game_switches[82] && event.character_name == '!$Diana' && current_form
+    end
+    def resolve(event)
+      visited = []
+      8.times do
+        return nil unless event && event.list && !iv(event,:erased) && !visited.include?(event.id)
+        visited << event.id
+        commands = event.list.reject { |entry| [0,108,408].include?(entry.code) }
+        break unless commands.size == 1 && commands[0].code == 355 &&
+          commands[0].parameters[0] =~ /\A\$game_map\.events\[(\d+)\]\.start\s*# WCF_CAFE_HITBOX_/
+        event = $game_map.events[$1.to_i]
+      end
+      event
+    end
+    def profile(event)
+      event = resolve(event)
+      return nil unless event
+      map_id = $game_map.map_id
+      configured = PARALLAX[map_id] && PARALLAX[map_id][event.id]
+      role, anchor = configured if configured
+      name = iv(event,:event).name
+      unless role
+        name_role = name[/\ANPC-(SHYLVIE|KOHI|LEO|HAKASE)\b/,1]
+        role = name_role.downcase.to_sym if name_role
+        role = :kohi if map_id == 46 && event.id == 14
+        role = :diana if map_id == 38 && event.id == 18 && $game_switches[82]
+        role = :common if event.character_name =~ /\A\$(?:NPC_Chart\d*|Oguri_nomnom)\z/i
+        anchor = event.id
+      end
+      return nil unless role
+      if map_id == 58 && event.id == 25
+        focus = event.list.find { |c| c.code == 355 && c.parameters[0] =~ /ms_pro_cam_focus_on\((25|26)\)/ }
+        anchor = focus.parameters[0][/ms_pro_cam_focus_on\((25|26)\)/,1].to_i if focus
+      end
+      return nil unless $game_map.events[anchor]
+      identity = SPECIAL.key?(role) ? role : [map_id,event.id]
+      seasonal = event.character_name =~ /giangsinh/i
+      face = seasonal ? CHRISTMAS_FACES[role] : NORMAL_FACES[role]
+      face ||= CHRISTMAS_FACES[role] if [:kohi,:hakase].include?(role)
+      {:role=>role,:anchor=>anchor,:identity=>identity,:face=>face.to_s,:event=>event}
+    end
+    def eligible?(interpreter,event_id)
+      return false unless action? && interpreter.equal?($game_map.interpreter) && event_id > 0
+      return false unless SceneManager.scene_is?(Scene_Map) && !SceneManager.scene.scene_changing?
+      return false if $game_system.menu_disabled || $game_player.transparent || $game_player.transfer?
+      return false if $game_message.busy? || $game_message.visible || $game_temp.common_event_reserved? || !current_form
+      event = $game_map.events[event_id]
+      event && event.trigger_in?([0])
+    end
+    def state; $game_system.npc_form_reactions; end
+    def commit(identity,form)
+      key = [identity,form]
+      state[:seen][key] = true
+    end
+    def pick_common(data,form)
+      group = data[:role] == :shop ? :shop : :common
+      pool = COMMON.fetch(form).dup
+      pool << SHOP.fetch(form) if group == :shop
+      key = [data[:identity],form]
+      bag = state[:bags][key] ||= []
+      bag.reject! { |i| !i.is_a?(Integer) || i < 0 || i >= pool.size }
+      bag.concat((0...pool.size).to_a.shuffle) if bag.empty?
+      last = state[:last][[group,form]]
+      local_key = [:npc,data[:identity],form]
+      local_last = state[:last][local_key]
+      chosen = bag.index { |i| pool[i] != last && pool[i] != local_last }
+      # A neighbouring NPC can have just used the bag's final candidate.
+      # Defer that candidate and draw a safe alternative without losing it.
+      index = chosen ? bag.delete_at(chosen) :
+        (0...pool.size).to_a.select { |i| pool[i] != last && pool[i] != local_last }.sample
+      text = pool[index]
+      state[:last][[group,form]] = text
+      state[:last][local_key] = text
+      text
+    end
+    # Count a Vietnamese base letter plus combining marks as one column.
+    # RGSS Ruby 1.9.2 does not provide String#unicode_normalize.
+    def letters(text); text.scan(/\P{M}\p{M}*|\p{M}+/); end
+    def wrap(text,width)
+      lines = []; line = ''
+      text.split(/\s+/).each do |word|
+        candidate = line.empty? ? word : line+' '+word
+        if letters(candidate).size <= width
+          line = candidate
+        else
+          lines << line unless line.empty?
+          parts = letters(word)
+          lines << parts.shift(width).join while parts.size > width
+          line = parts.join
+        end
+      end
+      lines << line unless line.empty?
+      lines
+    end
+    def command(code,parameters=[]); RPG::EventCommand.new(code,0,parameters); end
+    def speech(list,text,anchor,face='')
+      wrap(text,face.empty? ? 40 : 33).each_slice(4) do |lines|
+        list << command(101,[face,0,0,2])
+        lines.each_with_index do |line,i|
+          list << command(401,[(i == 0 ? "\\bm[#{anchor}] " : '')+line])
+        end
+      end
+    end
+    def reaction_list(data,form)
+      role = data[:role]; identity = data[:identity]
+      first = !state[:seen][[identity,form]]
+      special = SPECIAL[role] && SPECIAL[role][form]
+      text = nil
+      if special
+        short = SHORT[role] && SHORT[role][form]
+        pool = [short,special].compact.uniq
+        last_key = [:special,identity,form]
+        text = first ? special : (pool.find { |line| line != state[:last][last_key] } || pool[0])
+        state[:last][last_key] = text
+      end
+      text ||= pick_common(data,form)
+      list = [command(355,["NPCFormReaction.commit(#{identity.inspect}, #{form.inspect})"])]
+      balloon = role == :hakase ? 9 : form == :sanic ? 1 : form == :diana ? 4 : 2
+      balloon = 2 if role == :beta
+      list << command(213,[data[:anchor],balloon,false]) if first
+      speech(list,'Ọc ọc ọc!',0) if first && form == :riu && [:leo,:shylvie].include?(role)
+      speech(list,text,data[:anchor],data[:face])
+      if first && role == :shylvie && form == :gamemerr
+        speech(list,'Bà đang nghi ngờ trình độ của tôi à?',0)
+        speech(list,'Tôi đang nhớ lại kết quả lần trước.',data[:anchor],data[:face])
+      end
+      list << command(0)
+      list
+    end
+    def correct_legacy_anchor(list,event_id)
+      return list unless $game_map.map_id == 13 && event_id == 98
+      page = iv($game_map.events[event_id],:page)
+      return list unless page && page.condition.switch2_valid && page.condition.switch2_id == 3
+      list.map do |entry|
+        next entry unless entry.code == 401 && entry.parameters[0].include?('\\bm[97]')
+        command(401,[entry.parameters[0].sub('\\bm[97]','\\bm[98]')])
+      end
+    end
+    def interaction_list(interpreter,list,event_id)
+      return list unless action? && interpreter.equal?($game_map.interpreter)
+      original = correct_legacy_anchor(list,event_id)
+      return original unless eligible?(interpreter,event_id)
+      data = profile($game_map.events[event_id])
+      return original unless data
+      source = data[:event].list
+      return original if source.any? { |c| STORY_CODES.include?(c.code) }
+      return original if data[:event].trigger_in?([3,4])
+      return original if data[:role] == :diana && !$game_switches[48]
+      reaction_list(data,current_form.id)
+    end
+  end
+end
+
+class Game_System
+  def npc_form_reactions
+    @npc_form_reactions ||= {:seen=>{},:bags=>{},:last=>{}}
+    # Older development saves alternated reactions and normal dialogue.
+    # Keep history/random bags, but discard that obsolete turn flag.
+    @npc_form_reactions.delete(:base_next)
+    @npc_form_reactions
+  end
+end
+class Game_Temp
+  attr_accessor :nfr_action_depth
+end
+class Game_Player
+  alias nfr_check_action_event check_action_event
+  def check_action_event
+    $game_temp.nfr_action_depth = $game_temp.nfr_action_depth.to_i + 1
+    nfr_check_action_event
+  ensure
+    $game_temp.nfr_action_depth = [$game_temp.nfr_action_depth.to_i - 1,0].max
+  end
+end
+class Game_Interpreter
+  alias nfr_setup setup
+  def setup(list,event_id=0)
+    nfr_setup(NPCFormReaction.interaction_list(self,list,event_id),event_id)
+  end
+end
+class Game_Event
+  alias nfr_conditions_met? conditions_met?
+  def conditions_met?(page)
+    return false if NPCFormReaction.legacy_riu_page?(@map_id,@id,page)
+    nfr_conditions_met?(page)
+  end
+  alias nfr_empty? empty?
+  def empty?
+    return false if NPCFormReaction.empty_diana?(self)
+    nfr_empty?
+  end
+end

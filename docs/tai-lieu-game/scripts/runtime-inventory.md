@@ -215,7 +215,7 @@ Snapshot đối chiếu trực tiếp `Data/Scripts.rvdata2`. Slot là chỉ s�
 | 203 | [Pop Message](<../../../Scripts/Pop Message.rb>) | Có mã | exact | `d7a99a1660b7` |
 | 204 | [Enhanced Camera ](<../../../Scripts/Enhanced Camera .rb>) | Có mã | exact | `97172d461ad0` |
 | 205 | [The Art of Screenshake](<../../../Scripts/The Art of Screenshake.rb>) | Có mã | exact | `2594f422a3a6` |
-| 206 | [Transform Form Selection](<../../../Scripts/Transform Form Selection.rb>) | Có mã | exact | `1693002f9a64` |
+| 206 | [Transform Form Selection](<../../../Scripts/Transform Form Selection.rb>) | Có mã | exact | `04894864548b` |
 | 207 | (slot rỗng) | Rỗng/separator | — | `e3b0c44298fc` |
 | 208 | (slot rỗng) | Rỗng/separator | — | `e3b0c44298fc` |
 | 209 | [Catto Petting Minigame](<../../../Scripts/Catto Petting Minigame.rb>) | Có mã | exact | `593acf9bbf80` |
@@ -229,7 +229,7 @@ Snapshot đối chiếu trực tiếp `Data/Scripts.rvdata2`. Slot là chỉ s�
 | 217 | ▼ Main Process | Rỗng/separator | — | `e3b0c44298fc` |
 | 218 | [WCF Storage Memory Transition](<../../../Scripts/WCF Storage Memory Transition.rb>) | Có mã | exact | `12873b29e63e` |
 | 219 | [WCF Test Hub](<../../../Scripts/WCF Test Hub.rb>) | Có mã | exact | `26b17a6b92ca` |
-| 220 | [Main](<../../../Scripts/Main.rb>) | Có mã | exact | `c1c1160f0ba7` |
+| 220 | [Main](<../../../Scripts/Main.rb>) | Có mã | exact | `bdba32aff3b8` |
 | 221 | (slot rỗng) | Rỗng/separator | — | `e3b0c44298fc` |
 
 ## Phạm vi xác minh
